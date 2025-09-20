@@ -29,9 +29,22 @@
 		89FD667B2E7E7F6B00C1C642 /* EnviveNewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EnviveNewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		89FD66A12E7F567200C1C642 /* Exceptions for "EnviveNew" folder in "EnviveNew" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 89FD665E2E7E7F6600C1C642 /* EnviveNew */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		89FD66612E7E7F6600C1C642 /* EnviveNew */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				89FD66A12E7F567200C1C642 /* Exceptions for "EnviveNew" folder in "EnviveNew" target */,
+			);
 			path = EnviveNew;
 			sourceTree = "<group>";
 		};
@@ -195,6 +208,9 @@
 			);
 			mainGroup = 89FD66562E7E7F6600C1C642;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 89FD66602E7E7F6600C1C642 /* Products */;
 			projectDirPath = "";
@@ -400,6 +416,9 @@
 				DEVELOPMENT_TEAM = 5TBWU99J4Y;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EnviveNew/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera to verify task completion";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs location access to track your outdoor activities even when the app is in the background";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -432,6 +451,9 @@
 				DEVELOPMENT_TEAM = 5TBWU99J4Y;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EnviveNew/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera to verify task completion";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs location access to track your outdoor activities even when the app is in the background";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -578,6 +600,17 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 	};
 	rootObject = 89FD66572E7E7F6600C1C642 /* Project object */;
 }
