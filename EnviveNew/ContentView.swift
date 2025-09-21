@@ -7,6 +7,7 @@ import UIKit
 import CoreLocation
 import MapKit
 import UserNotifications
+import DeviceActivity
 
 // MARK: - Notification Manager
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
@@ -1852,60 +1853,6 @@ class CameraViewController: UIViewController {
     }
 }
 
-// MARK: - Screen Time View
-struct ScreenTimeView: View {
-    @EnvironmentObject var model: EnhancedScreenTimeModel
-    @State private var isPickerPresented = false
-
-    var body: some View {
-        NavigationView {
-            List {
-                Section("Authorization") {
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        Text(model.authorizationStatus)
-                            .foregroundColor(model.isAuthorized ? .green : .orange)
-                    }
-
-                    if !model.isAuthorized {
-                        Button("Request Screen Time Permission") {
-                            Task {
-                                await model.requestAuthorization()
-                            }
-                        }
-                    }
-                }
-
-                if model.isAuthorized {
-                    Section("App Selection") {
-                        Button("Choose Apps to Restrict") {
-                            isPickerPresented = true
-                        }
-                        .familyActivityPicker(
-                            isPresented: $isPickerPresented,
-                            selection: $model.selectedAppsToDiscourage
-                        )
-                    }
-
-                    Section("Manual Controls") {
-                        Button("Apply Restrictions Now") {
-                            model.startAppRestrictions()
-                        }
-                        .foregroundColor(.red)
-
-                        Button("Remove All Restrictions") {
-                            model.removeAppRestrictions()
-                        }
-                        .foregroundColor(.green)
-                    }
-                }
-            }
-            .navigationTitle("Screen Time")
-        }
-    }
-}
-
 // MARK: - Profile View
 struct ProfileView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
@@ -2058,7 +2005,7 @@ struct ContentView: View {
                 }
                 .tag(3)
             
-            ScreenTimeView()
+            IntegratedScreenTimeView()
                 .environmentObject(model)
                 .tabItem {
                     Image(systemName: "hourglass")
@@ -2924,7 +2871,10 @@ struct EnhancedHomeView: View {
                                     .fontWeight(.semibold)
                             )
                     }
-                    
+
+                    // Screen Time Status Banner
+                    ScreenTimeStatusBanner()
+
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
                         StatCard(title: "XP Balance", value: "\(model.currentUser.xpBalance)", color: .blue, icon: "star.fill")
                         StatCard(title: "Minutes Earned", value: "\(model.minutesEarned)", color: .green, icon: "clock.fill")
@@ -3321,6 +3271,910 @@ struct AddTaskView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Screen Time Manager Classes
+
+class ScreenTimeManager: ObservableObject {
+    private let authorizationCenter = AuthorizationCenter.shared
+    @Published var authorizationStatus: AuthorizationStatus = .notDetermined
+    @Published var isAuthorized: Bool = false
+
+    init() {
+        updateAuthorizationStatus()
+    }
+
+    func updateAuthorizationStatus() {
+        authorizationStatus = authorizationCenter.authorizationStatus
+        isAuthorized = authorizationStatus == .approved
+    }
+
+    func requestAuthorization() async throws {
+        try await authorizationCenter.requestAuthorization(for: .individual)
+        await MainActor.run {
+            updateAuthorizationStatus()
+        }
+    }
+}
+
+class AppSelectionStore: ObservableObject {
+    @Published var familyActivitySelection = FamilyActivitySelection()
+    private let userDefaults = UserDefaults(suiteName: "group.com.envivenew.screentime")
+
+    init() {
+        loadSelection()
+    }
+
+    func saveSelection() {
+        guard let data = try? JSONEncoder().encode(familyActivitySelection) else { return }
+        userDefaults?.set(data, forKey: "familyActivitySelection")
+    }
+
+    func loadSelection() {
+        guard let data = userDefaults?.data(forKey: "familyActivitySelection"),
+              let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) else {
+            return
+        }
+        familyActivitySelection = selection
+    }
+
+    var hasSelectedApps: Bool {
+        !familyActivitySelection.applicationTokens.isEmpty ||
+        !familyActivitySelection.categoryTokens.isEmpty ||
+        !familyActivitySelection.webDomainTokens.isEmpty
+    }
+
+    var selectedCount: Int {
+        familyActivitySelection.applicationTokens.count +
+        familyActivitySelection.categoryTokens.count +
+        familyActivitySelection.webDomainTokens.count
+    }
+}
+
+class SettingsManager: ObservableObject {
+    private let store = ManagedSettingsStore()
+    @Published var isBlocking = false
+
+    func blockApps(_ selection: FamilyActivitySelection) {
+        if !selection.applicationTokens.isEmpty {
+            store.shield.applications = selection.applicationTokens
+        }
+
+        if !selection.categoryTokens.isEmpty {
+            store.shield.applicationCategories = .specific(selection.categoryTokens)
+        }
+
+        if !selection.webDomainTokens.isEmpty {
+            store.shield.webDomains = selection.webDomainTokens
+        }
+
+        isBlocking = true
+        print("Apps blocked successfully")
+    }
+
+    func unblockApps() {
+        store.clearAllSettings()
+        isBlocking = false
+        print("Apps unblocked successfully")
+    }
+}
+
+class ActivityScheduler: ObservableObject {
+    private let center = DeviceActivityCenter()
+    @Published var isMonitoring = false
+    @Published var remainingMinutes = 0
+
+    func startScreenTimeSession(durationMinutes: Int) {
+        let activity = DeviceActivityName("screenTimeSession")
+        let schedule = DeviceActivitySchedule(
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 23, minute: 59),
+            repeats: false
+        )
+
+        do {
+            try center.startMonitoring(activity, during: schedule)
+            isMonitoring = true
+            remainingMinutes = durationMinutes
+            print("Started monitoring screen time session")
+        } catch {
+            print("Failed to start monitoring: \(error)")
+        }
+    }
+
+    func startTimerBasedRestrictions(durationMinutes: Int) {
+        let activity = DeviceActivityName("timerRestriction")
+        let schedule = DeviceActivitySchedule(
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 23, minute: 59),
+            repeats: false
+        )
+
+        do {
+            try center.startMonitoring(activity, during: schedule)
+            isMonitoring = true
+            print("Started timer-based restrictions for \(durationMinutes) minutes")
+        } catch {
+            print("Failed to start timer restrictions: \(error)")
+        }
+    }
+
+    func stopAllMonitoring() {
+        center.stopMonitoring()
+        isMonitoring = false
+        remainingMinutes = 0
+        print("Stopped all monitoring")
+    }
+}
+
+class ScreenTimeRewardManager: ObservableObject {
+    @Published var earnedMinutes: Int = 0
+    @Published var isScreenTimeActive = false
+    @Published var activeSessionMinutes: Int = 0
+
+    private let settingsManager = SettingsManager()
+    private let scheduler = ActivityScheduler()
+    private let appSelectionStore = AppSelectionStore()
+
+    private let xpToMinutesRatio: Double = 10.0 // 10 XP = 1 minute
+    private let userDefaults = UserDefaults.standard
+    private let earnedMinutesKey = "earnedScreenTimeMinutes"
+
+    init() {
+        loadEarnedMinutes()
+    }
+
+    func redeemXPForScreenTime(xpAmount: Int) -> Int {
+        let earnedMinutes = Int(Double(xpAmount) / xpToMinutesRatio)
+        self.earnedMinutes += earnedMinutes
+        saveEarnedMinutes()
+        print("Redeemed \(xpAmount) XP for \(earnedMinutes) minutes of screen time")
+        return earnedMinutes
+    }
+
+    func startScreenTimeSession(durationMinutes: Int) -> Bool {
+        guard durationMinutes <= earnedMinutes else {
+            print("Insufficient earned minutes: requested \(durationMinutes), available \(earnedMinutes)")
+            return false
+        }
+
+        // Remove used minutes
+        earnedMinutes -= durationMinutes
+        saveEarnedMinutes()
+
+        // Temporarily lift restrictions for earned time
+        settingsManager.unblockApps()
+        isScreenTimeActive = true
+        activeSessionMinutes = durationMinutes
+
+        // Schedule re-application of restrictions
+        scheduler.startScreenTimeSession(durationMinutes: durationMinutes)
+
+        // Schedule end of session
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(durationMinutes * 60)) {
+            self.endScreenTimeSession()
+        }
+
+        print("Started screen time session for \(durationMinutes) minutes")
+        return true
+    }
+
+    func endScreenTimeSession() {
+        // Re-apply restrictions using stored app selection
+        if appSelectionStore.hasSelectedApps {
+            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+        }
+
+        isScreenTimeActive = false
+        activeSessionMinutes = 0
+        scheduler.stopAllMonitoring()
+        print("Ended screen time session")
+    }
+
+    func addBonusMinutes(_ minutes: Int, reason: String = "Task completion") {
+        earnedMinutes += minutes
+        saveEarnedMinutes()
+        print("Added \(minutes) bonus minutes: \(reason)")
+    }
+
+    private func saveEarnedMinutes() {
+        userDefaults.set(earnedMinutes, forKey: earnedMinutesKey)
+    }
+
+    private func loadEarnedMinutes() {
+        earnedMinutes = userDefaults.integer(forKey: earnedMinutesKey)
+    }
+
+    // MARK: - Convenience Properties
+
+    var hasEarnedTime: Bool {
+        earnedMinutes > 0
+    }
+
+    var canStartSession: Bool {
+        hasEarnedTime && !isScreenTimeActive
+    }
+
+    func formattedEarnedTime() -> String {
+        if earnedMinutes >= 60 {
+            let hours = earnedMinutes / 60
+            let minutes = earnedMinutes % 60
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(earnedMinutes)m"
+        }
+    }
+
+    func formattedActiveTime() -> String {
+        if activeSessionMinutes >= 60 {
+            let hours = activeSessionMinutes / 60
+            let minutes = activeSessionMinutes % 60
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(activeSessionMinutes)m"
+        }
+    }
+}
+
+// MARK: - App Selection View
+
+struct AppSelectionView: View {
+    @Binding var selectedApps: FamilyActivitySelection
+    @State private var isPresentingPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Choose Activities")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .padding(.top)
+
+            Text("Most used apps, categories, and websites")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Button(action: {
+                isPresentingPicker = true
+            }) {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.blue)
+                    Text("Select Apps to Manage")
+                        .fontWeight(.medium)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+            }
+            .familyActivityPicker(
+                isPresented: $isPresentingPicker,
+                selection: $selectedApps
+            )
+
+            if !selectedApps.applicationTokens.isEmpty || !selectedApps.categoryTokens.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Selected Items")
+                        .font(.headline)
+
+                    HStack {
+                        if !selectedApps.applicationTokens.isEmpty {
+                            VStack(alignment: .leading) {
+                                Text("Apps")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(selectedApps.applicationTokens.count)")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding()
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+
+                        if !selectedApps.categoryTokens.isEmpty {
+                            VStack(alignment: .leading) {
+                                Text("Categories")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(selectedApps.categoryTokens.count)")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+
+                        if !selectedApps.webDomainTokens.isEmpty {
+                            VStack(alignment: .leading) {
+                                Text("Websites")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("\(selectedApps.webDomainTokens.count)")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding()
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(.top)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Screen Time Status Banner
+struct ScreenTimeStatusBanner: View {
+    @StateObject private var rewardManager = ScreenTimeRewardManager()
+
+    var body: some View {
+        NavigationLink(destination: IntegratedScreenTimeView()) {
+            HStack(spacing: 12) {
+                Image(systemName: rewardManager.isScreenTimeActive ? "play.circle.fill" : "hourglass")
+                    .font(.title2)
+                    .foregroundColor(rewardManager.isScreenTimeActive ? .green : .blue)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rewardManager.isScreenTimeActive ? "Session Active" : "Screen Time")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    if rewardManager.isScreenTimeActive {
+                        Text("\(rewardManager.formattedActiveTime()) remaining")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("\(rewardManager.formattedEarnedTime()) earned")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if rewardManager.isScreenTimeActive {
+                    Text("🔓")
+                        .font(.title2)
+                } else if rewardManager.hasEarnedTime {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("🔒")
+                        .font(.title2)
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Integrated Screen Time View
+struct IntegratedScreenTimeView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @StateObject private var screenTimeManager = ScreenTimeManager()
+    @StateObject private var appSelectionStore = AppSelectionStore()
+    @StateObject private var settingsManager = SettingsManager()
+    @StateObject private var rewardManager = ScreenTimeRewardManager()
+
+    @State private var isParentMode = false
+    @State private var showingAppSelection = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header with mode toggle
+                headerSection
+
+                if screenTimeManager.isAuthorized {
+                    if isParentMode {
+                        parentControlsSection
+                    } else {
+                        childControlsSection
+                    }
+                } else {
+                    authorizationSection
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Screen Time")
+        .navigationBarTitleDisplayMode(.large)
+        .sheet(isPresented: $showingAppSelection) {
+            NavigationView {
+                AppSelectionView(selectedApps: $appSelectionStore.familyActivitySelection)
+                    .navigationTitle("Select Apps")
+                    .navigationBarTitleDisplayMode(NavigationBarItem.TitleDisplayMode.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Cancel") {
+                                showingAppSelection = false
+                            }
+                        }
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                appSelectionStore.saveSelection()
+                                showingAppSelection = false
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
+            }
+        }
+        .onAppear {
+            screenTimeManager.updateAuthorizationStatus()
+        }
+    }
+
+    private var headerSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Screen Time Management")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Text("Control and earn screen time")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            // Mode toggle
+            HStack {
+                Text("Mode:")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Picker("Mode", selection: $isParentMode) {
+                    Text("Child").tag(false)
+                    Text("Parent").tag(true)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .frame(width: 150)
+
+                Spacer()
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private var authorizationSection: some View {
+        VStack(spacing: 16) {
+            switch screenTimeManager.authorizationStatus {
+            case .notDetermined:
+                VStack(spacing: 16) {
+                    Image(systemName: "hourglass.circle")
+                        .font(.system(size: 60))
+                        .foregroundColor(.blue)
+
+                    Text("Enable Screen Time Controls")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Text("Grant permission to manage screen time and app usage")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    Button("Enable Screen Time") {
+                        Task {
+                            try? await screenTimeManager.requestAuthorization()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+
+            case .denied:
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 60))
+                        .foregroundColor(.red)
+
+                    Text("Screen Time Access Denied")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.red)
+
+                    Text("Please enable Screen Time access in Settings")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    Button("Open Settings") {
+                        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(settingsUrl)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+            case .approved:
+                Text("Screen Time Authorized")
+                    .font(.headline)
+                    .foregroundColor(.green)
+
+            @unknown default:
+                EmptyView()
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+
+    private var parentControlsSection: some View {
+        VStack(spacing: 20) {
+            // App Management Section
+            VStack(alignment: .leading, spacing: 16) {
+                Text("App Management")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                if appSelectionStore.hasSelectedApps {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Selected Items")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text("\(appSelectionStore.selectedCount) items")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing) {
+                                Text("Status")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text(settingsManager.isBlocking ? "Blocked" : "Allowed")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(settingsManager.isBlocking ? .red : .green)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+
+                        HStack(spacing: 12) {
+                            Button("Block Apps") {
+                                settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(settingsManager.isBlocking)
+
+                            Button("Allow Apps") {
+                                settingsManager.unblockApps()
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!settingsManager.isBlocking)
+                        }
+                    }
+                }
+
+                Button("Select Apps to Manage") {
+                    showingAppSelection = true
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+
+            // Quick Controls Section
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Quick Controls")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    quickControlButton(
+                        title: "Study Mode",
+                        subtitle: "30 min",
+                        icon: "book.fill",
+                        color: .blue
+                    ) {
+                        if appSelectionStore.hasSelectedApps {
+                            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+                        }
+                    }
+
+                    quickControlButton(
+                        title: "Sleep Mode",
+                        subtitle: "8 hours",
+                        icon: "moon.fill",
+                        color: .purple
+                    ) {
+                        if appSelectionStore.hasSelectedApps {
+                            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+                        }
+                    }
+
+                    quickControlButton(
+                        title: "Family Time",
+                        subtitle: "2 hours",
+                        icon: "person.2.fill",
+                        color: .green
+                    ) {
+                        if appSelectionStore.hasSelectedApps {
+                            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+                        }
+                    }
+
+                    quickControlButton(
+                        title: "Stop All",
+                        subtitle: "Remove",
+                        icon: "stop.fill",
+                        color: .red
+                    ) {
+                        settingsManager.unblockApps()
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+        }
+    }
+
+    private var childControlsSection: some View {
+        VStack(spacing: 20) {
+            // Screen Time Status
+            screenTimeStatusCard
+
+            // Earned Time Management
+            if rewardManager.isScreenTimeActive {
+                activeSessionCard
+            } else {
+                earnedTimeCard
+            }
+
+            // XP Redemption
+            xpRedemptionCard
+        }
+    }
+
+    private var screenTimeStatusCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Image(systemName: "hourglass")
+                    .font(.title2)
+                    .foregroundColor(.blue)
+
+                Text("Screen Time Status")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Spacer()
+
+                if rewardManager.isScreenTimeActive {
+                    Text("ACTIVE")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green)
+                        .cornerRadius(8)
+                }
+            }
+
+            HStack(spacing: 24) {
+                VStack(alignment: .leading) {
+                    Text("Earned Time")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(rewardManager.formattedEarnedTime())
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                }
+
+                Spacer()
+
+                if rewardManager.isScreenTimeActive {
+                    VStack(alignment: .trailing) {
+                        Text("Session Time")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(rewardManager.formattedActiveTime())
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(16)
+    }
+
+    private var activeSessionCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Image(systemName: "play.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.green)
+
+                Text("Session Active")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+
+                Spacer()
+
+                Button("End Session") {
+                    rewardManager.endScreenTimeSession()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Text("Apps are currently unlocked. Use your time wisely!")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+        .background(Color.green.opacity(0.1))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private var earnedTimeCard: some View {
+        VStack(spacing: 16) {
+            if rewardManager.hasEarnedTime {
+                VStack(spacing: 12) {
+                    Text("Ready to start a session?")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    Text("You have \(rewardManager.formattedEarnedTime()) of earned screen time")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    HStack(spacing: 12) {
+                        Button("15 min") {
+                            _ = rewardManager.startScreenTimeSession(durationMinutes: 15)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!rewardManager.canStartSession || rewardManager.earnedMinutes < 15)
+
+                        Button("30 min") {
+                            _ = rewardManager.startScreenTimeSession(durationMinutes: 30)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!rewardManager.canStartSession || rewardManager.earnedMinutes < 30)
+
+                        Button("60 min") {
+                            _ = rewardManager.startScreenTimeSession(durationMinutes: 60)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!rewardManager.canStartSession || rewardManager.earnedMinutes < 60)
+                    }
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "hourglass.badge.plus")
+                        .font(.system(size: 40))
+                        .foregroundColor(.orange)
+
+                    Text("No Screen Time Available")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    Text("Complete tasks to earn screen time!")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .padding()
+        .background(rewardManager.hasEarnedTime ? Color.blue.opacity(0.1) : Color.orange.opacity(0.1))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke((rewardManager.hasEarnedTime ? Color.blue : Color.orange).opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private var xpRedemptionCard: some View {
+        VStack(spacing: 16) {
+            Text("Redeem XP for Screen Time")
+                .font(.headline)
+                .fontWeight(.semibold)
+
+            Text("Current XP: \(model.currentUser.totalXPEarned)")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 12) {
+                Button("100 XP → 10 min") {
+                    _ = rewardManager.redeemXPForScreenTime(xpAmount: 100)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.currentUser.totalXPEarned < 100)
+
+                Button("250 XP → 25 min") {
+                    _ = rewardManager.redeemXPForScreenTime(xpAmount: 250)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.currentUser.totalXPEarned < 250)
+
+                Button("500 XP → 50 min") {
+                    _ = rewardManager.redeemXPForScreenTime(xpAmount: 500)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.currentUser.totalXPEarned < 500)
+            }
+
+            Text("Ratio: 10 XP = 1 minute of screen time")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+
+    private func quickControlButton(
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(color.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .disabled(!appSelectionStore.hasSelectedApps && title != "Stop All")
     }
 }
 

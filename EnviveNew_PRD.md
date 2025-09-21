@@ -63,6 +63,14 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
 - **Photo Verification**: Prove task completion with photos
 - **Activity Documentation**: Visual proof of completed activities
 
+#### 7. **Parent-Child Relationship System (NEW - Implemented)**
+- **User Type System**: Users designated as either 'parent' or 'child'
+- **Relationship Invitations**: Parents can invite children by email/phone
+- **Acceptance Workflow**: Children can accept/reject parent relationships
+- **Multiple Relationships**: Children can have multiple parents, parents can have multiple children
+- **Data Validation**: Ensures children cannot be parents of other users
+- **Row-Level Security**: Database policies ensure proper access control
+
 ### 🏗️ **Technical Architecture**
 
 #### **Frameworks & Technologies**
@@ -81,7 +89,8 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
 - **Supabase Swift SDK**: Backend-as-a-Service for data sync and user management
 
 #### **Data Models**
-- **User**: Profile, XP, friends, parental controls
+- **User**: Profile, XP, friends, parental controls, user type (parent/child)
+- **UserRelationship**: Parent-child relationships with invitation/acceptance system
 - **TaskItem**: Activities with XP rewards, verification, location data
 - **FriendActivity**: Social activity feed with kudos system
 - **LocationTrackingPoint**: GPS tracking data for activities
@@ -170,17 +179,36 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
   - [x] Achievement notifications
   - [x] Daily reminder system
 
-### 🔧 **Phase 5: Polish & Enhancement (Next Phase)**
+### 🔧 **Phase 5: Database & User Management (Current Priority)**
+- [x] **Parent-Child Relationship System**
+  - [x] Enhanced users table with type field and parent-child support
+  - [x] User relationship table with invitation/acceptance workflow
+  - [x] Database constraints preventing children from being parents
+  - [x] Row-level security policies for proper access control
+  - [ ] **Account Creation & Onboarding Flow**
+    - [ ] User type selection during registration (parent vs child)
+    - [ ] Parent invitation system UI
+    - [ ] Child acceptance/rejection UI
+    - [ ] Profile completion workflow
+
+- [ ] **Test User Management System**
+  - [ ] Development user switcher for testing parent/child workflows
+  - [ ] Test data seeding and management
+  - [ ] Parent-child relationship testing interface
+  - [ ] Mock authentication for development testing
+
 - [ ] **Modern Screen Time API Implementation**
   - [ ] DeviceActivity framework integration
   - [ ] DeviceActivityMonitor extension creation
   - [ ] Advanced app scheduling and time limits
   - [ ] Usage threshold monitoring and events
   - [ ] Enhanced XP-to-screen-time conversion system
+  - [ ] Parent oversight and control features
 
 - [ ] **Data Persistence & Sync**
-  - [ ] Supabase backend integration
-  - [ ] Real-time data synchronization
+  - [x] Supabase backend database schema
+  - [ ] Real-time data synchronization between app and database
+  - [ ] User authentication integration
   - [ ] Offline mode support
   - [ ] Data backup and restore
 
@@ -318,14 +346,58 @@ See the complete implementation guide for detailed code examples, setup instruct
 
 ---
 
-## Next Steps
+## Immediate Development Priorities
 
-1. **Implement Modern Screen Time APIs**: Upgrade to DeviceActivity framework with comprehensive monitoring
-2. **Complete Supabase Integration**: Implement real-time data sync
-3. **Beta Testing Program**: Family and friend group testing
-4. **Performance Optimization**: Location services and battery usage
-5. **Privacy Audit**: Ensure compliance with child privacy regulations
-6. **App Store Submission**: Prepare for public release
+### **Phase 5A: User System Completion (Current Sprint)**
+1. **Account Creation Flow Implementation**
+   - User type selection UI (parent vs child)
+   - Registration workflow with proper user type assignment
+   - Profile completion and validation
+
+2. **Parent-Child Relationship UI**
+   - Parent invitation system (search by email/phone)
+   - Child notification and acceptance interface
+   - Relationship management dashboard
+
+3. **Development Testing Infrastructure**
+   - Test user management system for easy parent/child switching
+   - Mock data seeding for development
+   - Authentication bypass for testing
+
+### **Phase 5B: Enhanced Screen Time Integration**
+4. **Modern Screen Time APIs**: Upgrade to DeviceActivity framework with parent oversight
+5. **Parent Control Dashboard**: Screen time management for children
+6. **Family Screen Time Policies**: Custom rules and restrictions per child
+
+### **Phase 5C: Production Readiness**
+7. **Complete Supabase Integration**: Real-time data sync with authentication
+8. **Beta Testing Program**: Family group testing with actual parent-child relationships
+9. **Performance Optimization**: Location services and battery usage
+10. **Privacy Audit**: Ensure compliance with child privacy regulations
+
+## Test User Setup Requirements
+
+### **Current Test Users (Development Database)**
+- **Parent Test User**: `parent@test.com` (ID: `00000000-0000-0000-0000-000000000001`)
+- **Child Test User**: `child@test.com` (ID: `00000000-0000-0000-0000-000000000002`)
+- **Test Relationship**: Pending invitation created between parent and child
+
+### **Development Testing Workflow**
+1. **Create User Switcher**: Debug menu to switch between parent/child test users
+2. **Test Relationship Flow**:
+   - Parent sends invitation to child
+   - Child receives and accepts/rejects invitation
+   - Verify relationship appears in both user interfaces
+3. **Test Screen Time Management**: Parent sets limits for child, child earns time through tasks
+4. **Test Family Features**: Location sharing, task assignment, progress monitoring
+
+### **Required Implementation Tasks**
+- [ ] User type selection during onboarding
+- [ ] Parent invitation system (email/phone lookup)
+- [ ] Child acceptance/rejection workflow
+- [ ] Development user switcher interface
+- [ ] Parent dashboard with child oversight
+- [ ] Child interface showing parent-assigned tasks/limits
 
 ---
 
