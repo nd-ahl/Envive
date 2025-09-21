@@ -506,11 +506,20 @@ class CameraManager: NSObject, ObservableObject {
     @Published var backCameraImage: UIImage?
     @Published var isShowingCamera = false
     @Published var cameraError: String?
-    
+
     var frontCaptureSession: AVCaptureSession?
     var backCaptureSession: AVCaptureSession?
     var frontPhotoOutput: AVCapturePhotoOutput?
     var backPhotoOutput: AVCapturePhotoOutput?
+
+    // Check if running in simulator
+    private var isSimulator: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
     
     override init() {
         super.init()
@@ -548,61 +557,136 @@ class CameraManager: NSObject, ObservableObject {
     
     private func setupCaptureSession(session: AVCaptureSession, position: AVCaptureDevice.Position) {
         session.beginConfiguration()
-        
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
-            cameraError = "Camera not available"
-            return
+
+        defer {
+            // Always commit configuration, even if setup fails
+            session.commitConfiguration()
         }
-        
-        do {
-            let input = try AVCaptureDeviceInput(device: camera)
-            
-            if session.canAddInput(input) {
-                session.addInput(input)
-            }
-            
+
+        // In simulator, create mock photo outputs without camera devices
+        if isSimulator {
             let photoOutput = AVCapturePhotoOutput()
             if session.canAddOutput(photoOutput) {
                 session.addOutput(photoOutput)
-                
+
                 if position == .front {
                     frontPhotoOutput = photoOutput
                 } else {
                     backPhotoOutput = photoOutput
                 }
             }
-            
+            return
+        }
+
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+            cameraError = "Camera not available"
+            return
+        }
+
+        do {
+            let input = try AVCaptureDeviceInput(device: camera)
+
+            if session.canAddInput(input) {
+                session.addInput(input)
+            }
+
+            let photoOutput = AVCapturePhotoOutput()
+            if session.canAddOutput(photoOutput) {
+                session.addOutput(photoOutput)
+
+                if position == .front {
+                    frontPhotoOutput = photoOutput
+                } else {
+                    backPhotoOutput = photoOutput
+                }
+            }
+
         } catch {
             cameraError = "Camera setup failed: \(error.localizedDescription)"
         }
-        
-        session.commitConfiguration()
     }
     
     func takeDualPhoto() {
+        // In simulator, generate mock images
+        if isSimulator {
+            generateMockImages()
+            return
+        }
+
         guard let frontOutput = frontPhotoOutput,
               let backOutput = backPhotoOutput else {
             cameraError = "Camera not ready"
             return
         }
-        
+
         let settings = AVCapturePhotoSettings()
-        
+
         frontOutput.capturePhoto(with: settings, delegate: self)
         backOutput.capturePhoto(with: settings, delegate: self)
     }
+
+    private func generateMockImages() {
+        // Create mock images for simulator testing
+        let mockBackImage = createMockImage(text: "Back Camera\nMock Image", backgroundColor: .systemBlue)
+        let mockFrontImage = createMockImage(text: "Front Camera\nMock Image", backgroundColor: .systemGreen)
+
+        DispatchQueue.main.async {
+            self.backCameraImage = mockBackImage
+            self.frontCameraImage = mockFrontImage
+            self.capturedImage = self.combineDualImages()
+        }
+    }
+
+    private func createMockImage(text: String, backgroundColor: UIColor) -> UIImage {
+        let size = CGSize(width: 300, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            backgroundColor.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 20, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
     
     func startSession() {
+        // Don't start camera sessions in simulator
+        guard !isSimulator else { return }
+
         DispatchQueue.global(qos: .userInitiated).async {
-            self.frontCaptureSession?.startRunning()
-            self.backCaptureSession?.startRunning()
+            if let frontSession = self.frontCaptureSession, !frontSession.isRunning {
+                frontSession.startRunning()
+            }
+            if let backSession = self.backCaptureSession, !backSession.isRunning {
+                backSession.startRunning()
+            }
         }
     }
     
     func stopSession() {
+        // Don't stop camera sessions in simulator
+        guard !isSimulator else { return }
+
         DispatchQueue.global(qos: .userInitiated).async {
-            self.frontCaptureSession?.stopRunning()
-            self.backCaptureSession?.stopRunning()
+            if let frontSession = self.frontCaptureSession, frontSession.isRunning {
+                frontSession.stopRunning()
+            }
+            if let backSession = self.backCaptureSession, backSession.isRunning {
+                backSession.stopRunning()
+            }
         }
     }
     
@@ -730,16 +814,23 @@ class EnhancedScreenTimeModel: ObservableObject {
     
     // Location
     @Published var locationManager = LocationManager()
-    
+
+    // Notifications
+    @Published var notificationManager = NotificationManager()
+
     private let center = AuthorizationCenter.shared
     private let store = ManagedSettingsStore()
     private var sessionTimer: Timer?
+    private var sessionWarningTimer: Timer?
     
     init() {
         checkAuthorizationStatus()
         loadMockData()
         setupMockUserDatabase()
         setupLocationTracking()
+
+        // Request notification permission on init
+        notificationManager.requestPermission()
     }
     
     // MARK: - Location Methods
@@ -908,6 +999,14 @@ class EnhancedScreenTimeModel: ObservableObject {
         friendActivities.insert(activity, at: 0)
         
         print("Completed task: \(task.title) for \(earnedXP) XP with photo verification")
+
+        // Send notification to friends about task completion
+        notificationManager.sendFriendCompletedTaskNotification(
+            friendName: currentUser.username,
+            taskTitle: task.title,
+            xpEarned: earnedXP,
+            hasPhoto: photo != nil
+        )
     }
     
     // MARK: - Original Methods
@@ -1000,14 +1099,15 @@ class EnhancedScreenTimeModel: ObservableObject {
         friendActivities.insert(activity, at: 0)
     }
     
-    func createCustomTask(title: String, category: TaskCategory, estimatedMinutes: Int) -> TaskItem {
-        let suggestedXP = calculateXPForTask(category: category, minutes: estimatedMinutes)
-        
+    func createCustomTask(title: String, category: TaskCategory) -> TaskItem {
+        let defaultMinutes = 30
+        let suggestedXP = calculateXPForTask(category: category, minutes: defaultMinutes)
+
         let newTask = TaskItem(
             title: title,
             category: category,
             xpReward: suggestedXP,
-            estimatedMinutes: estimatedMinutes,
+            estimatedMinutes: defaultMinutes,
             isCustom: true,
             completed: false,
             createdBy: currentUser.id.uuidString,
@@ -1092,6 +1192,54 @@ class EnhancedScreenTimeModel: ObservableObject {
         sessionWarningTimer = nil
         isSessionActive = false
         startAppRestrictions()
+    }
+
+    // MARK: - Friend Activity Simulation
+    func simulateFriendActivity() {
+        guard !friends.isEmpty else {
+            // Add some friends first if none exist
+            let mockFriend = allUsers.first { user in !friends.contains(where: { $0.username == user.username }) }
+            if let friend = mockFriend {
+                friends.append(friend)
+            }
+            return
+        }
+
+        let friend = friends.randomElement()!
+        let activities = [
+            "Completed a morning run",
+            "Finished homework early",
+            "Helped with household chores",
+            "Practiced guitar for 30 minutes",
+            "Read a chapter of a book"
+        ]
+
+        let activity = activities.randomElement()!
+        let xpEarned = Int.random(in: 15...35)
+
+        notificationManager.sendFriendCompletedTaskNotification(
+            friendName: friend.username,
+            taskTitle: activity,
+            xpEarned: xpEarned,
+            hasPhoto: Bool.random()
+        )
+
+        // Also add to the activity feed
+        let friendActivity = FriendActivity(
+            userId: friend.id.uuidString,
+            username: friend.username,
+            activity: activity,
+            xpEarned: xpEarned,
+            timestamp: Date(),
+            location: nil,
+            locationCoordinate: nil,
+            kudos: 0,
+            hasVerificationPhoto: Bool.random(),
+            verificationPhoto: nil,
+            trackingRoute: nil
+        )
+
+        friendActivities.insert(friendActivity, at: 0)
     }
 }
 
@@ -1704,6 +1852,167 @@ class CameraViewController: UIViewController {
     }
 }
 
+// MARK: - Screen Time View
+struct ScreenTimeView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var isPickerPresented = false
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Authorization") {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text(model.authorizationStatus)
+                            .foregroundColor(model.isAuthorized ? .green : .orange)
+                    }
+
+                    if !model.isAuthorized {
+                        Button("Request Screen Time Permission") {
+                            Task {
+                                await model.requestAuthorization()
+                            }
+                        }
+                    }
+                }
+
+                if model.isAuthorized {
+                    Section("App Selection") {
+                        Button("Choose Apps to Restrict") {
+                            isPickerPresented = true
+                        }
+                        .familyActivityPicker(
+                            isPresented: $isPickerPresented,
+                            selection: $model.selectedAppsToDiscourage
+                        )
+                    }
+
+                    Section("Manual Controls") {
+                        Button("Apply Restrictions Now") {
+                            model.startAppRestrictions()
+                        }
+                        .foregroundColor(.red)
+
+                        Button("Remove All Restrictions") {
+                            model.removeAppRestrictions()
+                        }
+                        .foregroundColor(.green)
+                    }
+                }
+            }
+            .navigationTitle("Screen Time")
+        }
+    }
+}
+
+// MARK: - Profile View
+struct ProfileView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var showingNotificationSettings = false
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    HStack {
+                        Circle()
+                            .fill(Color.purple.opacity(0.3))
+                            .frame(width: 60, height: 60)
+                            .overlay(
+                                Text(String(model.currentUser.username.prefix(1)))
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                            )
+
+                        VStack(alignment: .leading) {
+                            Text(model.currentUser.username)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                            Text("Credibility: \(Int(model.currentUser.credibilityScore))%")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+
+                Section("Statistics") {
+                    HStack {
+                        Text("Total XP Earned")
+                        Spacer()
+                        Text("\(model.currentUser.totalXPEarned)")
+                            .fontWeight(.semibold)
+                    }
+
+                    HStack {
+                        Text("Current XP Balance")
+                        Spacer()
+                        Text("\(model.currentUser.xpBalance)")
+                            .fontWeight(.semibold)
+                    }
+
+                    HStack {
+                        Text("Friends")
+                        Spacer()
+                        Text("\(model.friends.count)")
+                            .fontWeight(.semibold)
+                    }
+                }
+
+                Section("Settings") {
+                    Button(action: {
+                        showingNotificationSettings = true
+                    }) {
+                        HStack {
+                            Image(systemName: "bell")
+                                .foregroundColor(.blue)
+                            Text("Notifications")
+                            Spacer()
+                            if model.notificationManager.hasPermission {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                    }
+
+                    HStack {
+                        Image(systemName: "location")
+                            .foregroundColor(.blue)
+                        Text("Location Sharing")
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { model.currentUser.isSharingLocation },
+                            set: { newValue in
+                                if newValue {
+                                    model.startLocationSharing()
+                                } else {
+                                    model.stopLocationSharing()
+                                }
+                            }
+                        ))
+                        .labelsHidden()
+                    }
+                }
+
+                Section {
+                    Button("Test Friend Activity Notification") {
+                        model.simulateFriendActivity()
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+            .navigationTitle("Profile")
+            .sheet(isPresented: $showingNotificationSettings) {
+                NotificationSettingsView()
+                    .environmentObject(model)
+            }
+        }
+    }
+}
+
 // MARK: - Main App Structure
 struct ContentView: View {
     @StateObject private var model = EnhancedScreenTimeModel()
@@ -1857,6 +2166,25 @@ struct EnhancedTaskRow: View {
     
     var body: some View {
         HStack {
+            Button(action: {
+                if !task.completed {
+                    if task.verificationRequired {
+                        showingCamera = true
+                    } else if needsLocationTracking {
+                        model.startTrackingForTask(task)
+                        showingLocationTracking = true
+                    } else {
+                        onComplete()
+                    }
+                }
+            }) {
+                Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(task.completed ? .green : .gray)
+                    .font(.title2)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(task.completed)
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(task.title)
                     .font(.subheadline)
@@ -1925,13 +2253,17 @@ struct EnhancedTaskRow: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(.blue)
-                    } else if task.verificationRequired {
+                    }
+
+                    if task.verificationRequired {
                         Button("📸 Verify") {
                             showingCamera = true
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                    } else {
+                    }
+
+                    if !needsLocationTracking && !task.verificationRequired {
                         Button("Complete") {
                             onComplete()
                         }
@@ -2000,22 +2332,66 @@ struct EnhancedTaskRow: View {
 struct EnhancedTasksView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @State private var showingAddTask = false
-    
+
+    var incompleteTasks: [TaskItem] {
+        model.recentTasks.filter { !$0.completed }
+    }
+
+    var completedTasks: [TaskItem] {
+        model.recentTasks.filter { $0.completed }
+    }
+
     var body: some View {
         NavigationView {
             List {
-                Section("Available Tasks") {
-                    ForEach(model.recentTasks.indices, id: \.self) { index in
-                        EnhancedTaskRow(
-                            task: model.recentTasks[index],
-                            onComplete: {
-                                model.completeTask(model.recentTasks[index])
-                                model.recentTasks[index].completed = true
-                            },
-                            onCompleteWithPhoto: { photo in
-                                model.completeTaskWithPhoto(model.recentTasks[index], photo: photo)
-                            }
-                        )
+                if !incompleteTasks.isEmpty {
+                    Section("To Do") {
+                        ForEach(incompleteTasks.indices, id: \.self) { index in
+                            let task = incompleteTasks[index]
+                            EnhancedTaskRow(
+                                task: task,
+                                onComplete: {
+                                    if let originalIndex = model.recentTasks.firstIndex(where: { $0.id == task.id }) {
+                                        model.completeTask(model.recentTasks[originalIndex])
+                                        model.recentTasks[originalIndex].completed = true
+                                    }
+                                },
+                                onCompleteWithPhoto: { photo in
+                                    if let originalIndex = model.recentTasks.firstIndex(where: { $0.id == task.id }) {
+                                        model.completeTaskWithPhoto(model.recentTasks[originalIndex], photo: photo)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if !completedTasks.isEmpty {
+                    Section("Completed") {
+                        ForEach(completedTasks, id: \.id) { task in
+                            EnhancedTaskRow(
+                                task: task,
+                                onComplete: {},
+                                onCompleteWithPhoto: { _ in }
+                            )
+                        }
+                    }
+                }
+
+                if incompleteTasks.isEmpty && completedTasks.isEmpty {
+                    Section {
+                        VStack(spacing: 12) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary)
+                            Text("No tasks yet")
+                                .font(.headline)
+                            Text("Add your first task to get started!")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
                     }
                 }
             }
@@ -2413,58 +2789,98 @@ struct FriendLeaderboardRow: View {
 
 struct FriendActivityRow: View {
     let activity: FriendActivity
-    
+
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Enhanced avatar with gradient background
             Circle()
-                .fill(Color.green.opacity(0.3))
-                .frame(width: 35, height: 35)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.green.opacity(0.6), Color.blue.opacity(0.4)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 42, height: 42)
                 .overlay(
                     Text(String(activity.username.prefix(1)))
-                        .font(.caption)
-                        .fontWeight(.semibold)
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
                 )
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(activity.username)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(activity.username)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    if activity.hasVerificationPhoto {
+                        Image(systemName: "camera.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+
+                    Spacer()
+
+                    Text(timeAgo(activity.timestamp))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Text(activity.activity)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                if let location = activity.location {
-                    Text("📍 \(location)")
-                        .font(.caption)
-                        .foregroundColor(.blue)
+                    .multilineTextAlignment(.leading)
+
+                HStack {
+                    if let location = activity.location {
+                        Label(location, systemImage: "location.fill")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                        Text("\(activity.xpEarned) XP")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(6)
                 }
-                
+
                 if let photo = activity.verificationPhoto {
                     Image(uiImage: photo)
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(height: 80)
-                        .cornerRadius(8)
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 120)
+                        .clipped()
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 2)
                 }
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("+\(activity.xpEarned) XP")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.green)
-                if activity.hasVerificationPhoto {
-                    Image(systemName: "camera.fill")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                }
-                Text(timeAgo(activity.timestamp))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+        )
     }
     
     func timeAgo(_ date: Date) -> String {
@@ -2587,7 +3003,170 @@ struct EnhancedHomeView: View {
                         .background(Color.purple.opacity(0.1))
                         .cornerRadius(12)
                     }
-                    
+
+                    // Friends Activity Card
+                    if !model.friendActivities.isEmpty {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("Friends Activity")
+                                    .font(.headline)
+                                Spacer()
+                                NavigationLink(destination: FriendsView().environmentObject(model)) {
+                                    Text("See All")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+
+                            VStack(spacing: 8) {
+                                ForEach(Array(model.friendActivities.prefix(3)), id: \.id) { activity in
+                                    HStack {
+                                        Circle()
+                                            .fill(Color.green.opacity(0.3))
+                                            .frame(width: 32, height: 32)
+                                            .overlay(
+                                                Text(String(activity.username.prefix(1)))
+                                                    .font(.caption)
+                                                    .fontWeight(.semibold)
+                                            )
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(activity.username)
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Text(activity.activity)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+
+                                        Spacer()
+
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text("+\(activity.xpEarned) XP")
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.green)
+                                            Text(timeAgo(activity.timestamp))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
+
+                    // Current Tasks Card
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("Your Tasks")
+                                .font(.headline)
+                            Spacer()
+                            NavigationLink(destination: EnhancedTasksView().environmentObject(model)) {
+                                Text("See All")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+
+                        let incompleteTasks = model.recentTasks.filter { !$0.completed }
+                        let completedTasks = model.recentTasks.filter { $0.completed }
+
+                        if incompleteTasks.isEmpty && completedTasks.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("No tasks yet")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Button("Add your first task") {
+                                    showingAddTask = true
+                                }
+                                .font(.caption)
+                                .buttonStyle(.bordered)
+                            }
+                            .padding()
+                        } else {
+                            VStack(spacing: 8) {
+                                if !incompleteTasks.isEmpty {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("To Do (\(incompleteTasks.count))")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
+
+                                        ForEach(Array(incompleteTasks.prefix(3)), id: \.id) { task in
+                                            HStack {
+                                                Image(systemName: "circle")
+                                                    .foregroundColor(.gray)
+                                                    .font(.title3)
+
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(task.title)
+                                                        .font(.subheadline)
+                                                        .lineLimit(1)
+                                                    HStack {
+                                                        Text(task.category.rawValue)
+                                                            .font(.caption)
+                                                            .padding(.horizontal, 6)
+                                                            .padding(.vertical, 2)
+                                                            .background(Color.blue.opacity(0.2))
+                                                            .cornerRadius(4)
+                                                        Text("\(task.xpReward) XP")
+                                                            .font(.caption)
+                                                            .foregroundColor(.green)
+                                                    }
+                                                }
+
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 2)
+                                        }
+                                    }
+                                }
+
+                                if !completedTasks.isEmpty {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("Completed (\(completedTasks.count))")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.secondary)
+
+                                        ForEach(Array(completedTasks.prefix(2)), id: \.id) { task in
+                                            HStack {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.green)
+                                                    .font(.title3)
+
+                                                Text(task.title)
+                                                    .font(.subheadline)
+                                                    .strikethrough()
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+
+                                                Spacer()
+
+                                                Text("+\(task.xpReward) XP")
+                                                    .font(.caption)
+                                                    .foregroundColor(.green)
+                                            }
+                                            .padding(.vertical, 2)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+
                     Spacer(minLength: 50)
                 }
                 .padding()
@@ -2605,6 +3184,15 @@ struct EnhancedHomeView: View {
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private func timeAgo(_ date: Date) -> String {
+        let interval = Date().timeIntervalSince(date)
+        if interval < 3600 {
+            return "\(Int(interval / 60))m ago"
+        } else {
+            return "\(Int(interval / 3600))h ago"
+        }
     }
 }
 
@@ -2645,6 +3233,51 @@ struct StatCard: View {
     }
 }
 
+// MARK: - Inline Add Task View
+struct InlineAddTaskView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var taskTitle = ""
+    @State private var selectedCategory: TaskCategory = .custom
+    let onCancel: () -> Void
+    let onAdd: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            TextField("Task title", text: $taskTitle)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+
+            Picker("Category", selection: $selectedCategory) {
+                ForEach(TaskCategory.allCases, id: \.self) { category in
+                    Text(category.rawValue).tag(category)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    onCancel()
+                }
+                .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button("Add Task") {
+                    let _ = model.createCustomTask(
+                        title: taskTitle,
+                        category: selectedCategory
+                    )
+                    onAdd()
+                }
+                .disabled(taskTitle.isEmpty)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+}
+
 // MARK: - Add Task View
 struct AddTaskView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
@@ -2652,8 +3285,6 @@ struct AddTaskView: View {
     
     @State private var taskTitle = ""
     @State private var selectedCategory: TaskCategory = .custom
-    @State private var estimatedMinutes = 30
-    @State private var suggestedXP = 15
     
     var body: some View {
         NavigationView {
@@ -2666,25 +3297,8 @@ struct AddTaskView: View {
                             Text(category.rawValue).tag(category)
                         }
                     }
-                    
-                    Stepper("Estimated time: \(estimatedMinutes) minutes", value: $estimatedMinutes, in: 5...180, step: 5)
-                        .onChange(of: estimatedMinutes) { _, _ in
-                            updateSuggestedXP()
-                        }
-                        .onChange(of: selectedCategory) { _, _ in
-                            updateSuggestedXP()
-                        }
                 }
                 
-                Section("Reward") {
-                    HStack {
-                        Text("Suggested XP")
-                        Spacer()
-                        Text("\(suggestedXP) XP")
-                            .foregroundColor(.green)
-                            .fontWeight(.medium)
-                    }
-                }
             }
             .navigationTitle("Add Task")
             .navigationBarTitleDisplayMode(.inline)
@@ -2699,182 +3313,12 @@ struct AddTaskView: View {
                     Button("Add") {
                         let _ = model.createCustomTask(
                             title: taskTitle,
-                            category: selectedCategory,
-                            estimatedMinutes: estimatedMinutes
+                            category: selectedCategory
                         )
                         dismiss()
                     }
                     .disabled(taskTitle.isEmpty)
                 }
-            }
-        }
-        .onAppear {
-            updateSuggestedXP()
-        }
-    }
-    
-    func updateSuggestedXP() {
-        suggestedXP = model.calculateXPForTask(category: selectedCategory, minutes: estimatedMinutes)
-    }
-}
-
-// MARK: - Screen Time View
-struct ScreenTimeView: View {
-    @EnvironmentObject var model: EnhancedScreenTimeModel
-    @State private var isPickerPresented = false
-    
-    var body: some View {
-        NavigationView {
-            List {
-                Section("Authorization") {
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        Text(model.authorizationStatus)
-                            .foregroundColor(model.isAuthorized ? .green : .orange)
-                    }
-                    
-                    if !model.isAuthorized {
-                        Button("Request Screen Time Permission") {
-                            Task {
-                                await model.requestAuthorization()
-                            }
-                        }
-                    }
-                }
-                
-                if model.isAuthorized {
-                    Section("App Selection") {
-                        Button("Choose Apps to Restrict") {
-                            isPickerPresented = true
-                        }
-                        .familyActivityPicker(
-                            isPresented: $isPickerPresented,
-                            selection: $model.selectedAppsToDiscourage
-                        )
-                    }
-                    
-                    Section("Manual Controls") {
-                        Button("Apply Restrictions Now") {
-                            model.startAppRestrictions()
-                        }
-                        .foregroundColor(.red)
-                        
-                        Button("Remove All Restrictions") {
-                            model.removeAppRestrictions()
-                        }
-                        .foregroundColor(.green)
-                    }
-                }
-            }
-            .navigationTitle("Screen Time")
-        }
-    }
-}
-
-// MARK: - Profile View
-// MARK: - Profile View
-struct ProfileView: View {
-    @EnvironmentObject var model: EnhancedScreenTimeModel
-    @State private var showingNotificationSettings = false
-    
-    var body: some View {
-        NavigationView {
-            List {
-                Section {
-                    HStack {
-                        Circle()
-                            .fill(Color.purple.opacity(0.3))
-                            .frame(width: 60, height: 60)
-                            .overlay(
-                                Text(String(model.currentUser.username.prefix(1)))
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                            )
-                        
-                        VStack(alignment: .leading) {
-                            Text(model.currentUser.username)
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Text("Credibility: \(Int(model.currentUser.credibilityScore))%")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.vertical, 8)
-                }
-                
-                Section("Statistics") {
-                    HStack {
-                        Text("Total XP Earned")
-                        Spacer()
-                        Text("\(model.currentUser.totalXPEarned)")
-                            .fontWeight(.semibold)
-                    }
-                    
-                    HStack {
-                        Text("Current XP Balance")
-                        Spacer()
-                        Text("\(model.currentUser.xpBalance)")
-                            .fontWeight(.semibold)
-                    }
-                    
-                    HStack {
-                        Text("Friends")
-                        Spacer()
-                        Text("\(model.friends.count)")
-                            .fontWeight(.semibold)
-                    }
-                }
-                
-                Section("Settings") {
-                    Button(action: {
-                        showingNotificationSettings = true
-                    }) {
-                        HStack {
-                            Image(systemName: "bell")
-                                .foregroundColor(.blue)
-                            Text("Notifications")
-                            Spacer()
-                            if model.notificationManager.hasPermission {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                        }
-                    }
-                    
-                    HStack {
-                        Image(systemName: "location")
-                            .foregroundColor(.blue)
-                        Text("Location Sharing")
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { model.currentUser.isSharingLocation },
-                            set: { newValue in
-                                if newValue {
-                                    model.startLocationSharing()
-                                } else {
-                                    model.stopLocationSharing()
-                                }
-                            }
-                        ))
-                        .labelsHidden()
-                    }
-                }
-                
-                Section {
-                    Button("Test Friend Activity Notification") {
-                        model.simulateFriendActivity()
-                    }
-                    .foregroundColor(.blue)
-                }
-            }
-            .navigationTitle("Profile")
-            .sheet(isPresented: $showingNotificationSettings) {
-                NotificationSettingsView()
-                    .environmentObject(model)
             }
         }
     }

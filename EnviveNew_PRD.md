@@ -68,8 +68,9 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
 #### **Frameworks & Technologies**
 - **SwiftUI**: Modern declarative UI framework
 - **Core Data**: Local data persistence
-- **FamilyControls**: iOS screen time management
-- **ManagedSettings**: App restriction controls
+- **FamilyControls**: iOS screen time management and authorization
+- **ManagedSettings**: App restriction controls and enforcement
+- **DeviceActivity**: Activity monitoring and scheduling framework
 - **CoreLocation**: GPS and location services
 - **MapKit**: Map integration and visualization
 - **AVFoundation**: Camera and media capture
@@ -84,6 +85,7 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
 - **TaskItem**: Activities with XP rewards, verification, location data
 - **FriendActivity**: Social activity feed with kudos system
 - **LocationTrackingPoint**: GPS tracking data for activities
+- **ScreenTimeActivity**: Screen time sessions, earned minutes, usage tracking
 
 ---
 
@@ -169,6 +171,13 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
   - [x] Daily reminder system
 
 ### 🔧 **Phase 5: Polish & Enhancement (Next Phase)**
+- [ ] **Modern Screen Time API Implementation**
+  - [ ] DeviceActivity framework integration
+  - [ ] DeviceActivityMonitor extension creation
+  - [ ] Advanced app scheduling and time limits
+  - [ ] Usage threshold monitoring and events
+  - [ ] Enhanced XP-to-screen-time conversion system
+
 - [ ] **Data Persistence & Sync**
   - [ ] Supabase backend integration
   - [ ] Real-time data synchronization
@@ -281,13 +290,42 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
 
 ---
 
+## Technical Implementation References
+
+### **Screen Time API Implementation Guide**
+
+A comprehensive implementation guide for upgrading EnviveNew's screen time management to use Apple's modern Screen Time APIs has been created: `ScreenTime_API_Implementation_Guide.md`
+
+**Key Implementation Areas:**
+- **DeviceActivity Framework**: Background monitoring and scheduling
+- **Enhanced ManagedSettings**: Advanced restriction capabilities
+- **DeviceActivityMonitor Extension**: Background activity processing
+- **XP Integration**: Seamless reward system with screen time earning
+- **Advanced Scheduling**: Timer-based and usage threshold monitoring
+
+**Migration Strategy:**
+1. **Phase 1**: Parallel implementation alongside existing system
+2. **Phase 2**: Enhanced features using new capabilities
+3. **Phase 3**: Full migration with user data preservation
+
+**Requirements:**
+- Apple Developer Program membership
+- Special entitlement request (`com.apple.developer.family-controls`)
+- iOS 15.0+ (iOS 16.0+ for advanced features)
+- Physical device testing (Simulator not supported)
+
+See the complete implementation guide for detailed code examples, setup instructions, and integration patterns.
+
+---
+
 ## Next Steps
 
-1. **Complete Supabase Integration**: Implement real-time data sync
-2. **Beta Testing Program**: Family and friend group testing
-3. **Performance Optimization**: Location services and battery usage
-4. **Privacy Audit**: Ensure compliance with child privacy regulations
-5. **App Store Submission**: Prepare for public release
+1. **Implement Modern Screen Time APIs**: Upgrade to DeviceActivity framework with comprehensive monitoring
+2. **Complete Supabase Integration**: Implement real-time data sync
+3. **Beta Testing Program**: Family and friend group testing
+4. **Performance Optimization**: Location services and battery usage
+5. **Privacy Audit**: Ensure compliance with child privacy regulations
+6. **App Store Submission**: Prepare for public release
 
 ---
 
