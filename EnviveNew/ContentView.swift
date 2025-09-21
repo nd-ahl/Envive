@@ -551,9 +551,21 @@ class CameraManager: NSObject, ObservableObject {
     func setupDualCamera() {
         frontCaptureSession = AVCaptureSession()
         backCaptureSession = AVCaptureSession()
-        
+
         setupCaptureSession(session: frontCaptureSession!, position: .front)
         setupCaptureSession(session: backCaptureSession!, position: .back)
+    }
+
+    func startSession() {
+        DispatchQueue.global(qos: .background).async {
+            self.frontCaptureSession?.startRunning()
+            self.backCaptureSession?.startRunning()
+        }
+    }
+
+    func stopSession() {
+        frontCaptureSession?.stopRunning()
+        backCaptureSession?.stopRunning()
     }
     
     private func setupCaptureSession(session: AVCaptureSession, position: AVCaptureDevice.Position) {
@@ -1652,17 +1664,21 @@ class CameraViewController: UIViewController {
     
     private func setupUI() {
         view.backgroundColor = .black
-        
+
         let backPreviewView = UIView()
         backPreviewView.translatesAutoresizingMaskIntoConstraints = false
+        backPreviewView.tag = 101 // Tag for back camera
+        backPreviewView.backgroundColor = .darkGray
         view.addSubview(backPreviewView)
-        
+
         let frontPreviewView = UIView()
         frontPreviewView.translatesAutoresizingMaskIntoConstraints = false
+        frontPreviewView.tag = 100 // Tag for front camera
         frontPreviewView.layer.borderColor = UIColor.white.cgColor
         frontPreviewView.layer.borderWidth = 2
         frontPreviewView.layer.cornerRadius = 10
         frontPreviewView.clipsToBounds = true
+        frontPreviewView.backgroundColor = .darkGray
         view.addSubview(frontPreviewView)
         
         let captureButton = UIButton(type: .system)
@@ -1753,16 +1769,47 @@ class CameraViewController: UIViewController {
     
     private func setupCamera() {
         cameraManager?.setupDualCamera()
+
+        // Setup preview layers after camera setup
+        DispatchQueue.main.async {
+            if let frontSession = self.cameraManager?.frontCaptureSession,
+               let frontPreviewView = self.view.subviews.first(where: { $0.tag == 100 }) {
+                self.frontPreviewLayer = AVCaptureVideoPreviewLayer(session: frontSession)
+                self.frontPreviewLayer?.videoGravity = .resizeAspectFill
+                self.frontPreviewLayer?.frame = frontPreviewView.bounds
+                frontPreviewView.layer.addSublayer(self.frontPreviewLayer!)
+            }
+
+            if let backSession = self.cameraManager?.backCaptureSession,
+               let backPreviewView = self.view.subviews.first(where: { $0.tag == 101 }) {
+                self.backPreviewLayer = AVCaptureVideoPreviewLayer(session: backSession)
+                self.backPreviewLayer?.videoGravity = .resizeAspectFill
+                self.backPreviewLayer?.frame = backPreviewView.bounds
+                backPreviewView.layer.addSublayer(self.backPreviewLayer!)
+            }
+        }
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         cameraManager?.startSession()
-        
+
         DispatchQueue.main.async {
-            self.frontPreviewLayer?.frame = self.view.subviews[1].bounds
-            self.backPreviewLayer?.frame = self.view.subviews[0].bounds
+            if let frontPreview = self.frontPreviewLayer,
+               self.view.subviews.count > 1 {
+                frontPreview.frame = self.view.subviews[1].bounds
+            }
+            if let backPreview = self.backPreviewLayer,
+               self.view.subviews.count > 0 {
+                backPreview.frame = self.view.subviews[0].bounds
+            }
         }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        cameraManager?.stopSession()
+    }
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -2005,11 +2052,10 @@ struct ContentView: View {
                 }
                 .tag(3)
             
-            IntegratedScreenTimeView()
-                .environmentObject(model)
+            SafariTestView()
                 .tabItem {
-                    Image(systemName: "hourglass")
-                    Text("Screen Time")
+                    Image(systemName: "safari.fill")
+                    Text("Safari Test")
                 }
                 .tag(4)
             
@@ -4175,6 +4221,168 @@ struct IntegratedScreenTimeView: View {
             .cornerRadius(12)
         }
         .disabled(!appSelectionStore.hasSelectedApps && title != "Stop All")
+    }
+}
+
+// MARK: - Safari Test View
+struct SafariTestView: View {
+    @StateObject private var screenTimeManager = ScreenTimeManager()
+    @StateObject private var settingsManager = SettingsManager()
+    @StateObject private var scheduler = ActivityScheduler()
+    @StateObject private var appSelectionStore = AppSelectionStore()
+
+    @State private var showingAppPicker = false
+    @State private var sessionDuration = 2
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                headerSection
+                authorizationSection
+
+                if screenTimeManager.isAuthorized {
+                    safariSetupSection
+                    sessionSection
+                    instructionsSection
+                }
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Safari Blocking Test")
+        }
+    }
+
+    private var headerSection: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "safari.fill")
+                .font(.system(size: 50))
+                .foregroundColor(.blue)
+
+            Text("Safari Blocking Test")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Test Safari blocking with custom shield")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var authorizationSection: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.orange)
+
+            Text("Demo Mode")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Screen Time APIs require Apple approval. This demo shows how the blocking would work.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button("Continue Demo") {
+                // Simulate authorization success
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+    }
+
+    private var safariSetupSection: some View {
+        VStack(spacing: 16) {
+            Text("Safari Setup")
+                .font(.headline)
+
+            Button("Select Safari") {
+                showingAppPicker = true
+            }
+            .buttonStyle(.borderedProminent)
+            .familyActivityPicker(
+                isPresented: $showingAppPicker,
+                selection: $appSelectionStore.familyActivitySelection
+            )
+            .onChange(of: appSelectionStore.familyActivitySelection) { _ in
+                appSelectionStore.saveSelection()
+            }
+
+            Text("Selected: \(appSelectionStore.familyActivitySelection.applicationTokens.count) apps")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private var sessionSection: some View {
+        VStack(spacing: 16) {
+            Text("Session Control")
+                .font(.headline)
+
+            Picker("Duration", selection: $sessionDuration) {
+                Text("1 min").tag(1)
+                Text("2 min").tag(2)
+                Text("5 min").tag(5)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+
+            Button("Start Session") {
+                startSession()
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button("End Session") {
+                endSession()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private var instructionsSection: some View {
+        VStack(spacing: 12) {
+            Text("How It Would Work")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("🔒 Safari would be blocked with custom shield")
+                Text("📱 Parent sets limits for child")
+                Text("⏱️ Child earns time through tasks")
+                Text("🔓 Sessions temporarily unblock apps")
+                Text("🔄 Auto-blocks when session ends")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+            Text("Requires Apple Developer Program + Entitlement Approval")
+                .font(.caption2)
+                .foregroundColor(.orange)
+                .padding(.top, 8)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+    }
+
+    private func startSession() {
+        settingsManager.unblockApps()
+        scheduler.startScreenTimeSession(durationMinutes: sessionDuration)
+        print("Started session")
+    }
+
+    private func endSession() {
+        scheduler.stopAllMonitoring()
+        settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+        print("Ended session")
     }
 }
 

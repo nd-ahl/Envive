@@ -58,15 +58,27 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
                 return
             }
 
+            // Create custom shield configuration for re-blocking
+            let shieldConfiguration = ShieldConfiguration(
+                backgroundBlurStyle: .systemThickMaterial,
+                backgroundColor: UIColor.systemRed,
+                icon: ShieldConfiguration.Icon(systemImageName: "hourglass.circle"),
+                title: ShieldConfiguration.Label(text: "Session Ended", color: .white),
+                subtitle: ShieldConfiguration.Label(text: "Your screen time session has ended. Complete more tasks to earn additional time!", color: .white),
+                primaryButtonLabel: ShieldConfiguration.Label(text: "Open EnviveNew", color: .white),
+                primaryButtonBackgroundColor: UIColor.systemBlue
+            )
+
             if !selection.applicationTokens.isEmpty {
                 store.shield.applications = selection.applicationTokens
+                store.shield.applicationConfiguration = shieldConfiguration
             }
 
             if !selection.categoryTokens.isEmpty {
                 store.shield.applicationCategories = .specific(selection.categoryTokens)
             }
 
-            logActivity("Screen time session ended - restrictions restored")
+            logActivity("Screen time session ended - Safari re-blocked with custom shield")
 
         case "timerRestriction", "dailyRestriction":
             // Remove restrictions when timer ends

@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>EnviveNew needs camera access to verify task completion with photos.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EnviveNew needs location access to track outdoor activities and verify task locations.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>EnviveNew needs location access to track outdoor activities and verify task locations.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>EnviveNew may use microphone for video recording during task verification.</string>
+</dict>
 </plist>
