@@ -1,5 +1,8 @@
 import ManagedSettings
 import FamilyControls
+import Combine
+import UIKit
+import SwiftUI
 
 class SettingsManager: ObservableObject {
     private let store = ManagedSettingsStore()
@@ -40,23 +43,10 @@ class SettingsManager: ObservableObject {
     // MARK: - Safari-specific blocking for testing
 
     func blockSafariWithCustomShield() {
-        // Create custom shield configuration
-        let shieldConfiguration = ShieldConfiguration(
-            backgroundBlurStyle: .systemThickMaterial,
-            backgroundColor: UIColor.systemRed,
-            icon: ShieldConfiguration.Icon(systemImageName: "hourglass.circle"),
-            title: ShieldConfiguration.Label(text: "Time Limit Reached", color: .white),
-            subtitle: ShieldConfiguration.Label(text: "You've reached your time limit on Safari. Complete tasks to earn more screen time!", color: .white),
-            primaryButtonLabel: ShieldConfiguration.Label(text: "OK", color: .white),
-            primaryButtonBackgroundColor: UIColor.systemBlue
-        )
-
-        // Apply shield to Safari (we'll need to get Safari's token through FamilyActivityPicker)
-        // For now, let's configure the shield and mark as blocked
-        store.shield.applicationCategories = .specific([])
-        isSafariBlocked = true
-
-        print("Safari blocked with custom shield")
+        // This function is deprecated - Safari blocking requires proper app selection
+        // Users must use the FamilyActivityPicker to select Safari and other apps
+        print("⚠️ Safari blocking requires app selection via FamilyActivityPicker. Use 'Limit App or Website' button instead.")
+        print("⚠️ Empty category blocking doesn't work - you need actual app tokens from selection.")
     }
 
     func unblockSafari() {
@@ -70,18 +60,7 @@ class SettingsManager: ObservableObject {
     func blockSafariFromSelection(_ selection: FamilyActivitySelection) {
         // Apply shield specifically to Safari if it's in the selection
         if !selection.applicationTokens.isEmpty {
-            let shieldConfiguration = ShieldConfiguration(
-                backgroundBlurStyle: .systemThickMaterial,
-                backgroundColor: UIColor.systemRed,
-                icon: ShieldConfiguration.Icon(systemImageName: "hourglass.circle"),
-                title: ShieldConfiguration.Label(text: "Time Limit Reached", color: .white),
-                subtitle: ShieldConfiguration.Label(text: "You've reached your time limit on Safari. Start a session in EnviveNew to continue!", color: .white),
-                primaryButtonLabel: ShieldConfiguration.Label(text: "Open EnviveNew", color: .white),
-                primaryButtonBackgroundColor: UIColor.systemBlue
-            )
-
             store.shield.applications = selection.applicationTokens
-            store.shield.applicationConfiguration = shieldConfiguration
         }
 
         if !selection.categoryTokens.isEmpty {
@@ -89,7 +68,7 @@ class SettingsManager: ObservableObject {
         }
 
         isSafariBlocked = true
-        print("Safari blocked with custom shield from selection")
+        print("Safari blocked from selection")
     }
 
     @available(iOS 16.0, *)

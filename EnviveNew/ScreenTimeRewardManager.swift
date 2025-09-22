@@ -32,19 +32,21 @@ class ScreenTimeRewardManager: ObservableObject {
             return false
         }
 
+        // Ensure app selection is saved to shared storage for the monitor extension
+        appSelectionStore.saveSelection()
+
         // Remove used minutes
         earnedMinutes -= durationMinutes
         saveEarnedMinutes()
 
-        // Temporarily lift restrictions for earned time
-        settingsManager.unblockApps()
+        // Update state
         isScreenTimeActive = true
         activeSessionMinutes = durationMinutes
 
-        // Schedule re-application of restrictions
+        // Start the device activity session (this will trigger the monitor extension to unblock apps)
         scheduler.startScreenTimeSession(durationMinutes: durationMinutes)
 
-        // Schedule end of session
+        // Schedule end of session as backup (the device activity monitor should handle this)
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(durationMinutes * 60)) {
             self.endScreenTimeSession()
         }
@@ -54,14 +56,18 @@ class ScreenTimeRewardManager: ObservableObject {
     }
 
     func endScreenTimeSession() {
-        // Re-apply restrictions using stored app selection
+        // Stop the device activity monitoring (this will trigger re-application of restrictions)
+        scheduler.stopAllMonitoring()
+
+        // Update state
+        isScreenTimeActive = false
+        activeSessionMinutes = 0
+
+        // Fallback: Re-apply restrictions using settings manager in case device activity monitor fails
         if appSelectionStore.hasSelectedApps {
             settingsManager.blockApps(appSelectionStore.familyActivitySelection)
         }
 
-        isScreenTimeActive = false
-        activeSessionMinutes = 0
-        scheduler.stopAllMonitoring()
         print("Ended screen time session")
     }
 

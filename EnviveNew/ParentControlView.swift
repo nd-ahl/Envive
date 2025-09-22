@@ -3,7 +3,7 @@ import FamilyControls
 
 struct ParentControlView: View {
     @StateObject private var screenTimeManager = ScreenTimeManager()
-    @StateObject private var appSelectionStore = AppSelectionStore()
+    @ObservedObject var appSelectionStore: AppSelectionStore
     @StateObject private var settingsManager = SettingsManager()
     @StateObject private var scheduler = ActivityScheduler()
 
@@ -71,7 +71,14 @@ struct ParentControlView: View {
 
                     Button("Enable Screen Time") {
                         Task {
-                            try? await screenTimeManager.requestAuthorization()
+                            do {
+                                print("🔘 Button pressed - requesting authorization...")
+                                try await screenTimeManager.requestAuthorization()
+                                print("✅ Authorization request completed successfully")
+                            } catch {
+                                print("❌ Authorization request failed: \(error)")
+                                print("❌ Error description: \(error.localizedDescription)")
+                            }
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -166,8 +173,10 @@ struct ParentControlView: View {
                 }
             }
 
-            Button("Select Apps to Manage") {
+            Button("Limit App or Website") {
+                print("🎯 'Limit App or Website' button tapped")
                 showingAppSelection = true
+                print("🎯 showingAppSelection set to: \(showingAppSelection)")
             }
             .buttonStyle(.bordered)
             .frame(maxWidth: .infinity)
@@ -319,6 +328,6 @@ struct ParentControlView: View {
 
 struct ParentControlView_Previews: PreviewProvider {
     static var previews: some View {
-        ParentControlView()
+        ParentControlView(appSelectionStore: AppSelectionStore())
     }
 }

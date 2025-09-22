@@ -2,6 +2,7 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 import DeviceActivity
+import Combine
 
 class ScreenTimeManager: ObservableObject {
     private let authorizationCenter = AuthorizationCenter.shared
@@ -18,9 +19,19 @@ class ScreenTimeManager: ObservableObject {
     }
 
     func requestAuthorization() async throws {
-        try await authorizationCenter.requestAuthorization(for: .individual)
-        await MainActor.run {
-            updateAuthorizationStatus()
+        print("🔐 Requesting Screen Time authorization for child management...")
+        print("🔐 Current status before request: \(authorizationStatus)")
+
+        do {
+            try await authorizationCenter.requestAuthorization(for: .child)
+            await MainActor.run {
+                updateAuthorizationStatus()
+                print("🔐 Authorization request completed. New status: \(self.authorizationStatus)")
+            }
+        } catch {
+            print("❌ Screen Time authorization failed with error: \(error)")
+            print("❌ Error details: \(error.localizedDescription)")
+            throw error
         }
     }
 

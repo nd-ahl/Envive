@@ -2,6 +2,9 @@ import DeviceActivity
 import ManagedSettings
 import Foundation
 import FamilyControls
+import Combine
+import UIKit
+import SwiftUI
 
 // Note: This would typically be in a separate DeviceActivity Monitor Extension target
 // For now, including it in the main app for reference
@@ -9,7 +12,11 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
     let store = ManagedSettingsStore()
     let userDefaults = UserDefaults(suiteName: "group.com.envivenew.screentime")
 
-    override func intervalDidStart(for activity: DeviceActivityName) {
+    nonisolated override init() {
+        super.init()
+    }
+
+    nonisolated override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
 
         // Load app selection from shared storage
@@ -26,9 +33,10 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
             logActivity("Screen time session started - apps should be unblocked")
 
         case "timerRestriction", "dailyRestriction", "usageThreshold":
-            // Apply restrictions for blocking activities
+            // Apply restrictions for blocking activities with custom shield
             if !selection.applicationTokens.isEmpty {
                 store.shield.applications = selection.applicationTokens
+                store.shield.applicationCategories = .none
             }
 
             if !selection.categoryTokens.isEmpty {
@@ -39,6 +47,9 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
                 store.shield.webDomains = selection.webDomainTokens
             }
 
+            // Configure custom shield appearance
+            configureCustomShield(for: store)
+
             logActivity("Restrictions applied for activity: \(activity)")
 
         default:
@@ -46,7 +57,7 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
         }
     }
 
-    override func intervalDidEnd(for activity: DeviceActivityName) {
+    nonisolated override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
 
         switch activity.rawValue {
@@ -58,20 +69,9 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
                 return
             }
 
-            // Create custom shield configuration for re-blocking
-            let shieldConfiguration = ShieldConfiguration(
-                backgroundBlurStyle: .systemThickMaterial,
-                backgroundColor: UIColor.systemRed,
-                icon: ShieldConfiguration.Icon(systemImageName: "hourglass.circle"),
-                title: ShieldConfiguration.Label(text: "Session Ended", color: .white),
-                subtitle: ShieldConfiguration.Label(text: "Your screen time session has ended. Complete more tasks to earn additional time!", color: .white),
-                primaryButtonLabel: ShieldConfiguration.Label(text: "Open EnviveNew", color: .white),
-                primaryButtonBackgroundColor: UIColor.systemBlue
-            )
-
+            // Apply basic shield for re-blocking
             if !selection.applicationTokens.isEmpty {
                 store.shield.applications = selection.applicationTokens
-                store.shield.applicationConfiguration = shieldConfiguration
             }
 
             if !selection.categoryTokens.isEmpty {
@@ -90,7 +90,7 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
         }
     }
 
-    override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+    nonisolated override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
         super.eventDidReachThreshold(event, activity: activity)
 
         // Handle threshold events (time limits reached)
@@ -113,13 +113,13 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
         notifyMainApp(event: "thresholdReached", activity: activity.rawValue)
     }
 
-    override func intervalWillStartWarning(for activity: DeviceActivityName) {
+    nonisolated override func intervalWillStartWarning(for activity: DeviceActivityName) {
         super.intervalWillStartWarning(for: activity)
         logActivity("Warning: Activity will start soon: \(activity)")
         notifyMainApp(event: "willStart", activity: activity.rawValue)
     }
 
-    override func intervalWillEndWarning(for activity: DeviceActivityName) {
+    nonisolated override func intervalWillEndWarning(for activity: DeviceActivityName) {
         super.intervalWillEndWarning(for: activity)
         logActivity("Warning: Activity will end soon: \(activity)")
         notifyMainApp(event: "willEnd", activity: activity.rawValue)
@@ -159,6 +159,15 @@ class EnviveNewDeviceActivityMonitor: DeviceActivityMonitor {
         }
 
         userDefaults?.set(notifications, forKey: "monitorNotifications")
+    }
+
+    private func configureCustomShield(for store: ManagedSettingsStore) {
+        // Configure the shield to use our custom Shield Configuration Extension
+        store.shield.applicationCategories = ShieldSettings.ActivityCategoryPolicy.specific([], except: Set())
+
+        // This tells the system to use our ShieldConfigurationExtension
+        // The extension bundle identifier should match our project configuration
+        logActivity("Custom shield configuration applied with ShieldConfigurationExtension")
     }
 }
 

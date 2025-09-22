@@ -1,6 +1,7 @@
 import DeviceActivity
 import Foundation
 import FamilyControls
+import Combine
 
 class ActivityScheduler: ObservableObject {
     private let center = DeviceActivityCenter()

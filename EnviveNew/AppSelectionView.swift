@@ -17,12 +17,14 @@ struct AppSelectionView: View {
                 .foregroundColor(.secondary)
 
             Button(action: {
+                print("🎯 'Choose Apps and Websites' button tapped")
                 isPresentingPicker = true
+                print("🎯 isPresentingPicker set to: \(isPresentingPicker)")
             }) {
                 HStack {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
-                    Text("Select Apps to Manage")
+                    Text("Choose Apps and Websites")
                         .fontWeight(.medium)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -34,6 +36,12 @@ struct AppSelectionView: View {
                 isPresented: $isPresentingPicker,
                 selection: $selectedApps
             )
+            .onChange(of: isPresentingPicker) { newValue in
+                print("🎯 FamilyActivityPicker presentation state changed to: \(newValue)")
+            }
+            .onChange(of: selectedApps) { newSelection in
+                print("🎯 App selection changed - Apps: \(newSelection.applicationTokens.count), Categories: \(newSelection.categoryTokens.count), Websites: \(newSelection.webDomainTokens.count)")
+            }
 
             if !selectedApps.applicationTokens.isEmpty || !selectedApps.categoryTokens.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {

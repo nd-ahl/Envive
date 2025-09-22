@@ -3,6 +3,7 @@ import FamilyControls
 
 struct IntegratedScreenTimeView: View {
     @StateObject private var screenTimeManager = ScreenTimeManager()
+    @StateObject private var appSelectionStore = AppSelectionStore()
     @State private var userType: UserType = .child // This would come from your user authentication
     @State private var selectedTab: ScreenTimeTab = .child
 
@@ -134,7 +135,7 @@ struct IntegratedScreenTimeView: View {
                     .padding()
 
             case .parent:
-                ParentControlView()
+                ParentControlView(appSelectionStore: appSelectionStore)
                     .padding()
             }
         }

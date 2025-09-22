@@ -500,18 +500,50 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 }
 
-// MARK: - Camera Manager
+// MARK: - Photo Storage Model
+struct SavedPhoto: Codable, Identifiable {
+    let id = UUID()
+    let fileName: String
+    let timestamp: Date
+    let taskTitle: String
+}
+
+// MARK: - Enhanced Camera Manager
 class CameraManager: NSObject, ObservableObject {
     @Published var capturedImage: UIImage?
     @Published var frontCameraImage: UIImage?
     @Published var backCameraImage: UIImage?
     @Published var isShowingCamera = false
     @Published var cameraError: String?
+    @Published var savedPhotos: [SavedPhoto] = []
+    @Published var isCapturing = false
+    @Published var cameraStatus: CameraStatus = .initializing
 
+    enum CameraStatus {
+        case initializing
+        case ready
+        case frontOnly
+        case backOnly
+        case failed
+        case capturing
+    }
+
+    // Enhanced dual camera system
+    private var dualCaptureSession: AVCaptureSession?
     var frontCaptureSession: AVCaptureSession?
     var backCaptureSession: AVCaptureSession?
+    private var frontCamera: AVCaptureDevice?
+    private var backCamera: AVCaptureDevice?
+    private var frontInput: AVCaptureDeviceInput?
+    private var backInput: AVCaptureDeviceInput?
     var frontPhotoOutput: AVCapturePhotoOutput?
     var backPhotoOutput: AVCapturePhotoOutput?
+
+    // Capture synchronization
+    private var captureCompletionHandler: ((UIImage?) -> Void)?
+    private var frontImageCaptured = false
+    private var backImageCaptured = false
+    private let captureQueue = DispatchQueue(label: "com.envive.camera.capture", qos: .userInitiated)
 
     // Check if running in simulator
     private var isSimulator: Bool {
@@ -524,17 +556,89 @@ class CameraManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        checkCameraPermissions()
+        loadSavedPhotos()
+        setupDualCameraSystem()
+    }
+
+    // MARK: - Photo Storage Methods
+    private var documentsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    private var photosDirectory: URL {
+        documentsDirectory.appendingPathComponent("EnvivePhotos")
+    }
+
+    private var photosMetadataURL: URL {
+        documentsDirectory.appendingPathComponent("savedPhotos.json")
+    }
+
+    private func createPhotosDirectoryIfNeeded() {
+        if !FileManager.default.fileExists(atPath: photosDirectory.path) {
+            try? FileManager.default.createDirectory(at: photosDirectory, withIntermediateDirectories: true)
+        }
+    }
+
+    func savePhoto(_ image: UIImage, taskTitle: String) -> Bool {
+        createPhotosDirectoryIfNeeded()
+
+        let fileName = "photo_\(Date().timeIntervalSince1970).jpg"
+        let fileURL = photosDirectory.appendingPathComponent(fileName)
+
+        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+            print("❌ Failed to convert image to JPEG data")
+            return false
+        }
+
+        do {
+            try imageData.write(to: fileURL)
+            let savedPhoto = SavedPhoto(fileName: fileName, timestamp: Date(), taskTitle: taskTitle)
+            savedPhotos.append(savedPhoto)
+            saveSavedPhotosMetadata()
+            print("✅ Photo saved successfully: \(fileName)")
+            return true
+        } catch {
+            print("❌ Failed to save photo: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func loadSavedPhotos() {
+        guard let data = try? Data(contentsOf: photosMetadataURL),
+              let photos = try? JSONDecoder().decode([SavedPhoto].self, from: data) else {
+            savedPhotos = []
+            return
+        }
+        savedPhotos = photos
+    }
+
+    private func saveSavedPhotosMetadata() {
+        guard let data = try? JSONEncoder().encode(savedPhotos) else { return }
+        try? data.write(to: photosMetadataURL)
+    }
+
+    func loadPhoto(savedPhoto: SavedPhoto) -> UIImage? {
+        let fileURL = photosDirectory.appendingPathComponent(savedPhoto.fileName)
+        return UIImage(contentsOfFile: fileURL.path)
+    }
+
+    func deletePhoto(_ savedPhoto: SavedPhoto) {
+        let fileURL = photosDirectory.appendingPathComponent(savedPhoto.fileName)
+        try? FileManager.default.removeItem(at: fileURL)
+        savedPhotos.removeAll { $0.id == savedPhoto.id }
+        saveSavedPhotosMetadata()
     }
     
     func checkCameraPermissions() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            break
+            print("📹 Camera permissions already granted")
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
-                if !granted {
-                    DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    if granted {
+                        print("📹 Camera permissions granted")
+                    } else {
                         self.cameraError = "Camera access denied"
                     }
                 }
@@ -548,94 +652,73 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    func setupDualCamera() {
-        frontCaptureSession = AVCaptureSession()
-        backCaptureSession = AVCaptureSession()
 
-        setupCaptureSession(session: frontCaptureSession!, position: .front)
-        setupCaptureSession(session: backCaptureSession!, position: .back)
-    }
-
-    func startSession() {
-        DispatchQueue.global(qos: .background).async {
-            self.frontCaptureSession?.startRunning()
-            self.backCaptureSession?.startRunning()
+    func clearCapturedImages() {
+        DispatchQueue.main.async {
+            self.capturedImage = nil
+            self.frontCameraImage = nil
+            self.backCameraImage = nil
         }
-    }
-
-    func stopSession() {
-        frontCaptureSession?.stopRunning()
-        backCaptureSession?.stopRunning()
     }
     
-    private func setupCaptureSession(session: AVCaptureSession, position: AVCaptureDevice.Position) {
-        session.beginConfiguration()
-
-        defer {
-            // Always commit configuration, even if setup fails
-            session.commitConfiguration()
-        }
-
-        // In simulator, create mock photo outputs without camera devices
-        if isSimulator {
-            let photoOutput = AVCapturePhotoOutput()
-            if session.canAddOutput(photoOutput) {
-                session.addOutput(photoOutput)
-
-                if position == .front {
-                    frontPhotoOutput = photoOutput
-                } else {
-                    backPhotoOutput = photoOutput
-                }
-            }
-            return
-        }
-
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
-            cameraError = "Camera not available"
-            return
-        }
-
-        do {
-            let input = try AVCaptureDeviceInput(device: camera)
-
-            if session.canAddInput(input) {
-                session.addInput(input)
-            }
-
-            let photoOutput = AVCapturePhotoOutput()
-            if session.canAddOutput(photoOutput) {
-                session.addOutput(photoOutput)
-
-                if position == .front {
-                    frontPhotoOutput = photoOutput
-                } else {
-                    backPhotoOutput = photoOutput
-                }
-            }
-
-        } catch {
-            cameraError = "Camera setup failed: \(error.localizedDescription)"
-        }
-    }
     
     func takeDualPhoto() {
-        // In simulator, generate mock images
+        print("📸 takeDualPhoto called")
+
+        // Clear previous images before taking new ones
+        clearCapturedImages()
+
+        // Reset capture flags
+        frontImageCaptured = false
+        backImageCaptured = false
+
+        // Check if we're in simulator mode
         if isSimulator {
+            print("🤖 Running in simulator, generating mock images")
             generateMockImages()
             return
         }
 
-        guard let frontOutput = frontPhotoOutput,
-              let backOutput = backPhotoOutput else {
-            cameraError = "Camera not ready"
+        // Validate camera setup
+        guard let frontOutput = self.frontPhotoOutput,
+              let backOutput = self.backPhotoOutput,
+              let frontSession = self.frontCaptureSession,
+              let backSession = self.backCaptureSession else {
+            print("❌ Camera not properly initialized")
+            print("Front output: \(self.frontPhotoOutput != nil)")
+            print("Back output: \(self.backPhotoOutput != nil)")
+            print("Front session: \(self.frontCaptureSession != nil)")
+            print("Back session: \(self.backCaptureSession != nil)")
+
+            // Fallback to mock images if hardware fails
+            print("🔄 Falling back to mock images due to camera setup failure")
+            generateMockImages()
             return
         }
 
-        let settings = AVCapturePhotoSettings()
+        // Ensure sessions are running
+        if !frontSession.isRunning {
+            print("⚠️ Front session not running, starting...")
+            frontSession.startRunning()
+        }
+        if !backSession.isRunning {
+            print("⚠️ Back session not running, starting...")
+            backSession.startRunning()
+        }
 
-        frontOutput.capturePhoto(with: settings, delegate: self)
-        backOutput.capturePhoto(with: settings, delegate: self)
+        print("📷 Both cameras ready, taking photos...")
+
+        // Create separate settings for each camera
+        let frontSettings = AVCapturePhotoSettings()
+        frontSettings.isHighResolutionPhotoEnabled = true
+        let backSettings = AVCapturePhotoSettings()
+        backSettings.isHighResolutionPhotoEnabled = true
+
+        print("📷 Capturing front camera...")
+        frontOutput.capturePhoto(with: frontSettings, delegate: self)
+
+        print("📷 Capturing back camera...")
+        backOutput.capturePhoto(with: backSettings, delegate: self)
     }
 
     private func generateMockImages() {
@@ -646,7 +729,11 @@ class CameraManager: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.backCameraImage = mockBackImage
             self.frontCameraImage = mockFrontImage
-            self.capturedImage = self.combineDualImages()
+            self.frontImageCaptured = true
+            self.backImageCaptured = true
+
+            // Process captured images to trigger completion handler
+            self.processCapturedImages()
         }
     }
 
@@ -675,74 +762,81 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    func startSession() {
-        // Don't start camera sessions in simulator
-        guard !isSimulator else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            if let frontSession = self.frontCaptureSession, !frontSession.isRunning {
-                frontSession.startRunning()
-            }
-            if let backSession = self.backCaptureSession, !backSession.isRunning {
-                backSession.startRunning()
-            }
-        }
-    }
-    
-    func stopSession() {
-        // Don't stop camera sessions in simulator
-        guard !isSimulator else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            if let frontSession = self.frontCaptureSession, frontSession.isRunning {
-                frontSession.stopRunning()
-            }
-            if let backSession = self.backCaptureSession, backSession.isRunning {
-                backSession.stopRunning()
-            }
-        }
-    }
     
     func addTimestampWatermark(to image: UIImage, taskTitle: String) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: image.size)
-        
+
         return renderer.image { context in
             image.draw(at: .zero)
-            
+
             let formatter = DateFormatter()
             formatter.dateFormat = "MMM d, h:mm a"
             let timestamp = formatter.string(from: Date())
-            let watermarkText = "\(taskTitle) • \(timestamp)"
-            
-            let attributes: [NSAttributedString.Key: Any] = [
+
+            // Create Envive logo text
+            let logoText = "ENVIVE"
+            let logoAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 16, weight: .bold),
+                .foregroundColor: UIColor.systemGreen,
+                .strokeColor: UIColor.black,
+                .strokeWidth: -2.0
+            ]
+
+            // Create task and timestamp text
+            let infoText = "\(taskTitle) • \(timestamp)"
+            let infoAttributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 12, weight: .medium),
                 .foregroundColor: UIColor.white,
                 .strokeColor: UIColor.black,
                 .strokeWidth: -1.0
             ]
-            
-            let textSize = watermarkText.size(withAttributes: attributes)
+
+            let logoSize = logoText.size(withAttributes: logoAttributes)
+            let infoSize = infoText.size(withAttributes: infoAttributes)
+
+            // Calculate watermark dimensions
+            let maxWidth = max(logoSize.width, infoSize.width)
+            let totalHeight = logoSize.height + infoSize.height + 4 // 4pt spacing
             let padding: CGFloat = 15
-            let textRect = CGRect(
-                x: image.size.width - textSize.width - padding,
-                y: image.size.height - textSize.height - padding,
-                width: textSize.width,
-                height: textSize.height
+
+            // Position watermark in bottom-right corner
+            let watermarkRect = CGRect(
+                x: image.size.width - maxWidth - padding,
+                y: image.size.height - totalHeight - padding,
+                width: maxWidth,
+                height: totalHeight
             )
-            
+
+            // Create background
             let backgroundRect = CGRect(
-                x: textRect.origin.x - 8,
-                y: textRect.origin.y - 4,
-                width: textSize.width + 16,
-                height: textSize.height + 8
+                x: watermarkRect.origin.x - 8,
+                y: watermarkRect.origin.y - 8,
+                width: maxWidth + 16,
+                height: totalHeight + 16
             )
-            
-            context.cgContext.setFillColor(UIColor.black.withAlphaComponent(0.5).cgColor)
-            let path = UIBezierPath(roundedRect: backgroundRect, cornerRadius: 6)
+
+            context.cgContext.setFillColor(UIColor.black.withAlphaComponent(0.6).cgColor)
+            let path = UIBezierPath(roundedRect: backgroundRect, cornerRadius: 8)
             context.cgContext.addPath(path.cgPath)
             context.cgContext.fillPath()
-            
-            watermarkText.draw(in: textRect, withAttributes: attributes)
+
+            // Draw Envive logo
+            let logoRect = CGRect(
+                x: watermarkRect.origin.x + (maxWidth - logoSize.width) / 2,
+                y: watermarkRect.origin.y,
+                width: logoSize.width,
+                height: logoSize.height
+            )
+            logoText.draw(in: logoRect, withAttributes: logoAttributes)
+
+            // Draw task and timestamp info
+            let infoRect = CGRect(
+                x: watermarkRect.origin.x + (maxWidth - infoSize.width) / 2,
+                y: watermarkRect.origin.y + logoSize.height + 4,
+                width: infoSize.width,
+                height: infoSize.height
+            )
+            infoText.draw(in: infoRect, withAttributes: infoAttributes)
         }
     }
     
@@ -775,26 +869,458 @@ class CameraManager: NSObject, ObservableObject {
             frontImage.draw(in: frontImageRect)
         }
     }
+
+    // MARK: - Enhanced Dual Camera System (NEW)
+
+    func setupDualCameraSystem() {
+        print("🔧 Setting up enhanced dual camera system...")
+
+        DispatchQueue.main.async {
+            self.cameraStatus = .initializing
+            self.cameraError = nil
+        }
+
+        captureQueue.async {
+            self.requestCameraPermissions { [weak self] granted in
+                guard let self = self else { return }
+
+                guard granted else {
+                    print("❌ Camera permission denied")
+                    DispatchQueue.main.async {
+                        self.cameraError = "Camera permission denied"
+                        self.cameraStatus = .failed
+                    }
+                    return
+                }
+
+                // Add a small delay to ensure permission dialog is dismissed
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.captureQueue.async {
+                        self.initializeCameras()
+                    }
+                }
+            }
+        }
+    }
+
+    private func requestCameraPermissions(completion: @escaping (Bool) -> Void) {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            print("📹 Camera permissions already granted")
+            completion(true)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                print("📹 Camera permission request result: \(granted)")
+                completion(granted)
+            }
+        case .denied, .restricted:
+            print("❌ Camera access denied or restricted")
+            completion(false)
+        @unknown default:
+            completion(false)
+        }
+    }
+
+    private func initializeCameras() {
+        print("🔧 Initializing camera hardware...")
+
+        do {
+            // Stop any existing sessions safely
+            dualCaptureSession?.stopRunning()
+            frontCaptureSession?.stopRunning()
+            backCaptureSession?.stopRunning()
+
+            // Create separate capture sessions for compatibility with takeDualPhoto()
+            frontCaptureSession = AVCaptureSession()
+            backCaptureSession = AVCaptureSession()
+
+            guard let frontSession = frontCaptureSession,
+                  let backSession = backCaptureSession else {
+                DispatchQueue.main.async {
+                    self.cameraError = "Failed to create capture sessions"
+                    self.cameraStatus = .failed
+                }
+                return
+            }
+
+            // Set session presets for high quality
+            if frontSession.canSetSessionPreset(.photo) {
+                frontSession.sessionPreset = .photo
+            }
+            if backSession.canSetSessionPreset(.photo) {
+                backSession.sessionPreset = .photo
+            }
+
+            var frontCameraAvailable = false
+            var backCameraAvailable = false
+
+            // Setup front camera with error handling
+            do {
+                frontSession.beginConfiguration()
+                defer { frontSession.commitConfiguration() }
+
+                if setupCamera(position: .front, session: frontSession) {
+                    frontCameraAvailable = true
+                    print("✅ Front camera initialized successfully")
+                } else {
+                    print("❌ Front camera initialization failed")
+                }
+            }
+
+            // Setup back camera with error handling
+            do {
+                backSession.beginConfiguration()
+                defer { backSession.commitConfiguration() }
+
+                if setupCamera(position: .back, session: backSession) {
+                    backCameraAvailable = true
+                    print("✅ Back camera initialized successfully")
+                } else {
+                    print("❌ Back camera initialization failed")
+                }
+            }
+
+            // Determine final status
+            DispatchQueue.main.async {
+                if frontCameraAvailable && backCameraAvailable {
+                    self.cameraStatus = .ready
+                    print("✅ Dual camera system ready")
+                } else if frontCameraAvailable {
+                    self.cameraStatus = .frontOnly
+                    print("⚠️ Front camera only")
+                } else if backCameraAvailable {
+                    self.cameraStatus = .backOnly
+                    print("⚠️ Back camera only")
+                } else {
+                    self.cameraStatus = .failed
+                    self.cameraError = "No cameras available"
+                    print("❌ No cameras available")
+                }
+            }
+
+            // Start the sessions if at least one camera is available
+            if frontCameraAvailable || backCameraAvailable {
+                startCameraSession()
+            }
+
+        } catch {
+            print("❌ Camera initialization error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.cameraError = "Camera initialization failed: \(error.localizedDescription)"
+                self.cameraStatus = .failed
+            }
+        }
+    }
+
+    private func setupCamera(position: AVCaptureDevice.Position, session: AVCaptureSession) -> Bool {
+        let positionName = position == .front ? "Front" : "Back"
+
+        // Handle simulator
+        if isSimulator {
+            let photoOutput = AVCapturePhotoOutput()
+            if session.canAddOutput(photoOutput) {
+                session.addOutput(photoOutput)
+
+                if position == .front {
+                    frontPhotoOutput = photoOutput
+                } else {
+                    backPhotoOutput = photoOutput
+                }
+
+                print("🤖 Mock \(positionName) camera created for simulator")
+                return true
+            }
+            return false
+        }
+
+        // Find camera device
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+            print("❌ \(positionName) camera device not found")
+            return false
+        }
+
+        // Store camera reference
+        if position == .front {
+            frontCamera = camera
+        } else {
+            backCamera = camera
+        }
+
+        // Create input
+        do {
+            let input = try AVCaptureDeviceInput(device: camera)
+
+            if session.canAddInput(input) {
+                session.addInput(input)
+
+                // Store input reference
+                if position == .front {
+                    frontInput = input
+                } else {
+                    backInput = input
+                }
+
+                print("✅ \(positionName) camera input added")
+            } else {
+                print("❌ Cannot add \(positionName) camera input")
+                return false
+            }
+        } catch {
+            print("❌ Failed to create \(positionName) camera input: \(error)")
+            return false
+        }
+
+        // Create photo output
+        let photoOutput = AVCapturePhotoOutput()
+
+        if session.canAddOutput(photoOutput) {
+            session.addOutput(photoOutput)
+
+            // Store output reference
+            if position == .front {
+                frontPhotoOutput = photoOutput
+            } else {
+                backPhotoOutput = photoOutput
+            }
+
+            print("✅ \(positionName) camera output added")
+            return true
+        } else {
+            print("❌ Cannot add \(positionName) camera output")
+            return false
+        }
+    }
+
+    func startCameraSession() {
+        captureQueue.async {
+            self.frontCaptureSession?.startRunning()
+            self.backCaptureSession?.startRunning()
+            // Legacy support for dual session
+            self.dualCaptureSession?.startRunning()
+            print("📷 Camera sessions started")
+        }
+    }
+
+    func stopCameraSession() {
+        captureQueue.async {
+            self.frontCaptureSession?.stopRunning()
+            self.backCaptureSession?.stopRunning()
+            // Legacy support for dual session
+            self.dualCaptureSession?.stopRunning()
+            print("📷 Camera sessions stopped")
+        }
+    }
+
+    // MARK: - Enhanced Photo Capture
+
+    func capturePhoto(completion: @escaping (UIImage?) -> Void) {
+        print("📸 Starting dual camera capture...")
+
+        DispatchQueue.main.async {
+            self.isCapturing = true
+            self.cameraStatus = .capturing
+        }
+
+        captureCompletionHandler = completion
+        frontImageCaptured = false
+        backImageCaptured = false
+
+        // Clear previous images
+        clearCapturedImages()
+
+        if isSimulator {
+            generateEnhancedMockImages()
+            return
+        }
+
+        // Use the working takeDualPhoto implementation
+        captureQueue.async {
+            self.takeDualPhoto()
+        }
+    }
+
+
+    private func generateEnhancedMockImages() {
+        print("🤖 Generating enhanced mock images for simulator")
+
+        let mockBackImage = createEnhancedMockImage(text: "📷 Back Camera\nMock Photo", backgroundColor: .systemBlue)
+        let mockFrontImage = createEnhancedMockImage(text: "🤳 Front Camera\nMock Photo", backgroundColor: .systemGreen)
+
+        DispatchQueue.main.async {
+            self.backCameraImage = mockBackImage
+            self.frontCameraImage = mockFrontImage
+            self.frontImageCaptured = true
+            self.backImageCaptured = true
+            self.processCapturedImages()
+        }
+    }
+
+    private func createEnhancedMockImage(text: String, backgroundColor: UIColor) -> UIImage {
+        let size = CGSize(width: 400, height: 600)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            backgroundColor.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 28, weight: .bold),
+                .foregroundColor: UIColor.white,
+                .strokeColor: UIColor.black,
+                .strokeWidth: -2.0
+            ]
+
+            let attributedString = NSAttributedString(string: text, attributes: attributes)
+            let textSize = attributedString.size()
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            attributedString.draw(in: textRect)
+        }
+    }
+
+    private func processCapturedImages() {
+        // Create composite image from both cameras
+        if let compositeImage = combineEnhancedDualImages() {
+            DispatchQueue.main.async {
+                self.capturedImage = compositeImage
+                self.isCapturing = false
+                self.cameraStatus = .ready
+
+                // Call completion handler
+                self.captureCompletionHandler?(compositeImage)
+                self.captureCompletionHandler = nil
+
+                print("✅ Photo capture completed successfully")
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.isCapturing = false
+                self.cameraStatus = .ready
+                self.cameraError = "Failed to process captured images"
+
+                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler = nil
+
+                print("❌ Photo capture failed - could not process images")
+            }
+        }
+    }
+
+    func combineEnhancedDualImages() -> UIImage? {
+        // Handle cases where we only have one image
+        if let frontImage = frontCameraImage, backCameraImage == nil {
+            return frontImage
+        }
+
+        if let backImage = backCameraImage, frontCameraImage == nil {
+            return backImage
+        }
+
+        guard let frontImage = frontCameraImage,
+              let backImage = backCameraImage else {
+            return nil
+        }
+
+        // Create composite image with back camera as main and front as overlay
+        let mainSize = backImage.size
+        let renderer = UIGraphicsImageRenderer(size: mainSize)
+
+        return renderer.image { context in
+            // Draw main (back camera) image
+            backImage.draw(at: .zero)
+
+            // Calculate front camera overlay size and position
+            let overlaySize = CGSize(
+                width: mainSize.width * 0.25,
+                height: mainSize.height * 0.25
+            )
+
+            let overlayRect = CGRect(
+                x: mainSize.width - overlaySize.width - 20,
+                y: 20,
+                width: overlaySize.width,
+                height: overlaySize.height
+            )
+
+            // Draw border for front camera overlay
+            context.cgContext.setStrokeColor(UIColor.white.cgColor)
+            context.cgContext.setLineWidth(4)
+            context.cgContext.stroke(overlayRect.insetBy(dx: -2, dy: -2))
+
+            // Draw front camera image as overlay
+            frontImage.draw(in: overlayRect)
+        }
+    }
 }
 
 extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        guard let imageData = photo.fileDataRepresentation(),
-              let image = UIImage(data: imageData) else {
-            cameraError = "Failed to capture photo"
+        print("📷 Photo delegate called - processing photo")
+
+        if let error = error {
+            print("❌ Photo capture error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.cameraError = "Photo capture failed: \(error.localizedDescription)"
+                self.isCapturing = false
+                self.cameraStatus = .ready
+                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler = nil
+            }
             return
         }
-        
+
+        guard let imageData = photo.fileDataRepresentation(),
+              let image = UIImage(data: imageData) else {
+            print("❌ Failed to process photo data")
+            DispatchQueue.main.async {
+                self.cameraError = "Failed to process photo data"
+                self.isCapturing = false
+                self.cameraStatus = .ready
+                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler = nil
+            }
+            return
+        }
+
         DispatchQueue.main.async {
             if output == self.frontPhotoOutput {
+                print("📷 Front camera image captured")
                 self.frontCameraImage = image
+                self.frontImageCaptured = true
             } else if output == self.backPhotoOutput {
+                print("📷 Back camera image captured")
                 self.backCameraImage = image
+                self.backImageCaptured = true
             }
-            
-            if self.frontCameraImage != nil && self.backCameraImage != nil {
-                self.capturedImage = self.combineDualImages()
+
+            // Check if we have both images or enough for the capture type
+            let shouldProcess = self.shouldProcessCapturedImages()
+
+            if shouldProcess {
+                print("📷 Ready to process captured images...")
+                self.processCapturedImages()
             }
+        }
+    }
+
+    private func shouldProcessCapturedImages() -> Bool {
+        switch cameraStatus {
+        case .ready:
+            // Both cameras available - wait for both
+            return frontImageCaptured && backImageCaptured
+        case .frontOnly:
+            // Only front camera - process when front is captured
+            return frontImageCaptured
+        case .backOnly:
+            // Only back camera - process when back is captured
+            return backImageCaptured
+        default:
+            return false
         }
     }
 }
@@ -802,12 +1328,15 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
 // MARK: - Enhanced Screen Time Model with Friends
 class EnhancedScreenTimeModel: ObservableObject {
     @Published var isAuthorized = false
-    @Published var selectedAppsToDiscourage: FamilyActivitySelection = FamilyActivitySelection()
+    // Removed selectedAppsToDiscourage - now using appSelectionStore.familyActivitySelection
     @Published var authorizationStatus: String = "Not Requested"
     @Published var minutesEarned: Int = 45
     @Published var xpBalance: Int = 0
     @Published var isSessionActive = false
     @Published var sessionTimeRemaining: TimeInterval = 0
+    @Published var isSessionPaused = false
+    @Published var sessionTimeAllocated: TimeInterval = 0  // Total time user allocated for session
+    @Published var sessionTimeUsed: TimeInterval = 0      // Time actually spent/used
     
     // Social Features
     @Published var currentUser: User = User(username: "You", xpBalance: 0, totalXPEarned: 0, credibilityScore: 100.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false, currentLocation: nil, isSharingLocation: false)
@@ -830,6 +1359,8 @@ class EnhancedScreenTimeModel: ObservableObject {
 
     // Notifications
     @Published var notificationManager = NotificationManager()
+    // App Selection Store (shared with ParentControlView)
+    @Published var appSelectionStore = AppSelectionStore()
 
     private let center = AuthorizationCenter.shared
     private let store = ManagedSettingsStore()
@@ -844,6 +1375,9 @@ class EnhancedScreenTimeModel: ObservableObject {
 
         // Request notification permission on init
         notificationManager.requestPermission()
+
+        // Ensure apps are blocked if no session is active
+        ensureAppsAreBlocked()
     }
     
     // MARK: - Location Methods
@@ -1068,23 +1602,59 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     func startAppRestrictions() {
-        guard isAuthorized else { return }
+        guard isAuthorized else {
+            print("❌ Cannot start app restrictions - not authorized")
+            return
+        }
+
+        let selection = appSelectionStore.familyActivitySelection
+        print("🛡️ Starting app restrictions...")
+        print("🛡️ Selected apps: \(selection.applicationTokens.count)")
+        print("🛡️ Selected categories: \(selection.categoryTokens.count)")
+        print("🛡️ Selected websites: \(selection.webDomainTokens.count)")
+
         store.clearAllSettings()
-        
-        if !selectedAppsToDiscourage.applications.isEmpty {
-            let applicationTokens = Set(selectedAppsToDiscourage.applications.compactMap { $0.token })
-            store.shield.applications = applicationTokens
+
+        if !selection.applicationTokens.isEmpty {
+            store.shield.applications = selection.applicationTokens
+            print("🛡️ Applied shield to \(selection.applicationTokens.count) apps")
         }
-        
-        if !selectedAppsToDiscourage.categories.isEmpty {
-            let categoryTokens = Set(selectedAppsToDiscourage.categories.compactMap { $0.token })
-            store.shield.applicationCategories = ShieldSettings.ActivityCategoryPolicy.specific(categoryTokens)
+
+        if !selection.categoryTokens.isEmpty {
+            store.shield.applicationCategories = ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
+            print("🛡️ Applied shield to \(selection.categoryTokens.count) categories")
         }
+
+        if !selection.webDomainTokens.isEmpty {
+            store.shield.webDomains = selection.webDomainTokens
+            print("🛡️ Applied shield to \(selection.webDomainTokens.count) websites")
+        }
+
+        print("✅ App restrictions started successfully")
     }
     
     func removeAppRestrictions() {
-        guard isAuthorized else { return }
+        guard isAuthorized else {
+            print("❌ Cannot remove app restrictions - not authorized")
+            print("❌ Current authorization status: \(authorizationStatus)")
+            return
+        }
+
+        let selection = appSelectionStore.familyActivitySelection
+        print("🔓 Removing app restrictions...")
+        print("🔓 Clearing shields for \(selection.applicationTokens.count) apps")
+        print("🔓 Clearing shields for \(selection.categoryTokens.count) categories")
+        print("🔓 Clearing shields for \(selection.webDomainTokens.count) websites")
+
+        // Clear all shield settings
+        store.shield.applications = nil
+        store.shield.applicationCategories = nil
+        store.shield.webDomains = nil
+
+        // Also clear all other settings as a fallback
         store.clearAllSettings()
+
+        print("✅ App restrictions removed successfully")
     }
     
     func completeTask(_ task: TaskItem) {
@@ -1172,30 +1742,63 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     func startEarnedSession(duration: Int) {
-        guard duration <= minutesEarned, !isSessionActive else { return }
-        
+        print("🚀 Starting earned session...")
+        logCurrentShieldStatus()
+
+        print("🚀 Duration requested: \(duration) minutes")
+        print("🚀 Minutes available: \(minutesEarned)")
+        print("🚀 Is session active: \(isSessionActive)")
+        print("🚀 Is session paused: \(isSessionPaused)")
+        print("🚀 Authorization status: \(authorizationStatus)")
+
+        guard duration <= minutesEarned, !isSessionActive, !isSessionPaused else {
+            print("❌ Cannot start session - guard conditions failed")
+            logCurrentShieldStatus()
+            return
+        }
+
+        print("🔓 Removing app restrictions before starting session...")
         removeAppRestrictions()
+
         isSessionActive = true
+        isSessionPaused = false
         sessionTimeRemaining = TimeInterval(duration * 60)
-        minutesEarned -= duration
-        
+        sessionTimeAllocated = TimeInterval(duration * 60)
+        sessionTimeUsed = 0
+        print("✅ Session state updated - \(duration) minutes allocated")
+
         sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             DispatchQueue.main.async {
                 if self.sessionTimeRemaining > 0 {
                     self.sessionTimeRemaining -= 1
+                    self.sessionTimeUsed += 1
                 } else {
+                    print("⏰ Session timer expired - ending session")
                     self.endSession()
                 }
             }
         }
+        print("⏱️ Session timer started successfully")
+        logCurrentShieldStatus()
     }
     
     func endSession() {
         sessionTimer?.invalidate()
         sessionTimer = nil
+
+        // Deduct only the time actually used (in minutes)
+        let minutesUsed = Int(ceil(sessionTimeUsed / 60.0))
+        minutesEarned -= minutesUsed
+
+        // Reset session state
         isSessionActive = false
+        isSessionPaused = false
         sessionTimeRemaining = 0
+        sessionTimeAllocated = 0
+        sessionTimeUsed = 0
+
         startAppRestrictions()
+        print("Session ended. Used \(minutesUsed) minutes, \(minutesEarned) minutes remaining")
     }
     
     func pauseSession() {
@@ -1203,8 +1806,64 @@ class EnhancedScreenTimeModel: ObservableObject {
         sessionTimer = nil
         sessionWarningTimer?.invalidate()
         sessionWarningTimer = nil
+
+        // Mark session as paused instead of ending
         isSessionActive = false
+        isSessionPaused = true
+        // Keep sessionTimeRemaining and sessionTimeUsed values
+
         startAppRestrictions()
+        print("Session paused. Used \(Int(sessionTimeUsed / 60)) minutes so far, \(Int(sessionTimeRemaining / 60)) minutes remaining")
+    }
+
+    func resumeSession() {
+        guard isSessionPaused, sessionTimeRemaining > 0 else { return }
+
+        removeAppRestrictions()
+        isSessionActive = true
+        isSessionPaused = false
+
+        sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            DispatchQueue.main.async {
+                if self.sessionTimeRemaining > 0 {
+                    self.sessionTimeRemaining -= 1
+                    self.sessionTimeUsed += 1
+                } else {
+                    self.endSession()
+                }
+            }
+        }
+        print("Session resumed. \(Int(sessionTimeRemaining / 60)) minutes remaining")
+    }
+
+    // MARK: - Failsafe and Cleanup
+    func ensureAppsAreBlocked() {
+        // Failsafe: If no session is active or paused, ensure apps are blocked
+        if !isSessionActive && !isSessionPaused {
+            print("🔒 Ensuring apps are blocked (failsafe)")
+            startAppRestrictions()
+        }
+    }
+
+    // MARK: - Debug and Status Functions
+    func logCurrentShieldStatus() {
+        print("\n📊 CURRENT SHIELD STATUS:")
+        print("📊 Authorization Status: \(authorizationStatus)")
+        print("📊 Is Authorized: \(isAuthorized)")
+        print("📊 Is Session Active: \(isSessionActive)")
+        print("📊 Is Session Paused: \(isSessionPaused)")
+        print("📊 Minutes Earned: \(minutesEarned)")
+
+        let selection = appSelectionStore.familyActivitySelection
+        print("📊 Selected Apps: \(selection.applicationTokens.count)")
+        print("📊 Selected Categories: \(selection.categoryTokens.count)")
+        print("📊 Selected Websites: \(selection.webDomainTokens.count)")
+
+        if isSessionActive {
+            print("📊 Session Time Remaining: \(Int(sessionTimeRemaining / 60)) minutes")
+            print("📊 Session Time Used: \(Int(sessionTimeUsed / 60)) minutes")
+        }
+        print("📊 ===================\n")
     }
 
     // MARK: - Friend Activity Simulation
@@ -1253,6 +1912,69 @@ class EnhancedScreenTimeModel: ObservableObject {
         )
 
         friendActivities.insert(friendActivity, at: 0)
+    }
+
+    // MARK: - Social Feed Integration
+
+    func createSocialPost(with image: UIImage, taskTitle: String, xpEarned: Int, location: String? = nil) {
+        print("📱 Creating social post for task: \(taskTitle)")
+
+        // Create activity for current user
+        let userActivity = FriendActivity(
+            userId: currentUser.id.uuidString,
+            username: currentUser.username,
+            activity: taskTitle,
+            xpEarned: xpEarned,
+            timestamp: Date(),
+            location: location,
+            locationCoordinate: locationManager.currentLocation?.coordinate,
+            kudos: 0,
+            hasVerificationPhoto: true,
+            verificationPhoto: image,
+            trackingRoute: nil
+        )
+
+        // Add to the top of friend activities (social feed)
+        DispatchQueue.main.async {
+            self.friendActivities.insert(userActivity, at: 0)
+            print("✅ Social post created successfully")
+        }
+
+        // Send notification to friends
+        notificationManager.sendFriendCompletedTaskNotification(
+            friendName: currentUser.username,
+            taskTitle: taskTitle,
+            xpEarned: xpEarned,
+            hasPhoto: true
+        )
+
+        // Simulate friends seeing the post (for demo purposes)
+        simulateFriendEngagement(for: userActivity)
+    }
+
+    private func simulateFriendEngagement(for activity: FriendActivity) {
+        // Simulate some friends giving kudos after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 2...10)) {
+            if let index = self.friendActivities.firstIndex(where: { $0.id == activity.id }) {
+                let newKudos = Int.random(in: 1...3)
+                let updatedActivity = FriendActivity(
+                    userId: activity.userId,
+                    username: activity.username,
+                    activity: activity.activity,
+                    xpEarned: activity.xpEarned,
+                    timestamp: activity.timestamp,
+                    location: activity.location,
+                    locationCoordinate: activity.locationCoordinate,
+                    kudos: activity.kudos + newKudos,
+                    hasVerificationPhoto: activity.hasVerificationPhoto,
+                    verificationPhoto: activity.verificationPhoto,
+                    trackingRoute: activity.trackingRoute
+                )
+
+                self.friendActivities[index] = updatedActivity
+                print("👍 Friends gave \(newKudos) kudos to your post!")
+            }
+        }
     }
 }
 
@@ -1650,16 +2372,44 @@ class CameraViewController: UIViewController {
     var taskTitle: String = ""
     var onPhotoTaken: ((UIImage) -> Void)?
     var onDismiss: (() -> Void)?
-    
+
     private var frontPreviewLayer: AVCaptureVideoPreviewLayer?
     private var backPreviewLayer: AVCaptureVideoPreviewLayer?
-    private var countdownLabel: UILabel?
     private var captureButton: UIButton?
+    private var retakeButton: UIButton?
+    private var usePhotoButton: UIButton?
+    private var imagePreviewView: UIImageView?
+    private var statusLabel: UILabel?
+
+    private var isShowingPreview = false
+    private var imageObserver: AnyCancellable?
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
         setupCamera()
+        setupImageObserver()
+        // Clear images after setup to prevent auto-trigger
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.cameraManager?.clearCapturedImages()
+        }
+    }
+
+    private func setupImageObserver() {
+        // Observe captured image changes with delay to prevent immediate triggers
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.imageObserver = self.cameraManager?.objectWillChange.sink { [weak self] in
+                DispatchQueue.main.async {
+                    guard let self = self,
+                          let capturedImage = self.cameraManager?.capturedImage,
+                          !self.isShowingPreview,
+                          capturedImage.size.width > 0 else { return }
+
+                    print("📸 Observer detected new captured image, showing preview")
+                    self.showImagePreview(capturedImage)
+                }
+            }
+        }
     }
     
     private func setupUI() {
@@ -1710,17 +2460,54 @@ class CameraViewController: UIViewController {
         taskLabel.clipsToBounds = true
         taskLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(taskLabel)
-        
-        let countdownLabel = UILabel()
-        countdownLabel.text = ""
-        countdownLabel.textColor = .white
-        countdownLabel.font = UIFont.systemFont(ofSize: 72, weight: .bold)
-        countdownLabel.textAlignment = .center
-        countdownLabel.alpha = 0
-        countdownLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(countdownLabel)
-        self.countdownLabel = countdownLabel
-        
+
+        // Add camera status debug label
+        let statusLabel = UILabel()
+        statusLabel.text = "Setting up cameras..."
+        statusLabel.textColor = .yellow
+        statusLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        statusLabel.textAlignment = .center
+        statusLabel.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        statusLabel.layer.cornerRadius = 6
+        statusLabel.clipsToBounds = true
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(statusLabel)
+        self.statusLabel = statusLabel
+
+        // Setup preview UI (initially hidden)
+        let imagePreviewView = UIImageView()
+        imagePreviewView.contentMode = .scaleAspectFit
+        imagePreviewView.backgroundColor = .black
+        imagePreviewView.isHidden = true
+        imagePreviewView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(imagePreviewView)
+        self.imagePreviewView = imagePreviewView
+
+        let retakeButton = UIButton(type: .system)
+        retakeButton.setTitle("Retake", for: .normal)
+        retakeButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
+        retakeButton.backgroundColor = UIColor.systemRed
+        retakeButton.setTitleColor(.white, for: .normal)
+        retakeButton.layer.cornerRadius = 25
+        retakeButton.isHidden = true
+        retakeButton.translatesAutoresizingMaskIntoConstraints = false
+        retakeButton.addTarget(self, action: #selector(retakeButtonTapped), for: .touchUpInside)
+        view.addSubview(retakeButton)
+        self.retakeButton = retakeButton
+
+        let usePhotoButton = UIButton(type: .system)
+        usePhotoButton.setTitle("Use Photo", for: .normal)
+        usePhotoButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
+        usePhotoButton.backgroundColor = UIColor.systemGreen
+        usePhotoButton.setTitleColor(.white, for: .normal)
+        usePhotoButton.layer.cornerRadius = 25
+        usePhotoButton.isHidden = true
+        usePhotoButton.translatesAutoresizingMaskIntoConstraints = false
+        usePhotoButton.addTarget(self, action: #selector(usePhotoButtonTapped), for: .touchUpInside)
+        view.addSubview(usePhotoButton)
+        self.usePhotoButton = usePhotoButton
+
+
         NSLayoutConstraint.activate([
             backPreviewView.topAnchor.constraint(equalTo: view.topAnchor),
             backPreviewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -1735,7 +2522,12 @@ class CameraViewController: UIViewController {
             taskLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
             taskLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             taskLabel.heightAnchor.constraint(equalToConstant: 40),
-            
+
+            statusLabel.topAnchor.constraint(equalTo: taskLabel.bottomAnchor, constant: 8),
+            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            statusLabel.heightAnchor.constraint(equalToConstant: 24),
+
             closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
             closeButton.leadingAnchor.constraint(equalTo: taskLabel.trailingAnchor, constant: 10),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
@@ -1745,127 +2537,176 @@ class CameraViewController: UIViewController {
             captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             captureButton.widthAnchor.constraint(equalToConstant: 150),
             captureButton.heightAnchor.constraint(equalToConstant: 50),
-            
-            countdownLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            countdownLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            countdownLabel.widthAnchor.constraint(equalToConstant: 200),
-            countdownLabel.heightAnchor.constraint(equalToConstant: 100)
+
+            // Preview UI constraints
+            imagePreviewView.topAnchor.constraint(equalTo: view.topAnchor),
+            imagePreviewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imagePreviewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imagePreviewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            retakeButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            retakeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+            retakeButton.widthAnchor.constraint(equalToConstant: 120),
+            retakeButton.heightAnchor.constraint(equalToConstant: 50),
+
+            usePhotoButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            usePhotoButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+            usePhotoButton.widthAnchor.constraint(equalToConstant: 120),
+            usePhotoButton.heightAnchor.constraint(equalToConstant: 50)
         ])
         
-        if let frontSession = cameraManager?.frontCaptureSession {
-            frontPreviewLayer = AVCaptureVideoPreviewLayer(session: frontSession)
-            frontPreviewLayer?.videoGravity = .resizeAspectFill
-            frontPreviewLayer?.frame = frontPreviewView.bounds
-            frontPreviewView.layer.addSublayer(frontPreviewLayer!)
-        }
-        
-        if let backSession = cameraManager?.backCaptureSession {
-            backPreviewLayer = AVCaptureVideoPreviewLayer(session: backSession)
-            backPreviewLayer?.videoGravity = .resizeAspectFill
-            backPreviewLayer?.frame = backPreviewView.bounds
-            backPreviewView.layer.addSublayer(backPreviewLayer!)
-        }
+        // Preview layers will be set up in setupCamera() to avoid duplication
     }
     
     private func setupCamera() {
-        cameraManager?.setupDualCamera()
+        print("🔧 Setting up camera...")
+        updateCameraStatus("Initializing cameras...", color: .yellow)
 
-        // Setup preview layers after camera setup
+        // Add safety check for camera manager
+        guard let cameraManager = self.cameraManager else {
+            print("❌ Camera manager is nil")
+            updateCameraStatus("❌ Camera setup failed", color: .red)
+            return
+        }
+
+        // Setup dual camera on background queue to avoid UI blocking
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Always reinitialize to ensure clean state
+            cameraManager.setupDualCameraSystem()
+
+            // Wait a bit for setup to complete, then setup preview layers
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.updateCameraStatus("Setting up preview layers...", color: .yellow)
+                self.setupPreviewLayers()
+
+                // Start sessions with a longer delay to prevent freezing
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.updateCameraStatus("Starting camera sessions...", color: .yellow)
+                    cameraManager.startCameraSession()
+
+                    // Check final status
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.checkFinalCameraStatus()
+                    }
+                }
+            }
+        }
+    }
+
+    private func setupPreviewLayers() {
+        print("🔧 Setting up preview layers...")
+
+        // Clean up existing preview layers first
+        frontPreviewLayer?.removeFromSuperlayer()
+        backPreviewLayer?.removeFromSuperlayer()
+
+        // Make sure we're on the main queue for UI operations
         DispatchQueue.main.async {
-            if let frontSession = self.cameraManager?.frontCaptureSession,
+            guard let cameraManager = self.cameraManager else {
+                print("❌ Camera manager not available")
+                return
+            }
+
+            // Setup front camera preview
+            if let frontSession = cameraManager.frontCaptureSession,
                let frontPreviewView = self.view.subviews.first(where: { $0.tag == 100 }) {
                 self.frontPreviewLayer = AVCaptureVideoPreviewLayer(session: frontSession)
                 self.frontPreviewLayer?.videoGravity = .resizeAspectFill
                 self.frontPreviewLayer?.frame = frontPreviewView.bounds
                 frontPreviewView.layer.addSublayer(self.frontPreviewLayer!)
+                print("✅ Front camera preview layer setup")
+            } else {
+                print("⚠️ Front camera session or preview view not available")
             }
 
-            if let backSession = self.cameraManager?.backCaptureSession,
+            // Setup back camera preview
+            if let backSession = cameraManager.backCaptureSession,
                let backPreviewView = self.view.subviews.first(where: { $0.tag == 101 }) {
                 self.backPreviewLayer = AVCaptureVideoPreviewLayer(session: backSession)
                 self.backPreviewLayer?.videoGravity = .resizeAspectFill
                 self.backPreviewLayer?.frame = backPreviewView.bounds
                 backPreviewView.layer.addSublayer(self.backPreviewLayer!)
+                print("✅ Back camera preview layer setup")
+            } else {
+                print("⚠️ Back camera session or preview view not available")
             }
         }
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        cameraManager?.startSession()
 
+        // Update preview layer frames when view appears to handle rotation/resize
         DispatchQueue.main.async {
-            if let frontPreview = self.frontPreviewLayer,
-               self.view.subviews.count > 1 {
-                frontPreview.frame = self.view.subviews[1].bounds
-            }
-            if let backPreview = self.backPreviewLayer,
-               self.view.subviews.count > 0 {
-                backPreview.frame = self.view.subviews[0].bounds
+            self.updatePreviewLayerFrames()
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Update frames when layout changes
+        updatePreviewLayerFrames()
+    }
+
+    private func updatePreviewLayerFrames() {
+        if let frontPreview = frontPreviewLayer,
+           let frontPreviewView = view.subviews.first(where: { $0.tag == 100 }) {
+            frontPreview.frame = frontPreviewView.bounds
+        }
+        if let backPreview = backPreviewLayer,
+           let backPreviewView = view.subviews.first(where: { $0.tag == 101 }) {
+            backPreview.frame = backPreviewView.bounds
+        }
+    }
+
+    private func updateCameraStatus(_ message: String, color: UIColor = .yellow) {
+        DispatchQueue.main.async {
+            self.statusLabel?.text = message
+            self.statusLabel?.textColor = color
+        }
+    }
+
+    private func checkFinalCameraStatus() {
+        let frontReady = cameraManager?.frontPhotoOutput != nil && cameraManager?.frontCaptureSession?.isRunning == true
+        let backReady = cameraManager?.backPhotoOutput != nil && cameraManager?.backCaptureSession?.isRunning == true
+
+        if frontReady && backReady {
+            updateCameraStatus("✅ Both cameras ready", color: .green)
+        } else if frontReady && !backReady {
+            updateCameraStatus("⚠️ Front camera only", color: .orange)
+        } else if !frontReady && backReady {
+            updateCameraStatus("⚠️ Back camera only", color: .orange)
+        } else {
+            updateCameraStatus("❌ Camera setup failed", color: .red)
+        }
+
+        // Hide status label after a few seconds if everything is working
+        if frontReady && backReady {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                self.statusLabel?.isHidden = true
             }
         }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        cameraManager?.stopSession()
+        cameraManager?.stopCameraSession()
+        imageObserver?.cancel()
     }
-    }
-    
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        cameraManager?.stopSession()
+        cameraManager?.stopCameraSession()
     }
     
     @objc private func captureButtonTapped() {
-        startCountdown()
+        print("🔘 Capture button tapped")
+        takePictureNow()
     }
     
-    private func startCountdown() {
-        captureButton?.isEnabled = false
-        captureButton?.alpha = 0.5
-        
-        var count = 3
-        
-        func showNextNumber() {
-            if count > 0 {
-                countdownLabel?.text = "\(count)"
-                countdownLabel?.alpha = 1.0
-                countdownLabel?.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
-                
-                UIView.animate(withDuration: 0.6, animations: {
-                    self.countdownLabel?.transform = CGAffineTransform(scaleX: 1.2, y: 1.2)
-                }, completion: { _ in
-                    UIView.animate(withDuration: 0.4, animations: {
-                        self.countdownLabel?.alpha = 0
-                        self.countdownLabel?.transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
-                    }, completion: { _ in
-                        count -= 1
-                        showNextNumber()
-                    })
-                })
-            } else {
-                self.countdownLabel?.text = "CLICK!"
-                self.countdownLabel?.alpha = 1.0
-                self.countdownLabel?.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
-                
-                UIView.animate(withDuration: 0.3, animations: {
-                    self.countdownLabel?.transform = CGAffineTransform(scaleX: 1.5, y: 1.5)
-                }, completion: { _ in
-                    UIView.animate(withDuration: 0.2, animations: {
-                        self.countdownLabel?.alpha = 0
-                        self.countdownLabel?.transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
-                    }, completion: { _ in
-                        self.takePictureNow()
-                    })
-                })
-            }
-        }
-        
-        showNextNumber()
-    }
     
     private func takePictureNow() {
+        print("📸 takePictureNow called")
         cameraManager?.takeDualPhoto()
         
         let flashView = UIView(frame: view.bounds)
@@ -1883,19 +2724,68 @@ class CameraViewController: UIViewController {
             })
         })
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if let combinedImage = self.cameraManager?.capturedImage {
-                let timestampedImage = self.cameraManager?.addTimestampWatermark(to: combinedImage, taskTitle: self.taskTitle) ?? combinedImage
-                self.onPhotoTaken?(timestampedImage)
-                self.onDismiss?()
-            }
-            
-            self.captureButton?.isEnabled = true
-            self.captureButton?.alpha = 1.0
-        }
+        // Image preview will be shown automatically via observer when capture completes
     }
     
     @objc private func closeButtonTapped() {
+        onDismiss?()
+    }
+
+    private func showImagePreview(_ image: UIImage) {
+        print("📸 Showing image preview")
+        isShowingPreview = true
+
+        // Add timestamp watermark
+        let timestampedImage = cameraManager?.addTimestampWatermark(to: image, taskTitle: taskTitle) ?? image
+
+        // Show the captured image
+        imagePreviewView?.image = timestampedImage
+        imagePreviewView?.isHidden = false
+
+        // Hide camera preview elements
+        captureButton?.isHidden = true
+
+        // Show preview action buttons
+        retakeButton?.isHidden = false
+        usePhotoButton?.isHidden = false
+    }
+
+    @objc private func retakeButtonTapped() {
+        print("🔄 Retake button tapped")
+        isShowingPreview = false
+
+        // Clear captured images
+        cameraManager?.clearCapturedImages()
+
+        // Hide preview
+        imagePreviewView?.isHidden = true
+        imagePreviewView?.image = nil
+
+        // Show camera preview elements
+        captureButton?.isHidden = false
+
+        // Hide preview action buttons
+        retakeButton?.isHidden = true
+        usePhotoButton?.isHidden = true
+    }
+
+    @objc private func usePhotoButtonTapped() {
+        print("✅ Use photo button tapped")
+
+        guard let image = imagePreviewView?.image else {
+            print("❌ No image to use")
+            return
+        }
+
+        // Save the photo to persistent storage
+        let success = cameraManager?.savePhoto(image, taskTitle: taskTitle) ?? false
+        if success {
+            print("✅ Photo saved to storage")
+        } else {
+            print("❌ Failed to save photo to storage")
+        }
+
+        onPhotoTaken?(image)
         onDismiss?()
     }
 }
@@ -2007,11 +2897,162 @@ struct ProfileView: View {
     }
 }
 
+// MARK: - Photo Gallery View
+struct PhotoGalleryView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var selectedPhoto: SavedPhoto?
+    @State private var showingFullScreenPhoto = false
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if model.cameraManager.savedPhotos.isEmpty {
+                    // Empty state
+                    VStack(spacing: 20) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 60))
+                            .foregroundColor(.gray)
+
+                        Text("No photos yet")
+                            .font(.title2)
+                            .fontWeight(.medium)
+
+                        Text("Complete tasks with photo verification to see them here")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // Photo grid
+                    ScrollView {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 2) {
+                            ForEach(model.cameraManager.savedPhotos.reversed()) { photo in
+                                PhotoThumbnailView(savedPhoto: photo) {
+                                    selectedPhoto = photo
+                                    showingFullScreenPhoto = true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Photo Gallery")
+            .navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: $showingFullScreenPhoto) {
+                if let selectedPhoto = selectedPhoto {
+                    FullScreenPhotoView(savedPhoto: selectedPhoto, cameraManager: model.cameraManager)
+                }
+            }
+        }
+    }
+}
+
+struct PhotoThumbnailView: View {
+    let savedPhoto: SavedPhoto
+    let onTap: () -> Void
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+
+    var body: some View {
+        Button(action: onTap) {
+            Group {
+                if let image = model.cameraManager.loadPhoto(savedPhoto: savedPhoto) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 120, height: 120)
+                        .clipped()
+                } else {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 120, height: 120)
+                        .overlay(
+                            Image(systemName: "photo")
+                                .foregroundColor(.gray)
+                        )
+                }
+            }
+            .cornerRadius(8)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct FullScreenPhotoView: View {
+    let savedPhoto: SavedPhoto
+    let cameraManager: CameraManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingDeleteAlert = false
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                if let image = cameraManager.loadPhoto(savedPhoto: savedPhoto) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Text("Failed to load image")
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(savedPhoto.taskTitle)
+                        .font(.headline)
+
+                    Text(savedPhoto.timestamp, style: .date)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text(savedPhoto.timestamp, style: .time)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color(.systemBackground))
+            }
+            .navigationTitle("Photo Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Delete") {
+                        showingDeleteAlert = true
+                    }
+                    .foregroundColor(.red)
+                }
+            }
+            .alert("Delete Photo", isPresented: $showingDeleteAlert) {
+                Button("Delete", role: .destructive) {
+                    cameraManager.deletePhoto(savedPhoto)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Are you sure you want to delete this photo? This action cannot be undone.")
+            }
+        }
+    }
+}
+
 // MARK: - Main App Structure
 struct ContentView: View {
     @StateObject private var model = EnhancedScreenTimeModel()
     @State private var selectedTab = 0
     @State private var showingNotificationSettings = false
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -2052,28 +3093,50 @@ struct ContentView: View {
                 }
                 .tag(3)
             
-            SafariTestView()
+            ParentControlView(appSelectionStore: model.appSelectionStore)
                 .tabItem {
-                    Image(systemName: "safari.fill")
-                    Text("Safari Test")
+                    Image(systemName: "person.2.badge.gearshape")
+                    Text("Parental Controls")
                 }
                 .tag(4)
-            
+
+            PhotoGalleryView()
+                .environmentObject(model)
+                .tabItem {
+                    Image(systemName: "photo.on.rectangle")
+                    Text("Photos")
+                }
+                .tag(5)
+                .badge(model.cameraManager.savedPhotos.count > 0 ? model.cameraManager.savedPhotos.count : 0)
+
             ProfileView()
                 .environmentObject(model)
                 .tabItem {
                     Image(systemName: "person.circle")
                     Text("Profile")
                 }
-                .tag(5)
+                .tag(6)
         }
         .onAppear {
             // Request permissions
             model.locationManager.requestPermission()
             model.notificationManager.requestPermission()
-            
+
             // Clear badge when app opens
             model.notificationManager.clearBadge()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                print("App became active - ensuring screen time restrictions are properly applied")
+                model.ensureAppsAreBlocked()
+            case .inactive:
+                print("App became inactive")
+            case .background:
+                print("App moved to background")
+            @unknown default:
+                break
+            }
         }
         .sheet(isPresented: $showingNotificationSettings) {
             NotificationSettingsView()
@@ -2270,13 +3333,13 @@ struct EnhancedTaskRow: View {
             }
         }
         .fullScreenCover(isPresented: $showingCamera) {
-            CameraView(
-                cameraManager: model.cameraManager,
+            EnhancedCameraView(
                 isPresented: $showingCamera,
                 taskTitle: task.title
             ) { photo in
                 onCompleteWithPhoto(photo)
             }
+            .environmentObject(model)
         }
         .fullScreenCover(isPresented: $showingLocationTracking) {
             LocationTrackingView(
@@ -2954,7 +4017,7 @@ struct EnhancedHomeView: View {
                     
                     if model.isSessionActive {
                         VStack(spacing: 12) {
-                            Text("Session Active")
+                            Text("Spending Screen Time")
                                 .font(.title2)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.green)
@@ -2974,12 +4037,40 @@ struct EnhancedHomeView: View {
                         .padding()
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(12)
+                    } else if model.isSessionPaused {
+                        VStack(spacing: 12) {
+                            Text("Session Paused")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.orange)
+
+                            Text(timeString(from: model.sessionTimeRemaining))
+                                .font(.system(size: 36, weight: .bold, design: .monospaced))
+                                .foregroundColor(.orange)
+
+                            Text("Time Used: \(timeString(from: model.sessionTimeUsed))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            HStack(spacing: 16) {
+                                Button("Resume") { model.resumeSession() }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.green)
+
+                                Button("End Session") { model.endSession() }
+                                    .buttonStyle(.bordered)
+                                    .tint(.red)
+                            }
+                        }
+                        .padding()
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(12)
                     } else if model.minutesEarned > 0 {
                         VStack(spacing: 12) {
-                            Text("Start Screen Time Session")
+                            Text("Start Spending Screen Time")
                                 .font(.headline)
                             
-                            Text("You have \(model.minutesEarned) minutes available")
+                            Text("You have \(model.minutesEarned) earned minutes available")
                                 .foregroundColor(.secondary)
                             
                             Picker("Duration", selection: $selectedDuration) {
@@ -2989,7 +4080,7 @@ struct EnhancedHomeView: View {
                             }
                             .pickerStyle(.segmented)
                             
-                            Button("Start Session") {
+                            Button("Start Spending Screen Time") {
                                 model.startEarnedSession(duration: selectedDuration)
                             }
                             .buttonStyle(.borderedProminent)
@@ -3320,1069 +4411,448 @@ struct AddTaskView: View {
     }
 }
 
-// MARK: - Screen Time Manager Classes
-
-class ScreenTimeManager: ObservableObject {
-    private let authorizationCenter = AuthorizationCenter.shared
-    @Published var authorizationStatus: AuthorizationStatus = .notDetermined
-    @Published var isAuthorized: Bool = false
-
-    init() {
-        updateAuthorizationStatus()
-    }
-
-    func updateAuthorizationStatus() {
-        authorizationStatus = authorizationCenter.authorizationStatus
-        isAuthorized = authorizationStatus == .approved
-    }
-
-    func requestAuthorization() async throws {
-        try await authorizationCenter.requestAuthorization(for: .individual)
-        await MainActor.run {
-            updateAuthorizationStatus()
-        }
-    }
-}
-
-class AppSelectionStore: ObservableObject {
-    @Published var familyActivitySelection = FamilyActivitySelection()
-    private let userDefaults = UserDefaults(suiteName: "group.com.envivenew.screentime")
-
-    init() {
-        loadSelection()
-    }
-
-    func saveSelection() {
-        guard let data = try? JSONEncoder().encode(familyActivitySelection) else { return }
-        userDefaults?.set(data, forKey: "familyActivitySelection")
-    }
-
-    func loadSelection() {
-        guard let data = userDefaults?.data(forKey: "familyActivitySelection"),
-              let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) else {
-            return
-        }
-        familyActivitySelection = selection
-    }
-
-    var hasSelectedApps: Bool {
-        !familyActivitySelection.applicationTokens.isEmpty ||
-        !familyActivitySelection.categoryTokens.isEmpty ||
-        !familyActivitySelection.webDomainTokens.isEmpty
-    }
-
-    var selectedCount: Int {
-        familyActivitySelection.applicationTokens.count +
-        familyActivitySelection.categoryTokens.count +
-        familyActivitySelection.webDomainTokens.count
-    }
-}
-
-class SettingsManager: ObservableObject {
-    private let store = ManagedSettingsStore()
-    @Published var isBlocking = false
-
-    func blockApps(_ selection: FamilyActivitySelection) {
-        if !selection.applicationTokens.isEmpty {
-            store.shield.applications = selection.applicationTokens
-        }
-
-        if !selection.categoryTokens.isEmpty {
-            store.shield.applicationCategories = .specific(selection.categoryTokens)
-        }
-
-        if !selection.webDomainTokens.isEmpty {
-            store.shield.webDomains = selection.webDomainTokens
-        }
-
-        isBlocking = true
-        print("Apps blocked successfully")
-    }
-
-    func unblockApps() {
-        store.clearAllSettings()
-        isBlocking = false
-        print("Apps unblocked successfully")
-    }
-}
-
-class ActivityScheduler: ObservableObject {
-    private let center = DeviceActivityCenter()
-    @Published var isMonitoring = false
-    @Published var remainingMinutes = 0
-
-    func startScreenTimeSession(durationMinutes: Int) {
-        let activity = DeviceActivityName("screenTimeSession")
-        let schedule = DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: 0, minute: 0),
-            intervalEnd: DateComponents(hour: 23, minute: 59),
-            repeats: false
-        )
-
-        do {
-            try center.startMonitoring(activity, during: schedule)
-            isMonitoring = true
-            remainingMinutes = durationMinutes
-            print("Started monitoring screen time session")
-        } catch {
-            print("Failed to start monitoring: \(error)")
-        }
-    }
-
-    func startTimerBasedRestrictions(durationMinutes: Int) {
-        let activity = DeviceActivityName("timerRestriction")
-        let schedule = DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: 0, minute: 0),
-            intervalEnd: DateComponents(hour: 23, minute: 59),
-            repeats: false
-        )
-
-        do {
-            try center.startMonitoring(activity, during: schedule)
-            isMonitoring = true
-            print("Started timer-based restrictions for \(durationMinutes) minutes")
-        } catch {
-            print("Failed to start timer restrictions: \(error)")
-        }
-    }
-
-    func stopAllMonitoring() {
-        center.stopMonitoring()
-        isMonitoring = false
-        remainingMinutes = 0
-        print("Stopped all monitoring")
-    }
-}
-
-class ScreenTimeRewardManager: ObservableObject {
-    @Published var earnedMinutes: Int = 0
-    @Published var isScreenTimeActive = false
-    @Published var activeSessionMinutes: Int = 0
-
-    private let settingsManager = SettingsManager()
-    private let scheduler = ActivityScheduler()
-    private let appSelectionStore = AppSelectionStore()
-
-    private let xpToMinutesRatio: Double = 10.0 // 10 XP = 1 minute
-    private let userDefaults = UserDefaults.standard
-    private let earnedMinutesKey = "earnedScreenTimeMinutes"
-
-    init() {
-        loadEarnedMinutes()
-    }
-
-    func redeemXPForScreenTime(xpAmount: Int) -> Int {
-        let earnedMinutes = Int(Double(xpAmount) / xpToMinutesRatio)
-        self.earnedMinutes += earnedMinutes
-        saveEarnedMinutes()
-        print("Redeemed \(xpAmount) XP for \(earnedMinutes) minutes of screen time")
-        return earnedMinutes
-    }
-
-    func startScreenTimeSession(durationMinutes: Int) -> Bool {
-        guard durationMinutes <= earnedMinutes else {
-            print("Insufficient earned minutes: requested \(durationMinutes), available \(earnedMinutes)")
-            return false
-        }
-
-        // Remove used minutes
-        earnedMinutes -= durationMinutes
-        saveEarnedMinutes()
-
-        // Temporarily lift restrictions for earned time
-        settingsManager.unblockApps()
-        isScreenTimeActive = true
-        activeSessionMinutes = durationMinutes
-
-        // Schedule re-application of restrictions
-        scheduler.startScreenTimeSession(durationMinutes: durationMinutes)
-
-        // Schedule end of session
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(durationMinutes * 60)) {
-            self.endScreenTimeSession()
-        }
-
-        print("Started screen time session for \(durationMinutes) minutes")
-        return true
-    }
-
-    func endScreenTimeSession() {
-        // Re-apply restrictions using stored app selection
-        if appSelectionStore.hasSelectedApps {
-            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
-        }
-
-        isScreenTimeActive = false
-        activeSessionMinutes = 0
-        scheduler.stopAllMonitoring()
-        print("Ended screen time session")
-    }
-
-    func addBonusMinutes(_ minutes: Int, reason: String = "Task completion") {
-        earnedMinutes += minutes
-        saveEarnedMinutes()
-        print("Added \(minutes) bonus minutes: \(reason)")
-    }
-
-    private func saveEarnedMinutes() {
-        userDefaults.set(earnedMinutes, forKey: earnedMinutesKey)
-    }
-
-    private func loadEarnedMinutes() {
-        earnedMinutes = userDefaults.integer(forKey: earnedMinutesKey)
-    }
-
-    // MARK: - Convenience Properties
-
-    var hasEarnedTime: Bool {
-        earnedMinutes > 0
-    }
-
-    var canStartSession: Bool {
-        hasEarnedTime && !isScreenTimeActive
-    }
-
-    func formattedEarnedTime() -> String {
-        if earnedMinutes >= 60 {
-            let hours = earnedMinutes / 60
-            let minutes = earnedMinutes % 60
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(earnedMinutes)m"
-        }
-    }
-
-    func formattedActiveTime() -> String {
-        if activeSessionMinutes >= 60 {
-            let hours = activeSessionMinutes / 60
-            let minutes = activeSessionMinutes % 60
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(activeSessionMinutes)m"
-        }
-    }
-}
-
-// MARK: - App Selection View
-
-struct AppSelectionView: View {
-    @Binding var selectedApps: FamilyActivitySelection
-    @State private var isPresentingPicker = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Choose Activities")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-                .padding(.top)
-
-            Text("Most used apps, categories, and websites")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            Button(action: {
-                isPresentingPicker = true
-            }) {
-                HStack {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
-                    Text("Select Apps to Manage")
-                        .fontWeight(.medium)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-            }
-            .familyActivityPicker(
-                isPresented: $isPresentingPicker,
-                selection: $selectedApps
-            )
-
-            if !selectedApps.applicationTokens.isEmpty || !selectedApps.categoryTokens.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Selected Items")
-                        .font(.headline)
-
-                    HStack {
-                        if !selectedApps.applicationTokens.isEmpty {
-                            VStack(alignment: .leading) {
-                                Text("Apps")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("\(selectedApps.applicationTokens.count)")
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                            }
-                            .padding()
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(8)
-                        }
-
-                        if !selectedApps.categoryTokens.isEmpty {
-                            VStack(alignment: .leading) {
-                                Text("Categories")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("\(selectedApps.categoryTokens.count)")
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                            }
-                            .padding()
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(8)
-                        }
-
-                        if !selectedApps.webDomainTokens.isEmpty {
-                            VStack(alignment: .leading) {
-                                Text("Websites")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("\(selectedApps.webDomainTokens.count)")
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                            }
-                            .padding()
-                            .background(Color.orange.opacity(0.1))
-                            .cornerRadius(8)
-                        }
-                    }
-                }
-                .padding(.top)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal)
-    }
-}
-
-// MARK: - Screen Time Status Banner
-struct ScreenTimeStatusBanner: View {
-    @StateObject private var rewardManager = ScreenTimeRewardManager()
-
-    var body: some View {
-        NavigationLink(destination: IntegratedScreenTimeView()) {
-            HStack(spacing: 12) {
-                Image(systemName: rewardManager.isScreenTimeActive ? "play.circle.fill" : "hourglass")
-                    .font(.title2)
-                    .foregroundColor(rewardManager.isScreenTimeActive ? .green : .blue)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(rewardManager.isScreenTimeActive ? "Session Active" : "Screen Time")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-
-                    if rewardManager.isScreenTimeActive {
-                        Text("\(rewardManager.formattedActiveTime()) remaining")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("\(rewardManager.formattedEarnedTime()) earned")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                if rewardManager.isScreenTimeActive {
-                    Text("🔓")
-                        .font(.title2)
-                } else if rewardManager.hasEarnedTime {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("🔒")
-                        .font(.title2)
-                }
-            }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(12)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
-// MARK: - Integrated Screen Time View
-struct IntegratedScreenTimeView: View {
-    @EnvironmentObject var model: EnhancedScreenTimeModel
-    @StateObject private var screenTimeManager = ScreenTimeManager()
-    @StateObject private var appSelectionStore = AppSelectionStore()
-    @StateObject private var settingsManager = SettingsManager()
-    @StateObject private var rewardManager = ScreenTimeRewardManager()
-
-    @State private var isParentMode = false
-    @State private var showingAppSelection = false
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Header with mode toggle
-                headerSection
-
-                if screenTimeManager.isAuthorized {
-                    if isParentMode {
-                        parentControlsSection
-                    } else {
-                        childControlsSection
-                    }
-                } else {
-                    authorizationSection
-                }
-            }
-            .padding()
-        }
-        .navigationTitle("Screen Time")
-        .navigationBarTitleDisplayMode(.large)
-        .sheet(isPresented: $showingAppSelection) {
-            NavigationView {
-                AppSelectionView(selectedApps: $appSelectionStore.familyActivitySelection)
-                    .navigationTitle("Select Apps")
-                    .navigationBarTitleDisplayMode(NavigationBarItem.TitleDisplayMode.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Cancel") {
-                                showingAppSelection = false
-                            }
-                        }
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Done") {
-                                appSelectionStore.saveSelection()
-                                showingAppSelection = false
-                            }
-                            .fontWeight(.semibold)
-                        }
-                    }
-            }
-        }
-        .onAppear {
-            screenTimeManager.updateAuthorizationStatus()
-        }
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 16) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Screen Time Management")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    Text("Control and earn screen time")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-
-            // Mode toggle
-            HStack {
-                Text("Mode:")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                Picker("Mode", selection: $isParentMode) {
-                    Text("Child").tag(false)
-                    Text("Parent").tag(true)
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .frame(width: 150)
-
-                Spacer()
-            }
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private var authorizationSection: some View {
-        VStack(spacing: 16) {
-            switch screenTimeManager.authorizationStatus {
-            case .notDetermined:
-                VStack(spacing: 16) {
-                    Image(systemName: "hourglass.circle")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
-
-                    Text("Enable Screen Time Controls")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-
-                    Text("Grant permission to manage screen time and app usage")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-
-                    Button("Enable Screen Time") {
-                        Task {
-                            try? await screenTimeManager.requestAuthorization()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                }
-
-            case .denied:
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 60))
-                        .foregroundColor(.red)
-
-                    Text("Screen Time Access Denied")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.red)
-
-                    Text("Please enable Screen Time access in Settings")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-
-                    Button("Open Settings") {
-                        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(settingsUrl)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-            case .approved:
-                Text("Screen Time Authorized")
-                    .font(.headline)
-                    .foregroundColor(.green)
-
-            @unknown default:
-                EmptyView()
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-    }
-
-    private var parentControlsSection: some View {
-        VStack(spacing: 20) {
-            // App Management Section
-            VStack(alignment: .leading, spacing: 16) {
-                Text("App Management")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                if appSelectionStore.hasSelectedApps {
-                    VStack(spacing: 12) {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Selected Items")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Text("\(appSelectionStore.selectedCount) items")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                            }
-
-                            Spacer()
-
-                            VStack(alignment: .trailing) {
-                                Text("Status")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Text(settingsManager.isBlocking ? "Blocked" : "Allowed")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(settingsManager.isBlocking ? .red : .green)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-
-                        HStack(spacing: 12) {
-                            Button("Block Apps") {
-                                settingsManager.blockApps(appSelectionStore.familyActivitySelection)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(settingsManager.isBlocking)
-
-                            Button("Allow Apps") {
-                                settingsManager.unblockApps()
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(!settingsManager.isBlocking)
-                        }
-                    }
-                }
-
-                Button("Select Apps to Manage") {
-                    showingAppSelection = true
-                }
-                .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity)
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-
-            // Quick Controls Section
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Quick Controls")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    quickControlButton(
-                        title: "Study Mode",
-                        subtitle: "30 min",
-                        icon: "book.fill",
-                        color: .blue
-                    ) {
-                        if appSelectionStore.hasSelectedApps {
-                            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
-                        }
-                    }
-
-                    quickControlButton(
-                        title: "Sleep Mode",
-                        subtitle: "8 hours",
-                        icon: "moon.fill",
-                        color: .purple
-                    ) {
-                        if appSelectionStore.hasSelectedApps {
-                            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
-                        }
-                    }
-
-                    quickControlButton(
-                        title: "Family Time",
-                        subtitle: "2 hours",
-                        icon: "person.2.fill",
-                        color: .green
-                    ) {
-                        if appSelectionStore.hasSelectedApps {
-                            settingsManager.blockApps(appSelectionStore.familyActivitySelection)
-                        }
-                    }
-
-                    quickControlButton(
-                        title: "Stop All",
-                        subtitle: "Remove",
-                        icon: "stop.fill",
-                        color: .red
-                    ) {
-                        settingsManager.unblockApps()
-                    }
-                }
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-        }
-    }
-
-    private var childControlsSection: some View {
-        VStack(spacing: 20) {
-            // Screen Time Status
-            screenTimeStatusCard
-
-            // Earned Time Management
-            if rewardManager.isScreenTimeActive {
-                activeSessionCard
-            } else {
-                earnedTimeCard
-            }
-
-            // XP Redemption
-            xpRedemptionCard
-        }
-    }
-
-    private var screenTimeStatusCard: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Image(systemName: "hourglass")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-
-                Text("Screen Time Status")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                Spacer()
-
-                if rewardManager.isScreenTimeActive {
-                    Text("ACTIVE")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.green)
-                        .cornerRadius(8)
-                }
-            }
-
-            HStack(spacing: 24) {
-                VStack(alignment: .leading) {
-                    Text("Earned Time")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(rewardManager.formattedEarnedTime())
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                }
-
-                Spacer()
-
-                if rewardManager.isScreenTimeActive {
-                    VStack(alignment: .trailing) {
-                        Text("Session Time")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(rewardManager.formattedActiveTime())
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.green)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
-    }
-
-    private var activeSessionCard: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Image(systemName: "play.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.green)
-
-                Text("Session Active")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-
-                Spacer()
-
-                Button("End Session") {
-                    rewardManager.endScreenTimeSession()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-
-            Text("Apps are currently unlocked. Use your time wisely!")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-        .background(Color.green.opacity(0.1))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.green.opacity(0.3), lineWidth: 1)
-        )
-    }
-
-    private var earnedTimeCard: some View {
-        VStack(spacing: 16) {
-            if rewardManager.hasEarnedTime {
-                VStack(spacing: 12) {
-                    Text("Ready to start a session?")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-
-                    Text("You have \(rewardManager.formattedEarnedTime()) of earned screen time")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-
-                    HStack(spacing: 12) {
-                        Button("15 min") {
-                            _ = rewardManager.startScreenTimeSession(durationMinutes: 15)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!rewardManager.canStartSession || rewardManager.earnedMinutes < 15)
-
-                        Button("30 min") {
-                            _ = rewardManager.startScreenTimeSession(durationMinutes: 30)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!rewardManager.canStartSession || rewardManager.earnedMinutes < 30)
-
-                        Button("60 min") {
-                            _ = rewardManager.startScreenTimeSession(durationMinutes: 60)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!rewardManager.canStartSession || rewardManager.earnedMinutes < 60)
-                    }
-                }
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "hourglass.badge.plus")
-                        .font(.system(size: 40))
-                        .foregroundColor(.orange)
-
-                    Text("No Screen Time Available")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-
-                    Text("Complete tasks to earn screen time!")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-        }
-        .padding()
-        .background(rewardManager.hasEarnedTime ? Color.blue.opacity(0.1) : Color.orange.opacity(0.1))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke((rewardManager.hasEarnedTime ? Color.blue : Color.orange).opacity(0.3), lineWidth: 1)
-        )
-    }
-
-    private var xpRedemptionCard: some View {
-        VStack(spacing: 16) {
-            Text("Redeem XP for Screen Time")
-                .font(.headline)
-                .fontWeight(.semibold)
-
-            Text("Current XP: \(model.currentUser.totalXPEarned)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            HStack(spacing: 12) {
-                Button("100 XP → 10 min") {
-                    _ = rewardManager.redeemXPForScreenTime(xpAmount: 100)
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.currentUser.totalXPEarned < 100)
-
-                Button("250 XP → 25 min") {
-                    _ = rewardManager.redeemXPForScreenTime(xpAmount: 250)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.currentUser.totalXPEarned < 250)
-
-                Button("500 XP → 50 min") {
-                    _ = rewardManager.redeemXPForScreenTime(xpAmount: 500)
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.currentUser.totalXPEarned < 500)
-            }
-
-            Text("Ratio: 10 XP = 1 minute of screen time")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-    }
-
-    private func quickControlButton(
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(color)
-
-                Text(title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(color.opacity(0.1))
-            .cornerRadius(12)
-        }
-        .disabled(!appSelectionStore.hasSelectedApps && title != "Stop All")
-    }
-}
-
-// MARK: - Safari Test View
 struct SafariTestView: View {
-    @StateObject private var screenTimeManager = ScreenTimeManager()
     @StateObject private var settingsManager = SettingsManager()
-    @StateObject private var scheduler = ActivityScheduler()
     @StateObject private var appSelectionStore = AppSelectionStore()
-
-    @State private var showingAppPicker = false
-    @State private var sessionDuration = 2
+    @StateObject private var screenTimeManager = ScreenTimeManager()
 
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                headerSection
-                authorizationSection
+                Text("Safari Screen Time Test")
+                    .font(.title2)
+                    .fontWeight(.bold)
 
-                if screenTimeManager.isAuthorized {
-                    safariSetupSection
-                    sessionSection
-                    instructionsSection
+                VStack(spacing: 15) {
+                    // Authorization Status
+                    VStack {
+                        Text("Authorization Status")
+                            .font(.headline)
+                        Text(screenTimeManager.isAuthorized ? "Authorized" : "Not Authorized")
+                            .foregroundColor(screenTimeManager.isAuthorized ? .green : .red)
+                    }
+
+                    // Request Authorization Button
+                    if !screenTimeManager.isAuthorized {
+                        Button("Request Screen Time Permission") {
+                            Task {
+                                try? await screenTimeManager.requestAuthorization()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    // Safari Blocking Controls
+                    if screenTimeManager.isAuthorized {
+                        VStack(spacing: 10) {
+                            Text("Safari Blocking")
+                                .font(.headline)
+
+                            HStack(spacing: 20) {
+                                Button("Block Safari") {
+                                    settingsManager.blockSafariWithCustomShield()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.red)
+
+                                Button("Unblock Safari") {
+                                    settingsManager.unblockSafari()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
+                            Text("Safari Status: \(settingsManager.isSafariBlocked ? "Blocked" : "Unblocked")")
+                                .foregroundColor(settingsManager.isSafariBlocked ? .red : .green)
+                        }
+                    }
+
+                    Spacer()
                 }
+                .padding()
+            }
+            .navigationTitle("Safari Test")
+        }
+    }
+}
+
+// MARK: - Enhanced Camera System with Immediate Preview & Social Posting
+
+struct EnhancedCameraView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @Binding var isPresented: Bool
+    let taskTitle: String
+    let onPhotoPosted: (UIImage) -> Void
+
+    @State private var currentPhase: CameraPhase = .capture
+    @State private var capturedImage: UIImage?
+    @State private var isProcessing = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+
+    enum CameraPhase {
+        case capture
+        case preview
+        case posting
+        case success
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            switch currentPhase {
+            case .capture:
+                CaptureView(onCapture: handlePhotoCapture)
+            case .preview:
+                PreviewView(
+                    image: capturedImage,
+                    onRetake: handleRetake,
+                    onPost: handlePost
+                )
+            case .posting:
+                PostingView()
+            case .success:
+                SuccessView(onDismiss: dismissCamera)
+            }
+
+            // Top bar with task title and close button
+            VStack {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Task Verification")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                        Text(taskTitle)
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .fontWeight(.medium)
+                    }
+
+                    Spacer()
+
+                    Button(action: dismissCamera) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .padding()
+                .background(Color.black.opacity(0.3))
 
                 Spacer()
             }
-            .padding()
-            .navigationTitle("Safari Blocking Test")
+        }
+        .navigationBarHidden(true)
+        .onAppear {
+            // Initialize camera system when view appears
+            model.cameraManager.setupDualCameraSystem()
+        }
+        .onDisappear {
+            // Stop camera session when view disappears
+            model.cameraManager.stopCameraSession()
+        }
+        .alert("Camera Error", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
         }
     }
 
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "safari.fill")
-                .font(.system(size: 50))
-                .foregroundColor(.blue)
+    private func handlePhotoCapture() {
+        isProcessing = true
 
-            Text("Safari Blocking Test")
-                .font(.title2)
-                .fontWeight(.semibold)
+        model.cameraManager.capturePhoto { [self] image in
+            DispatchQueue.main.async {
+                self.isProcessing = false
 
-            Text("Test Safari blocking with custom shield")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-    }
-
-    private var authorizationSection: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "info.circle.fill")
-                .font(.system(size: 40))
-                .foregroundColor(.orange)
-
-            Text("Demo Mode")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("Screen Time APIs require Apple approval. This demo shows how the blocking would work.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-
-            Button("Continue Demo") {
-                // Simulate authorization success
+                if let image = image {
+                    self.capturedImage = image
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        self.currentPhase = .preview
+                    }
+                } else {
+                    self.errorMessage = "Failed to capture photo. Please try again."
+                    self.showingError = true
+                }
             }
-            .buttonStyle(.borderedProminent)
         }
-        .padding()
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(12)
     }
 
-    private var safariSetupSection: some View {
-        VStack(spacing: 16) {
-            Text("Safari Setup")
+    private func handleRetake() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentPhase = .capture
+            capturedImage = nil
+        }
+    }
+
+    private func handlePost() {
+        guard let image = capturedImage else { return }
+
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentPhase = .posting
+        }
+
+        // Apply watermark
+        let watermarkedImage = model.cameraManager.addTimestampWatermark(to: image, taskTitle: taskTitle)
+
+        // Save to storage
+        _ = model.cameraManager.savePhoto(watermarkedImage, taskTitle: taskTitle)
+
+        // Create social post
+        model.createSocialPost(
+            with: watermarkedImage,
+            taskTitle: taskTitle,
+            xpEarned: 25, // Default XP for photo verification
+            location: model.locationManager.currentLocation?.description
+        )
+
+        // Simulate posting delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self.currentPhase = .success
+            }
+
+            // Call completion handler
+            self.onPhotoPosted(watermarkedImage)
+        }
+    }
+
+    private func dismissCamera() {
+        isPresented = false
+    }
+}
+
+struct CaptureView: View {
+    let onCapture: () -> Void
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+
+    var body: some View {
+        ZStack {
+            // Camera preview background
+            Rectangle()
+                .fill(Color.black)
+                .onAppear {
+                    // Ensure camera session is started
+                    model.cameraManager.startCameraSession()
+                }
+                .overlay(
+                    VStack {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.white.opacity(0.6))
+
+                        Text("Dual Camera Ready")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.8))
+
+                            .padding(.horizontal)
+                    }
+                )
+
+            // Camera status indicator
+            VStack {
+                HStack {
+                    Spacer()
+                    CameraStatusIndicator(status: model.cameraManager.cameraStatus)
+                        .padding()
+                }
+                Spacer()
+            }
+
+            // Capture controls
+            VStack {
+                Spacer()
+
+                HStack {
+                    Spacer()
+
+                    Button(action: onCapture) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 80, height: 80)
+
+                            Circle()
+                                .stroke(Color.black, lineWidth: 2)
+                                .frame(width: 70, height: 70)
+
+                            if model.cameraManager.isCapturing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .black))
+                            } else {
+                                Circle()
+                                    .fill(Color.black)
+                                    .frame(width: 60, height: 60)
+                            }
+                        }
+                    }
+                    .disabled(model.cameraManager.isCapturing || model.cameraManager.cameraStatus == .failed)
+
+                    Spacer()
+                }
+                .padding(.bottom, 50)
+            }
+        }
+    }
+}
+
+struct PreviewView: View {
+    let image: UIImage?
+    let onRetake: () -> Void
+    let onPost: () -> Void
+
+    var body: some View {
+        ZStack {
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipped()
+            }
+
+            // Controls
+            VStack {
+                Spacer()
+
+                HStack(spacing: 40) {
+                    // Retake button
+                    Button(action: onRetake) {
+                        VStack {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.title2)
+                            Text("Retake")
+                                .font(.caption)
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(12)
+                    }
+
+                    // Post button
+                    Button(action: onPost) {
+                        VStack {
+                            Image(systemName: "paperplane.fill")
+                                .font(.title2)
+                            Text("Post")
+                                .font(.caption)
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.green.opacity(0.8))
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.bottom, 50)
+            }
+        }
+    }
+}
+
+struct PostingView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                .scaleEffect(1.5)
+
+            Text("Posting to feed...")
                 .font(.headline)
+                .foregroundColor(.white)
 
-            Button("Select Safari") {
-                showingAppPicker = true
-            }
-            .buttonStyle(.borderedProminent)
-            .familyActivityPicker(
-                isPresented: $showingAppPicker,
-                selection: $appSelectionStore.familyActivitySelection
-            )
-            .onChange(of: appSelectionStore.familyActivitySelection) { _ in
-                appSelectionStore.saveSelection()
+            Text("Adding watermark and sharing with friends")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.8))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.8))
+    }
+}
+
+struct SuccessView: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 30) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 80))
+                .foregroundColor(.green)
+
+            VStack(spacing: 10) {
+                Text("Posted Successfully!")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Text("Your task verification has been shared with friends")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
             }
 
-            Text("Selected: \(appSelectionStore.familyActivitySelection.applicationTokens.count) apps")
+            Button(action: onDismiss) {
+                Text("Done")
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(width: 120, height: 44)
+                    .background(Color.white)
+                    .cornerRadius(22)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.8))
+    }
+}
+
+struct CameraStatusIndicator: View {
+    let status: CameraManager.CameraStatus
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
+            Text(statusText)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(.white)
         }
-        .padding()
-        .background(Color(.systemGray6))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.6))
         .cornerRadius(12)
     }
 
-    private var sessionSection: some View {
-        VStack(spacing: 16) {
-            Text("Session Control")
-                .font(.headline)
-
-            Picker("Duration", selection: $sessionDuration) {
-                Text("1 min").tag(1)
-                Text("2 min").tag(2)
-                Text("5 min").tag(5)
-            }
-            .pickerStyle(SegmentedPickerStyle())
-
-            Button("Start Session") {
-                startSession()
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button("End Session") {
-                endSession()
-            }
-            .buttonStyle(.bordered)
+    private var statusColor: Color {
+        switch status {
+        case .ready:
+            return .green
+        case .frontOnly, .backOnly:
+            return .orange
+        case .initializing, .capturing:
+            return .yellow
+        case .failed:
+            return .red
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
     }
 
-    private var instructionsSection: some View {
-        VStack(spacing: 12) {
-            Text("How It Would Work")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("🔒 Safari would be blocked with custom shield")
-                Text("📱 Parent sets limits for child")
-                Text("⏱️ Child earns time through tasks")
-                Text("🔓 Sessions temporarily unblock apps")
-                Text("🔄 Auto-blocks when session ends")
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-
-            Text("Requires Apple Developer Program + Entitlement Approval")
-                .font(.caption2)
-                .foregroundColor(.orange)
-                .padding(.top, 8)
+    private var statusText: String {
+        switch status {
+        case .initializing:
+            return "Setting up..."
+        case .ready:
+            return "Ready"
+        case .frontOnly:
+            return "Front camera only"
+        case .backOnly:
+            return "Back camera only"
+        case .capturing:
+            return "Capturing..."
+        case .failed:
+            return "Camera error"
         }
-        .padding()
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(12)
-    }
-
-    private func startSession() {
-        settingsManager.unblockApps()
-        scheduler.startScreenTimeSession(durationMinutes: sessionDuration)
-        print("Started session")
-    }
-
-    private func endSession() {
-        scheduler.stopAllMonitoring()
-        settingsManager.blockApps(appSelectionStore.familyActivitySelection)
-        print("Ended session")
     }
 }
 

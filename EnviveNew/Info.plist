@@ -2,13 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSFamilyControlsUsageDescription</key>
+	<string>Envive uses Screen Time controls to help parents manage their children's app usage and screen time limits.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>EnviveNew needs camera access to verify task completion with photos.</string>
+	<string>Envive uses the camera to capture verification photos for completed tasks and activities.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Envive needs access to save captured task verification photos to your photo library.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>EnviveNew needs location access to track outdoor activities and verify task locations.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>EnviveNew needs location access to track outdoor activities and verify task locations.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>EnviveNew may use microphone for video recording during task verification.</string>
+	<string>Envive uses location to track activity completion and share with friends.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.neal.envivenew.urlscheme</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>envivenew</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
