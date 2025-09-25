@@ -515,7 +515,7 @@ struct SocialPost: Identifiable, Codable {
     let userName: String
     let userAvatar: String? // File name for avatar image
     let taskId: UUID
-    let taskTitle: String
+    var taskTitle: String  // Made mutable for editing
     let taskDescription: String?
     let completionTime: Date
     let xpEarned: Int
@@ -884,29 +884,28 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         let backStillRunning = self.backCaptureSession?.isRunning ?? false
         print("📊 Final session check - Front: \(frontStillRunning), Back: \(backStillRunning)")
 
-        // Capture photos with validation
+        // Capture both cameras simultaneously for better synchronization
         if frontStillRunning {
             print("📷 Capturing front camera...")
             frontOutput.capturePhoto(with: frontSettings, delegate: self)
         } else {
-            print("❌ Front session not running, skipping front capture")
+            print("❌ Front session not running, using fallback")
             DispatchQueue.main.async {
+                self.frontCameraImage = self.createMockImage(text: "Front Camera\nUnavailable", backgroundColor: .systemRed)
                 self.frontImageCaptured = true
-                self.processCapturedImages()
+                self.checkAndProcessCapturedImages()
             }
         }
 
-        // Small delay before capturing back camera
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if backStillRunning {
-                print("📷 Capturing back camera...")
-                backOutput.capturePhoto(with: backSettings, delegate: self)
-            } else {
-                print("❌ Back session not running, skipping back capture")
-                DispatchQueue.main.async {
-                    self.backImageCaptured = true
-                    self.processCapturedImages()
-                }
+        if backStillRunning {
+            print("📷 Capturing back camera...")
+            backOutput.capturePhoto(with: backSettings, delegate: self)
+        } else {
+            print("❌ Back session not running, using fallback")
+            DispatchQueue.main.async {
+                self.backCameraImage = self.createMockImage(text: "Back Camera\nUnavailable", backgroundColor: .systemRed)
+                self.backImageCaptured = true
+                self.checkAndProcessCapturedImages()
             }
         }
     }
@@ -1407,6 +1406,13 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         }
     }
 
+    private func checkAndProcessCapturedImages() {
+        // Only process when both images are captured (or when we have what we need)
+        if shouldProcessCapturedImages() {
+            processCapturedImages()
+        }
+    }
+
     private func processCapturedImages() {
         // Create composite image from both cameras
         if let compositeImage = combineEnhancedDualImages() {
@@ -1507,9 +1513,7 @@ extension CameraManager {
                     }
 
                     // Check if we can still process with available images
-                    if self.shouldProcessCapturedImages() {
-                        self.processCapturedImages()
-                    }
+                    self.checkAndProcessCapturedImages()
                 }
             } else {
                 // Other errors - fail completely
@@ -1542,15 +1546,14 @@ extension CameraManager {
                 print("📷 Front camera image captured")
                 self.frontCameraImage = image
                 self.frontImageCaptured = true
-                self.currentCapturePhase = .completed
-                print("✅ Sequential capture completed - both photos ready")
-                self.processCapturedImages()
+                print("✅ Front camera capture completed")
+                self.checkAndProcessCapturedImages()
             } else if output == self.backPhotoOutput {
                 print("📷 Back camera image captured")
                 self.backCameraImage = image
                 self.backImageCaptured = true
-                self.currentCapturePhase = .readyForFront
-                print("✅ Back camera done - ready for front camera")
+                print("✅ Back camera capture completed")
+                self.checkAndProcessCapturedImages()
             }
         }
     }
@@ -2348,6 +2351,22 @@ class EnhancedScreenTimeModel: ObservableObject {
 
         return fileName
     }
+
+    func deleteSocialPost(withId postId: UUID) {
+        DispatchQueue.main.async {
+            self.socialPosts.removeAll { $0.id == postId }
+            print("🗑️ Deleted social post with ID: \(postId)")
+        }
+    }
+
+    func editSocialPost(withId postId: UUID, newTitle: String) {
+        DispatchQueue.main.async {
+            if let index = self.socialPosts.firstIndex(where: { $0.id == postId }) {
+                self.socialPosts[index].taskTitle = newTitle
+                print("✏️ Edited social post: \(newTitle)")
+            }
+        }
+    }
 }
 
 // MARK: - Location Tracking View
@@ -2748,26 +2767,54 @@ class CameraViewController: UIViewController {
     var onPhotoTaken: ((UIImage) -> Void)?
     var onDismiss: (() -> Void)?
 
-    private var frontPreviewLayer: AVCaptureVideoPreviewLayer?
-    private var backPreviewLayer: AVCaptureVideoPreviewLayer?
+    private var cameraPreviewLayer: AVCaptureVideoPreviewLayer?
     private var captureButton: UIButton?
     private var retakeButton: UIButton?
     private var usePhotoButton: UIButton?
     private var imagePreviewView: UIImageView?
-    private var statusLabel: UILabel?
+    private var blackTransitionView: UIView?
+    private var frontOverlayImageView: UIImageView?
 
+    private var currentCameraPosition: AVCaptureDevice.Position = .back
+    private var isFlashOn = false
+    private var isCapturing = false
+    private var capturedRearImage: UIImage?
+    private var capturedFrontImage: UIImage?
     private var isShowingPreview = false
     private var imageObserver: AnyCancellable?
+    private var captureCompletionHandler: ((UIImage?) -> Void)?
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        setupCamera()
-        setupImageObserver()
-        // Clear images after setup to prevent auto-trigger
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.cameraManager?.clearCapturedImages()
+
+        // Initialize camera manager first
+        print("🔧 Initializing camera manager...")
+        cameraManager?.setupDualCameraSystem()
+
+        // Then setup our camera preview with more time for initialization
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            print("🔧 Setting up camera preview...")
+            self.setupCamera()
+
+            // Debug camera manager state
+            self.debugCameraManagerState()
         }
+    }
+
+    private func debugCameraManagerState() {
+        guard let cameraManager = self.cameraManager else {
+            print("❌ CameraManager is nil")
+            return
+        }
+
+        print("🔍 Camera Manager Debug:")
+        print("  - Front session: \(cameraManager.frontCaptureSession != nil)")
+        print("  - Back session: \(cameraManager.backCaptureSession != nil)")
+        print("  - Front output: \(cameraManager.frontPhotoOutput != nil)")
+        print("  - Back output: \(cameraManager.backPhotoOutput != nil)")
+        print("  - Front running: \(cameraManager.frontCaptureSession?.isRunning ?? false)")
+        print("  - Back running: \(cameraManager.backCaptureSession?.isRunning ?? false)")
     }
 
     private func setupImageObserver() {
@@ -2800,60 +2847,41 @@ class CameraViewController: UIViewController {
             captureButton?.setTitle("📸 Take Back Photo", for: .normal)
             captureButton?.backgroundColor = UIColor.systemBlue
             captureButton?.isEnabled = true
-            updateCameraStatus("Ready to take back camera photo", color: .green)
+            // Status removed for clean UI
         case .capturingBack:
             captureButton?.setTitle("📸 Taking Back Photo...", for: .normal)
             captureButton?.backgroundColor = UIColor.systemOrange
             captureButton?.isEnabled = false
-            updateCameraStatus("📸 Taking back photo...", color: .blue)
+            // Status removed for clean UI
         case .readyForFront:
             captureButton?.setTitle("🤳 Take Front Photo", for: .normal)
             captureButton?.backgroundColor = UIColor.systemGreen
             captureButton?.isEnabled = true
-            updateCameraStatus("Ready to take front camera photo", color: .green)
+            // Status removed for clean UI
         case .capturingFront:
             captureButton?.setTitle("🤳 Taking Front Photo...", for: .normal)
             captureButton?.backgroundColor = UIColor.systemOrange
             captureButton?.isEnabled = false
-            updateCameraStatus("📸 Taking front photo...", color: .blue)
+            // Status removed for clean UI
         case .completed:
             captureButton?.setTitle("✅ Photos Complete", for: .normal)
             captureButton?.backgroundColor = UIColor.systemGray
             captureButton?.isEnabled = false
-            updateCameraStatus("✅ Both photos captured", color: .green)
+            // Status removed for clean UI
         }
     }
     
     private func setupUI() {
         view.backgroundColor = .black
 
-        let backPreviewView = UIView()
-        backPreviewView.translatesAutoresizingMaskIntoConstraints = false
-        backPreviewView.tag = 101 // Tag for back camera
-        backPreviewView.backgroundColor = .darkGray
-        view.addSubview(backPreviewView)
+        // Single camera preview view (full screen)
+        let cameraPreviewView = UIView()
+        cameraPreviewView.translatesAutoresizingMaskIntoConstraints = false
+        cameraPreviewView.tag = 200 // Tag for single camera preview
+        cameraPreviewView.backgroundColor = .black
+        view.addSubview(cameraPreviewView)
 
-        let frontPreviewView = UIView()
-        frontPreviewView.translatesAutoresizingMaskIntoConstraints = false
-        frontPreviewView.tag = 100 // Tag for front camera
-        frontPreviewView.layer.borderColor = UIColor.white.cgColor
-        frontPreviewView.layer.borderWidth = 2
-        frontPreviewView.layer.cornerRadius = 10
-        frontPreviewView.clipsToBounds = true
-        frontPreviewView.backgroundColor = .darkGray
-        view.addSubview(frontPreviewView)
-        
-        let captureButton = UIButton(type: .system)
-        captureButton.setTitle("📸 Capture", for: .normal)
-        captureButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
-        captureButton.backgroundColor = UIColor.systemBlue
-        captureButton.setTitleColor(.white, for: .normal)
-        captureButton.layer.cornerRadius = 25
-        captureButton.translatesAutoresizingMaskIntoConstraints = false
-        captureButton.addTarget(self, action: #selector(captureButtonTapped), for: .touchUpInside)
-        view.addSubview(captureButton)
-        self.captureButton = captureButton
-        
+        // Close button (top-left)
         let closeButton = UIButton(type: .system)
         closeButton.setTitle("✕", for: .normal)
         closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
@@ -2861,57 +2889,70 @@ class CameraViewController: UIViewController {
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
         view.addSubview(closeButton)
-        
-        let taskLabel = UILabel()
-        taskLabel.text = "Verifying: \(taskTitle)"
-        taskLabel.textColor = .white
-        taskLabel.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        taskLabel.textAlignment = .center
-        taskLabel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        taskLabel.layer.cornerRadius = 8
-        taskLabel.clipsToBounds = true
-        taskLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(taskLabel)
 
-        // Add camera status debug label
-        let statusLabel = UILabel()
-        statusLabel.text = "Setting up cameras..."
-        statusLabel.textColor = .yellow
-        statusLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-        statusLabel.textAlignment = .center
-        statusLabel.backgroundColor = UIColor.black.withAlphaComponent(0.8)
-        statusLabel.layer.cornerRadius = 6
-        statusLabel.clipsToBounds = true
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(statusLabel)
-        self.statusLabel = statusLabel
+        // Flip camera button (top-right)
+        let flipButton = UIButton(type: .system)
+        flipButton.setTitle("🔄", for: .normal)
+        flipButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        flipButton.setTitleColor(.white, for: .normal)
+        flipButton.translatesAutoresizingMaskIntoConstraints = false
+        flipButton.addTarget(self, action: #selector(flipCameraButtonTapped), for: .touchUpInside)
+        view.addSubview(flipButton)
 
-        // Setup preview UI (initially hidden)
+        // Flash toggle button (top-center)
+        let flashButton = UIButton(type: .system)
+        flashButton.setTitle("⚡", for: .normal)
+        flashButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        flashButton.setTitleColor(.white, for: .normal)
+        flashButton.translatesAutoresizingMaskIntoConstraints = false
+        flashButton.addTarget(self, action: #selector(flashButtonTapped), for: .touchUpInside)
+        view.addSubview(flashButton)
+
+        // Simple white capture button (bottom-center)
+        let captureButton = UIButton(type: .custom)
+        captureButton.backgroundColor = .white
+        captureButton.layer.cornerRadius = 35
+        captureButton.translatesAutoresizingMaskIntoConstraints = false
+        captureButton.addTarget(self, action: #selector(captureButtonTapped), for: .touchUpInside)
+        view.addSubview(captureButton)
+        self.captureButton = captureButton
+
+        // Black transition view (initially hidden)
+        let blackTransitionView = UIView()
+        blackTransitionView.backgroundColor = .black
+        blackTransitionView.isHidden = true
+        blackTransitionView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(blackTransitionView)
+        self.blackTransitionView = blackTransitionView
+
+        // Final image preview (initially hidden)
         let imagePreviewView = UIImageView()
-        imagePreviewView.contentMode = .scaleAspectFit
+        imagePreviewView.contentMode = .scaleAspectFill
         imagePreviewView.backgroundColor = .black
         imagePreviewView.isHidden = true
         imagePreviewView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(imagePreviewView)
         self.imagePreviewView = imagePreviewView
 
+        // Retake X button (top-left of final image)
         let retakeButton = UIButton(type: .system)
-        retakeButton.setTitle("Retake", for: .normal)
-        retakeButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
-        retakeButton.backgroundColor = UIColor.systemRed
+        retakeButton.setTitle("✕", for: .normal)
+        retakeButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
         retakeButton.setTitleColor(.white, for: .normal)
-        retakeButton.layer.cornerRadius = 25
+        retakeButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        retakeButton.layer.cornerRadius = 22
         retakeButton.isHidden = true
         retakeButton.translatesAutoresizingMaskIntoConstraints = false
         retakeButton.addTarget(self, action: #selector(retakeButtonTapped), for: .touchUpInside)
         view.addSubview(retakeButton)
         self.retakeButton = retakeButton
 
+        // Use Photo button
         let usePhotoButton = UIButton(type: .system)
         usePhotoButton.setTitle("Use Photo", for: .normal)
         usePhotoButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
-        usePhotoButton.backgroundColor = UIColor.systemGreen
-        usePhotoButton.setTitleColor(.white, for: .normal)
+        usePhotoButton.backgroundColor = UIColor.white
+        usePhotoButton.setTitleColor(.black, for: .normal)
         usePhotoButton.layer.cornerRadius = 25
         usePhotoButton.isHidden = true
         usePhotoButton.translatesAutoresizingMaskIntoConstraints = false
@@ -2919,159 +2960,114 @@ class CameraViewController: UIViewController {
         view.addSubview(usePhotoButton)
         self.usePhotoButton = usePhotoButton
 
-
         NSLayoutConstraint.activate([
-            backPreviewView.topAnchor.constraint(equalTo: view.topAnchor),
-            backPreviewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            backPreviewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            backPreviewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
-            frontPreviewView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            frontPreviewView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            frontPreviewView.widthAnchor.constraint(equalToConstant: 120),
-            frontPreviewView.heightAnchor.constraint(equalToConstant: 160),
-            
-            taskLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            taskLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            taskLabel.heightAnchor.constraint(equalToConstant: 40),
+            // Full screen camera preview
+            cameraPreviewView.topAnchor.constraint(equalTo: view.topAnchor),
+            cameraPreviewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            cameraPreviewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            cameraPreviewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            statusLabel.topAnchor.constraint(equalTo: taskLabel.bottomAnchor, constant: 8),
-            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            statusLabel.heightAnchor.constraint(equalToConstant: 24),
-
+            // Close button
             closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            closeButton.leadingAnchor.constraint(equalTo: taskLabel.trailingAnchor, constant: 10),
+            closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
-            
-            captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            captureButton.widthAnchor.constraint(equalToConstant: 150),
-            captureButton.heightAnchor.constraint(equalToConstant: 50),
 
-            // Preview UI constraints
+            // Flip camera button
+            flipButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            flipButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            flipButton.widthAnchor.constraint(equalToConstant: 44),
+            flipButton.heightAnchor.constraint(equalToConstant: 44),
+
+            // Flash button
+            flashButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            flashButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            flashButton.widthAnchor.constraint(equalToConstant: 44),
+            flashButton.heightAnchor.constraint(equalToConstant: 44),
+
+            // Capture button (large white circle)
+            captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            captureButton.widthAnchor.constraint(equalToConstant: 70),
+            captureButton.heightAnchor.constraint(equalToConstant: 70),
+
+            // Black transition view (full screen)
+            blackTransitionView.topAnchor.constraint(equalTo: view.topAnchor),
+            blackTransitionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            blackTransitionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            blackTransitionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            // Final image preview (full screen)
             imagePreviewView.topAnchor.constraint(equalTo: view.topAnchor),
             imagePreviewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             imagePreviewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             imagePreviewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            retakeButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            retakeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            retakeButton.widthAnchor.constraint(equalToConstant: 120),
-            retakeButton.heightAnchor.constraint(equalToConstant: 50),
+            // Retake button (top-left of final image)
+            retakeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            retakeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            retakeButton.widthAnchor.constraint(equalToConstant: 44),
+            retakeButton.heightAnchor.constraint(equalToConstant: 44),
 
-            usePhotoButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            usePhotoButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-            usePhotoButton.widthAnchor.constraint(equalToConstant: 120),
+            // Use Photo button
+            usePhotoButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            usePhotoButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            usePhotoButton.widthAnchor.constraint(equalToConstant: 150),
             usePhotoButton.heightAnchor.constraint(equalToConstant: 50)
         ])
-        
-        // Preview layers will be set up in setupCamera() to avoid duplication
     }
     
     private func setupCamera() {
-        print("🔧 Setting up camera...")
-        updateCameraStatus("Initializing cameras...", color: .yellow)
+        print("🔧 Setting up BeReal-style camera...")
 
         // Add safety check for camera manager
         guard let cameraManager = self.cameraManager else {
             print("❌ Camera manager is nil")
-            updateCameraStatus("❌ Camera setup failed", color: .red)
             return
         }
 
-        // Setup dual camera on background queue to avoid UI blocking
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Always reinitialize to ensure clean state
-            cameraManager.setupDualCameraSystem()
-
-            // Wait a bit for setup to complete, then setup preview layers
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.updateCameraStatus("Setting up preview layers...", color: .yellow)
-                self.setupPreviewLayers()
-
-                // Start sessions with a longer delay to prevent freezing
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.updateCameraStatus("Starting camera sessions...", color: .yellow)
-                    cameraManager.startCameraSession()
-
-                    // Check final status
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.checkFinalCameraStatus()
-                    }
-                }
-            }
-        }
+        // Setup single camera system (starts with back camera)
+        setupSingleCameraPreview(position: currentCameraPosition)
     }
 
-    private func setupPreviewLayers() {
-        print("🔧 Setting up preview layers...")
+    private func setupSingleCameraPreview(position: AVCaptureDevice.Position) {
+        // Clean up existing preview layer
+        cameraPreviewLayer?.removeFromSuperlayer()
+        cameraPreviewLayer = nil
 
-        // Clean up existing preview layers first
-        frontPreviewLayer?.removeFromSuperlayer()
-        backPreviewLayer?.removeFromSuperlayer()
-        frontPreviewLayer = nil
-        backPreviewLayer = nil
+        // Get the correct session based on camera position
+        let session: AVCaptureSession?
+        if position == .back {
+            session = cameraManager?.backCaptureSession
+        } else {
+            session = cameraManager?.frontCaptureSession
+        }
 
-        // Make sure we're on the main queue for UI operations
-        DispatchQueue.main.async {
-            guard let cameraManager = self.cameraManager else {
-                print("❌ Camera manager not available")
-                return
-            }
+        guard let captureSession = session,
+              let previewView = view.subviews.first(where: { $0.tag == 200 }) else {
+            print("❌ Could not setup camera preview")
+            return
+        }
 
-            // Setup front camera preview
-            if let frontSession = cameraManager.frontCaptureSession,
-               let frontPreviewView = self.view.subviews.first(where: { $0.tag == 100 }) {
-                print("📱 Setting up front camera preview layer...")
+        // Create and setup preview layer
+        let previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+        previewLayer.videoGravity = .resizeAspectFill
+        previewLayer.frame = view.bounds
 
-                self.frontPreviewLayer = AVCaptureVideoPreviewLayer(session: frontSession)
-                guard let frontLayer = self.frontPreviewLayer else {
-                    print("❌ Failed to create front preview layer")
-                    return
-                }
+        previewView.layer.addSublayer(previewLayer)
+        self.cameraPreviewLayer = previewLayer
 
-                frontLayer.videoGravity = .resizeAspectFill
-                frontLayer.frame = frontPreviewView.bounds
-                frontLayer.cornerRadius = 10
-                frontPreviewView.layer.addSublayer(frontLayer)
-
-                print("✅ Front camera preview layer setup - Frame: \(frontPreviewView.bounds), Session Running: \(frontSession.isRunning)")
-            } else {
-                print("⚠️ Front camera session or preview view not available - Session: \(cameraManager.frontCaptureSession != nil), View: \(self.view.subviews.first(where: { $0.tag == 100 }) != nil)")
-            }
-
-            // Setup back camera preview
-            if let backSession = cameraManager.backCaptureSession,
-               let backPreviewView = self.view.subviews.first(where: { $0.tag == 101 }) {
-                print("📱 Setting up back camera preview layer...")
-
-                self.backPreviewLayer = AVCaptureVideoPreviewLayer(session: backSession)
-                guard let backLayer = self.backPreviewLayer else {
-                    print("❌ Failed to create back preview layer")
-                    return
-                }
-
-                backLayer.videoGravity = .resizeAspectFill
-                backLayer.frame = backPreviewView.bounds
-                backPreviewView.layer.addSublayer(backLayer)
-
-                print("✅ Back camera preview layer setup - Frame: \(backPreviewView.bounds), Session Running: \(backSession.isRunning)")
-            } else {
-                print("⚠️ Back camera session or preview view not available - Session: \(cameraManager.backCaptureSession != nil), View: \(self.view.subviews.first(where: { $0.tag == 101 }) != nil)")
-            }
-
-            // Force layout update and update preview frames
-            self.view.setNeedsLayout()
-            self.view.layoutIfNeeded()
-
-            // Update preview layer frames after layout
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.updatePreviewLayerFrames()
+        // Start the session if not already running
+        if !captureSession.isRunning {
+            DispatchQueue.global(qos: .userInitiated).async {
+                captureSession.startRunning()
             }
         }
+
+        print("✅ Single camera preview setup complete for \(position == .back ? "rear" : "front") camera")
     }
+
+    // Old setupPreviewLayers method removed - replaced with setupSingleCameraPreview
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -3089,44 +3085,16 @@ class CameraViewController: UIViewController {
     }
 
     private func updatePreviewLayerFrames() {
-        if let frontPreview = frontPreviewLayer,
-           let frontPreviewView = view.subviews.first(where: { $0.tag == 100 }) {
-            frontPreview.frame = frontPreviewView.bounds
-        }
-        if let backPreview = backPreviewLayer,
-           let backPreviewView = view.subviews.first(where: { $0.tag == 101 }) {
-            backPreview.frame = backPreviewView.bounds
+        // Update single camera preview layer frame
+        if let previewLayer = cameraPreviewLayer,
+           let previewView = view.subviews.first(where: { $0.tag == 200 }) {
+            previewLayer.frame = previewView.bounds
         }
     }
 
-    private func updateCameraStatus(_ message: String, color: UIColor = .yellow) {
-        DispatchQueue.main.async {
-            self.statusLabel?.text = message
-            self.statusLabel?.textColor = color
-        }
-    }
+    // updateCameraStatus method removed
 
-    private func checkFinalCameraStatus() {
-        let frontReady = cameraManager?.frontPhotoOutput != nil && cameraManager?.frontCaptureSession?.isRunning == true
-        let backReady = cameraManager?.backPhotoOutput != nil && cameraManager?.backCaptureSession?.isRunning == true
-
-        if frontReady && backReady {
-            updateCameraStatus("✅ Both cameras ready", color: .green)
-        } else if frontReady && !backReady {
-            updateCameraStatus("⚠️ Front camera only", color: .orange)
-        } else if !frontReady && backReady {
-            updateCameraStatus("⚠️ Back camera only", color: .orange)
-        } else {
-            updateCameraStatus("❌ Camera setup failed", color: .red)
-        }
-
-        // Hide status label after a few seconds if everything is working
-        if frontReady && backReady {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                self.statusLabel?.isHidden = true
-            }
-        }
-    }
+    // checkFinalCameraStatus method removed
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
@@ -3140,8 +3108,247 @@ class CameraViewController: UIViewController {
     }
     
     @objc private func captureButtonTapped() {
-        print("🔘 Capture button tapped")
-        takePictureNow()
+        print("🔘 BeReal-style capture initiated")
+        startBeRealCapture()
+    }
+
+    private func startBeRealCapture() {
+        guard !isCapturing else { return }
+        isCapturing = true
+
+        // Step 1: Capture main camera (whatever is currently shown)
+        let mainCameraPosition = currentCameraPosition
+        let otherCameraPosition: AVCaptureDevice.Position = mainCameraPosition == .back ? .front : .back
+
+        captureSpecificCamera(position: mainCameraPosition) { [weak self] mainImage in
+            guard let self = self, let mainImage = mainImage else {
+                self?.isCapturing = false
+                return
+            }
+
+            print("📸 Main camera (\(mainCameraPosition == .back ? "rear" : "front")) captured successfully")
+
+            // Step 2: Show black screen for 1 second
+            self.showBlackScreen {
+                // Step 3: Auto-capture other camera
+                self.captureSpecificCamera(position: otherCameraPosition) { otherImage in
+                    guard let otherImage = otherImage else {
+                        print("❌ Other camera capture failed")
+                        self.isCapturing = false
+                        return
+                    }
+
+                    print("📸 Other camera (\(otherCameraPosition == .back ? "rear" : "front")) captured successfully")
+
+                    // Step 4: Assign images based on roles
+                    if mainCameraPosition == .back {
+                        // Normal: rear main, front overlay
+                        self.capturedRearImage = mainImage
+                        self.capturedFrontImage = otherImage
+                    } else {
+                        // Flipped: front main, rear overlay
+                        self.capturedFrontImage = mainImage
+                        self.capturedRearImage = otherImage
+                    }
+
+                    // Step 5: Show final combined result
+                    self.showFinalResult()
+                }
+            }
+        }
+    }
+
+    private func captureSpecificCamera(position: AVCaptureDevice.Position, completion: @escaping (UIImage?) -> Void) {
+        guard let cameraManager = self.cameraManager else {
+            print("❌ CameraManager is nil")
+            completion(nil)
+            return
+        }
+
+        // Handle simulator mode - generate mock images
+        #if targetEnvironment(simulator)
+        print("🤖 Simulator mode: generating mock \(position == .back ? "rear" : "front") camera image")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let mockImage = self.createMockImage(text: "\(position == .back ? "Rear" : "Front") Camera\nMock Photo", backgroundColor: position == .back ? .systemBlue : .systemGreen)
+            completion(mockImage)
+        }
+        return
+        #endif
+
+        // Get the correct session and output for the specified camera position
+        let session = position == .back ? cameraManager.backCaptureSession : cameraManager.frontCaptureSession
+        let photoOutput = position == .back ? cameraManager.backPhotoOutput : cameraManager.frontPhotoOutput
+
+        print("🔍 Debug - Session available: \(session != nil), Output available: \(photoOutput != nil), Session running: \(session?.isRunning ?? false)")
+
+        guard let captureSession = session,
+              let output = photoOutput else {
+            print("❌ Camera session or output not available for \(position == .back ? "rear" : "front") camera")
+            completion(nil)
+            return
+        }
+
+        // Ensure session is running
+        if !captureSession.isRunning {
+            print("🔄 Starting \(position == .back ? "rear" : "front") camera session...")
+            DispatchQueue.global(qos: .userInitiated).async {
+                captureSession.startRunning()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self.captureSpecificCamera(position: position, completion: completion)
+                }
+            }
+            return
+        }
+
+        let settings = AVCapturePhotoSettings()
+
+        // Configure flash (only for rear camera, front camera typically doesn't have flash)
+        if isFlashOn && position == .back && output.supportedFlashModes.contains(.on) {
+            settings.flashMode = .on
+        }
+
+        print("📷 Capturing \(position == .back ? "rear" : "front") camera with session running: \(captureSession.isRunning)")
+        print("🔍 Photo output available connections: \(output.connections.count)")
+        print("🔍 Photo output can capture: \(output.isHighResolutionCaptureEnabled)")
+
+        // Store completion handler BEFORE capture
+        self.captureCompletionHandler = completion
+        print("🔍 Completion handler stored, delegate is: \(type(of: self))")
+
+        // Capture the photo with additional error checking
+        print("📷 About to call capturePhoto...")
+        output.capturePhoto(with: settings, delegate: self)
+        print("📷 capturePhoto call completed")
+    }
+
+    private func createMockImage(text: String, backgroundColor: UIColor) -> UIImage {
+        let size = CGSize(width: 300, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            backgroundColor.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 20, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func showBlackScreen(completion: @escaping () -> Void) {
+        print("⚫ Showing black screen transition")
+
+        DispatchQueue.main.async {
+            // Show black screen
+            self.blackTransitionView?.isHidden = false
+
+            // Hide after 1 second and call completion
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.blackTransitionView?.isHidden = true
+                completion()
+            }
+        }
+    }
+
+    // autoCaptureFrontCamera method removed - replaced with captureSpecificCamera
+
+    private func showFinalResult() {
+        print("🎉 Showing final BeReal-style result")
+
+        // Determine which image should be main based on current camera position
+        let mainImage: UIImage?
+        let overlayImage: UIImage?
+
+        if currentCameraPosition == .back {
+            // Normal: rear main, front overlay
+            mainImage = capturedRearImage
+            overlayImage = capturedFrontImage
+            print("📸 Final result: Rear main, Front overlay")
+        } else {
+            // Flipped: front main, rear overlay
+            mainImage = capturedFrontImage
+            overlayImage = capturedRearImage
+            print("📸 Final result: Front main, Rear overlay")
+        }
+
+        guard let main = mainImage else {
+            print("❌ No main image available")
+            return
+        }
+
+        DispatchQueue.main.async {
+            // Step 1: Show main camera image at second 3
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.imagePreviewView?.image = main
+                self.imagePreviewView?.isHidden = false
+
+                // Step 2: Add overlay camera with slide-in animation at second 4
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.addOverlayCameraWithAnimation(overlayImage: overlayImage)
+
+                    // Show the retake and use photo buttons
+                    self.showFinalButtons()
+
+                    self.isCapturing = false
+                }
+            }
+        }
+    }
+
+    private func addOverlayCameraWithAnimation(overlayImage: UIImage?) {
+        guard let overlayImage = overlayImage else { return }
+
+        // Create overlay camera if it doesn't exist
+        if frontOverlayImageView == nil {
+            let overlayImageView = UIImageView()
+            overlayImageView.contentMode = .scaleAspectFill
+            overlayImageView.layer.cornerRadius = 10
+            overlayImageView.layer.borderColor = UIColor.white.cgColor
+            overlayImageView.layer.borderWidth = 3
+            overlayImageView.clipsToBounds = true
+            overlayImageView.translatesAutoresizingMaskIntoConstraints = false
+
+            view.addSubview(overlayImageView)
+            frontOverlayImageView = overlayImageView
+
+            // Position in top-right corner
+            NSLayoutConstraint.activate([
+                overlayImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+                overlayImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                overlayImageView.widthAnchor.constraint(equalToConstant: 120),
+                overlayImageView.heightAnchor.constraint(equalToConstant: 160)
+            ])
+        }
+
+        // Set the overlay image (could be front or rear depending on flip state)
+        frontOverlayImageView?.image = overlayImage
+
+        // Slide in animation from the right
+        frontOverlayImageView?.transform = CGAffineTransform(translationX: 200, y: 0)
+        frontOverlayImageView?.alpha = 0
+
+        UIView.animate(withDuration: 0.5, delay: 0, options: .curveEaseOut) {
+            self.frontOverlayImageView?.transform = .identity
+            self.frontOverlayImageView?.alpha = 1
+        }
+    }
+
+    private func showFinalButtons() {
+        DispatchQueue.main.async {
+            self.retakeButton?.isHidden = false
+            self.usePhotoButton?.isHidden = false
+        }
     }
     
     
@@ -3151,7 +3358,7 @@ class CameraViewController: UIViewController {
         // Add safety checks before attempting capture
         guard let cameraManager = cameraManager else {
             print("❌ Camera manager not available")
-            updateCameraStatus("❌ Camera not available", color: .red)
+            // Status removed
             return
         }
 
@@ -3161,11 +3368,11 @@ class CameraViewController: UIViewController {
             break // OK to proceed
         case .initializing:
             print("⚠️ Camera still initializing")
-            updateCameraStatus("⚠️ Camera initializing...", color: .orange)
+            // Status removed
             return
         case .failed:
             print("❌ Camera failed, reinitializing...")
-            updateCameraStatus("🔄 Reinitializing camera...", color: .yellow)
+            // Status removed
             cameraManager.setupDualCameraSystem()
             return
         case .capturing:
@@ -3175,7 +3382,7 @@ class CameraViewController: UIViewController {
 
         // Disable capture button temporarily
         captureButton?.isEnabled = false
-        updateCameraStatus("📸 Capturing...", color: .blue)
+        // Status removed
 
         // Attempt sequential capture
         cameraManager.takeSequentialPhoto()
@@ -3187,7 +3394,7 @@ class CameraViewController: UIViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.captureButton?.isEnabled = true
             if cameraManager.cameraError == nil {
-                self.updateCameraStatus("✅ Ready", color: .green)
+                // Status removed
             }
         }
     }
@@ -3210,7 +3417,39 @@ class CameraViewController: UIViewController {
     }
     
     @objc private func closeButtonTapped() {
+        print("🔘 Close button tapped - dismissing BeReal camera")
         onDismiss?()
+    }
+
+    @objc private func flipCameraButtonTapped() {
+        print("🔄 Flip camera button tapped")
+        currentCameraPosition = currentCameraPosition == .back ? .front : .back
+        setupSingleCameraPreview(position: currentCameraPosition)
+    }
+
+    @objc private func flashButtonTapped() {
+        print("⚡ Flash button tapped")
+        isFlashOn.toggle()
+
+        // Update flash appearance
+        if let flashButton = view.subviews.compactMap({ $0 as? UIButton }).first(where: { $0.titleLabel?.text == "⚡" }) {
+            flashButton.backgroundColor = isFlashOn ? UIColor.yellow.withAlphaComponent(0.3) : UIColor.clear
+        }
+
+        configureFlash()
+    }
+
+    private func configureFlash() {
+        // Configure flash for current camera position
+        guard let cameraManager = self.cameraManager else { return }
+
+        let session = currentCameraPosition == .back ? cameraManager.backCaptureSession : cameraManager.frontCaptureSession
+
+        guard let session = session else { return }
+
+        // Configure flash settings based on current state
+        // This will be applied during capture
+        print("Flash configured: \(isFlashOn ? "ON" : "OFF") for \(currentCameraPosition == .back ? "rear" : "front") camera")
     }
 
     private func showImagePreview(_ image: UIImage) {
@@ -3233,18 +3472,19 @@ class CameraViewController: UIViewController {
     }
 
     @objc private func retakeButtonTapped() {
-        print("🔄 Retake button tapped")
+        print("🔄 Retaking BeReal-style photo")
         isShowingPreview = false
 
-        // Reset the sequential capture flow
-        cameraManager?.resetCaptureFlow()
-
-        // Clear captured images
-        cameraManager?.clearCapturedImages()
-
-        // Hide preview
+        // Hide all preview UI
         imagePreviewView?.isHidden = true
         imagePreviewView?.image = nil
+        frontOverlayImageView?.removeFromSuperview()
+        frontOverlayImageView = nil
+
+        // Clear captured images
+        capturedRearImage = nil
+        capturedFrontImage = nil
+        isCapturing = false
 
         // Show camera preview elements
         captureButton?.isHidden = false
@@ -3252,28 +3492,106 @@ class CameraViewController: UIViewController {
         // Hide preview action buttons
         retakeButton?.isHidden = true
         usePhotoButton?.isHidden = true
+
+        // Keep current camera position (preserve flip state)
+        setupSingleCameraPreview(position: currentCameraPosition)
     }
 
     @objc private func usePhotoButtonTapped() {
-        print("✅ Use photo button tapped")
+        print("✅ Use photo button tapped - Creating BeReal-style combined image")
 
-        guard let image = imagePreviewView?.image else {
-            print("❌ No image to use")
+        guard let rearImage = capturedRearImage,
+              let frontImage = capturedFrontImage else {
+            print("❌ Missing captured images")
             return
         }
 
-        // Save the photo to persistent storage
-        let success = cameraManager?.savePhoto(image, taskTitle: taskTitle, taskId: taskId) ?? false
-        if success {
-            print("✅ Photo saved to storage")
+        // Create BeReal-style combined image
+        let combinedImage = createBeRealStyleImage(rearImage: rearImage, frontImage: frontImage)
+
+        // Add timestamp watermark
+        let watermarkedImage = cameraManager?.addTimestampWatermark(to: combinedImage, taskTitle: taskTitle) ?? combinedImage
+
+        print("🔥🔥🔥 CameraViewController: Calling onPhotoTaken with BeReal-style combined image")
+        onPhotoTaken?(watermarkedImage)
+    }
+
+    private func createBeRealStyleImage(rearImage: UIImage, frontImage: UIImage) -> UIImage {
+        // Determine main and overlay images based on flip state
+        let mainImage: UIImage
+        let overlayImage: UIImage
+
+        if currentCameraPosition == .back {
+            // Normal: rear main, front overlay
+            mainImage = rearImage
+            overlayImage = frontImage
         } else {
-            print("❌ Failed to save photo to storage")
+            // Flipped: front main, rear overlay
+            mainImage = frontImage
+            overlayImage = rearImage
         }
 
-        print("🔥🔥🔥 CameraViewController: Calling onPhotoTaken with image")
-        onPhotoTaken?(image)
-        print("🔥🔥🔥 CameraViewController: NOT calling onDismiss - letting handlePost control dismissal")
-        // onDismiss?() // Let handlePost control the dismissal
+        let renderer = UIGraphicsImageRenderer(size: mainImage.size)
+
+        return renderer.image { context in
+            // Draw main image (full background)
+            mainImage.draw(at: .zero)
+
+            // Calculate overlay size and position (top-right)
+            let overlaySize = CGSize(
+                width: mainImage.size.width * 0.25,
+                height: mainImage.size.height * 0.25
+            )
+
+            let overlayRect = CGRect(
+                x: mainImage.size.width - overlaySize.width - 20,
+                y: 20,
+                width: overlaySize.width,
+                height: overlaySize.height
+            )
+
+            // Draw white border for overlay
+            context.cgContext.setStrokeColor(UIColor.white.cgColor)
+            context.cgContext.setLineWidth(4)
+            context.cgContext.stroke(overlayRect.insetBy(dx: -2, dy: -2))
+
+            // Draw overlay image
+            overlayImage.draw(in: overlayRect)
+        }
+    }
+}
+
+// MARK: - CameraViewController Photo Delegate
+extension CameraViewController: AVCapturePhotoCaptureDelegate {
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        print("📷 CameraViewController photo delegate called - Thread: \(Thread.current)")
+
+        if let error = error {
+            print("❌ Photo capture error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler = nil
+            }
+            return
+        }
+
+        guard let imageData = photo.fileDataRepresentation(),
+              let image = UIImage(data: imageData) else {
+            print("❌ Failed to process photo data")
+            DispatchQueue.main.async {
+                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler = nil
+            }
+            return
+        }
+
+        print("✅ Photo captured successfully - Size: \(image.size)")
+
+        // Call the completion handler with the captured image on main thread
+        DispatchQueue.main.async {
+            self.captureCompletionHandler?(image)
+            self.captureCompletionHandler = nil
+        }
     }
 }
 
@@ -3289,6 +3607,7 @@ struct SocialView: View {
                         SocialPostView(post: post)
                             .environmentObject(model)
                     }
+                    .onDelete(perform: deletePost)
                 }
                 .padding()
             }
@@ -3299,6 +3618,11 @@ struct SocialView: View {
             }
         }
     }
+
+    private func deletePost(at offsets: IndexSet) {
+        model.socialPosts.remove(atOffsets: offsets)
+        print("🗑️ Deleted social post(s)")
+    }
 }
 
 struct SocialPostView: View {
@@ -3307,6 +3631,8 @@ struct SocialPostView: View {
     @State private var showMainAsBack = true
     @State private var showingFullView = false
     @State private var showingComments = false
+    @State private var showingEditAlert = false
+    @State private var editedTitle = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3438,6 +3764,32 @@ struct SocialPostView: View {
             CommentsView(post: post)
                 .environmentObject(model)
         }
+        .contextMenu {
+            if post.userId == model.currentUser.id.uuidString {
+                Button(action: {
+                    editedTitle = post.taskTitle
+                    showingEditAlert = true
+                }) {
+                    Label("Edit Post", systemImage: "pencil")
+                }
+
+                Button(action: {
+                    model.deleteSocialPost(withId: post.id)
+                }) {
+                    Label("Delete Post", systemImage: "trash")
+                }
+                .foregroundColor(.red)
+            }
+        }
+        .alert("Edit Post Title", isPresented: $showingEditAlert) {
+            TextField("Task Title", text: $editedTitle)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                model.editSocialPost(withId: post.id, newTitle: editedTitle)
+            }
+        } message: {
+            Text("Enter a new title for this post")
+        }
     }
 
     private func loadSocialPhoto() -> (backImage: UIImage, frontImage: UIImage)? {
@@ -3449,10 +3801,11 @@ struct SocialPostView: View {
         // Try to load from actual task photos first
         if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
            let verificationPhoto = task.verificationPhoto {
-            // If we have the actual verification photo, try to extract back/front cameras
-            // For now, we'll use the verification photo as back camera and create a mock front camera
+            // The verificationPhoto is already a combined dual-camera image from the BeReal-style capture
+            // We should display it as-is, not split it or add another overlay
+            // Use the combined image as the main image and create a simple front image placeholder
             let backImage = verificationPhoto
-            let frontImage = createMockFrontCamera()
+            let frontImage = createSimplePlaceholder(text: "📷")
             return (backImage, frontImage)
         }
 
@@ -3500,6 +3853,31 @@ struct SocialPostView: View {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 20, weight: .bold),
                 .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func createSimplePlaceholder(text: String) -> UIImage {
+        let size = CGSize(width: 80, height: 106)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            UIColor.clear.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 30),
+                .foregroundColor: UIColor.clear
             ]
 
             let textSize = text.size(withAttributes: attributes)
@@ -3576,9 +3954,10 @@ struct FullImageView: View {
         // Try to load from actual task photos first
         if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
            let verificationPhoto = task.verificationPhoto {
-            // Use actual verification photo as back camera
+            // The verificationPhoto is already a combined dual-camera image from the BeReal-style capture
+            // Use it as-is and provide a clear placeholder for the overlay
             let backImage = verificationPhoto
-            let frontImage = createMockFrontCamera()
+            let frontImage = createSimplePlaceholder(text: "📷")
             return (backImage, frontImage)
         }
 
@@ -3626,6 +4005,31 @@ struct FullImageView: View {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 24, weight: .bold),
                 .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func createSimplePlaceholder(text: String) -> UIImage {
+        let size = CGSize(width: 80, height: 106)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            UIColor.clear.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 30),
+                .foregroundColor: UIColor.clear
             ]
 
             let textSize = text.size(withAttributes: attributes)
@@ -4334,22 +4738,32 @@ struct EnhancedTaskRow: View {
                     .foregroundColor(.green)
             }
         }
-        .sheet(isPresented: $showingCamera) {
-            SimpleCameraView { photo in
-                print("🔥 SIMPLE CAMERA: Photo captured for task: \(task.title)")
+        .fullScreenCover(isPresented: $showingCamera) {
+            CameraView(
+                cameraManager: model.cameraManager,
+                isPresented: $showingCamera,
+                taskTitle: task.title,
+                taskId: task.id,
+                onPhotoTaken: { photo in
+                    print("🔥 BEREAL CAMERA: Photo captured for task: \(task.title)")
 
-                // Set both local and model photo
-                localVerificationPhoto = photo
+                    // Set both local and model photo
+                    localVerificationPhoto = photo
 
-                if let index = model.recentTasks.firstIndex(where: { $0.id == taskId }) {
-                    model.recentTasks[index].verificationPhoto = photo
-                    model.objectWillChange.send()
+                    if let index = model.recentTasks.firstIndex(where: { $0.id == taskId }) {
+                        model.recentTasks[index].verificationPhoto = photo
+                        model.objectWillChange.send()
+                    }
+
+                    // AUTO-COMPLETE: Immediately complete the task after photo
+                    print("🎯 AUTO-COMPLETE: Completing task automatically after photo")
+                    showingCamera = false
+                    onComplete()
                 }
-
-                // AUTO-COMPLETE: Immediately complete the task after photo
-                print("🎯 AUTO-COMPLETE: Completing task automatically after photo")
+            )
+            .onDisappear {
+                // Clean up when camera closes
                 showingCamera = false
-                onComplete()
             }
         }
         .fullScreenCover(isPresented: $showingLocationTracking) {
