@@ -12,6 +12,9 @@ class ActivityScheduler: ObservableObject {
     private var sessionTimer: Timer?
 
     func startScreenTimeSession(durationMinutes: Int) {
+        // Stop any existing monitoring first
+        center.stopMonitoring()
+
         let activityName = DeviceActivityName("screenTimeSession")
 
         let startTime = Date()
@@ -34,13 +37,17 @@ class ActivityScheduler: ObservableObject {
             repeats: false
         )
 
+        print("🔓 Starting screen time session: \(startTime) to \(endTime)")
+        print("📱 Activity name: \(activityName)")
+
         do {
             try center.startMonitoring(activityName, during: schedule)
             isMonitoring = true
             startSessionTimer()
-            print("Started screen time session for \(durationMinutes) minutes")
+            print("✅ Screen time session started successfully for \(durationMinutes) minutes")
         } catch {
-            print("Failed to start monitoring: \(error)")
+            print("❌ Failed to start screen time session monitoring: \(error)")
+            isMonitoring = false
         }
     }
 

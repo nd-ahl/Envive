@@ -32,26 +32,35 @@ class ScreenTimeRewardManager: ObservableObject {
             return false
         }
 
+        guard appSelectionStore.hasSelectedApps else {
+            print("No apps selected for restrictions - cannot start screen time session")
+            return false
+        }
+
         // Ensure app selection is saved to shared storage for the monitor extension
         appSelectionStore.saveSelection()
 
-        // Remove used minutes
-        earnedMinutes -= durationMinutes
-        saveEarnedMinutes()
+        // Give the shared storage a moment to sync
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Update state first
+            self.isScreenTimeActive = true
+            self.activeSessionMinutes = durationMinutes
 
-        // Update state
-        isScreenTimeActive = true
-        activeSessionMinutes = durationMinutes
+            // Remove used minutes
+            self.earnedMinutes -= durationMinutes
+            self.saveEarnedMinutes()
 
-        // Start the device activity session (this will trigger the monitor extension to unblock apps)
-        scheduler.startScreenTimeSession(durationMinutes: durationMinutes)
+            // Start the device activity session (this will trigger the monitor extension to unblock apps)
+            self.scheduler.startScreenTimeSession(durationMinutes: durationMinutes)
 
-        // Schedule end of session as backup (the device activity monitor should handle this)
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(durationMinutes * 60)) {
-            self.endScreenTimeSession()
+            // Schedule end of session as backup (the device activity monitor should handle this)
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(durationMinutes * 60)) {
+                self.endScreenTimeSession()
+            }
+
+            print("Started screen time session for \(durationMinutes) minutes")
         }
 
-        print("Started screen time session for \(durationMinutes) minutes")
         return true
     }
 

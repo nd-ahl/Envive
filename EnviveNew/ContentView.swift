@@ -2,7 +2,7 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 import Combine
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 import CoreLocation
 import MapKit
@@ -506,10 +506,42 @@ struct SavedPhoto: Codable, Identifiable {
     let fileName: String
     let timestamp: Date
     let taskTitle: String
+    let taskId: UUID? // Associated task ID for proper photo-task binding
+}
+
+struct SocialPost: Identifiable, Codable {
+    let id = UUID()
+    let userId: String
+    let userName: String
+    let userAvatar: String? // File name for avatar image
+    let taskId: UUID
+    let taskTitle: String
+    let taskDescription: String?
+    let completionTime: Date
+    let xpEarned: Int
+    let photoFileName: String?
+    var likes: Int = 0
+    var downvotes: Int = 0
+    var comments: [SocialComment] = []
+
+    var timeAgo: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: completionTime, relativeTo: Date())
+    }
+}
+
+struct SocialComment: Identifiable, Codable {
+    let id = UUID()
+    let userId: String
+    let userName: String
+    let content: String
+    let timestamp: Date
 }
 
 // MARK: - Enhanced Camera Manager
-class CameraManager: NSObject, ObservableObject {
+@available(iOS 10.0, *)
+class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     @Published var capturedImage: UIImage?
     @Published var frontCameraImage: UIImage?
     @Published var backCameraImage: UIImage?
@@ -527,6 +559,16 @@ class CameraManager: NSObject, ObservableObject {
         case failed
         case capturing
     }
+
+    enum CapturePhase {
+        case readyForBack
+        case capturingBack
+        case readyForFront
+        case capturingFront
+        case completed
+    }
+
+    @Published var currentCapturePhase: CapturePhase = .readyForBack
 
     // Enhanced dual camera system
     private var dualCaptureSession: AVCaptureSession?
@@ -579,7 +621,7 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
 
-    func savePhoto(_ image: UIImage, taskTitle: String) -> Bool {
+    func savePhoto(_ image: UIImage, taskTitle: String, taskId: UUID? = nil) -> Bool {
         createPhotosDirectoryIfNeeded()
 
         let fileName = "photo_\(Date().timeIntervalSince1970).jpg"
@@ -592,10 +634,10 @@ class CameraManager: NSObject, ObservableObject {
 
         do {
             try imageData.write(to: fileURL)
-            let savedPhoto = SavedPhoto(fileName: fileName, timestamp: Date(), taskTitle: taskTitle)
+            let savedPhoto = SavedPhoto(fileName: fileName, timestamp: Date(), taskTitle: taskTitle, taskId: taskId)
             savedPhotos.append(savedPhoto)
             saveSavedPhotosMetadata()
-            print("✅ Photo saved successfully: \(fileName)")
+            print("✅ Photo saved successfully: \(fileName) for task: \(taskId?.uuidString ?? "unknown")")
             return true
         } catch {
             print("❌ Failed to save photo: \(error.localizedDescription)")
@@ -627,6 +669,25 @@ class CameraManager: NSObject, ObservableObject {
         try? FileManager.default.removeItem(at: fileURL)
         savedPhotos.removeAll { $0.id == savedPhoto.id }
         saveSavedPhotosMetadata()
+    }
+
+    // MARK: - Task-Specific Photo Management
+
+    func getPhotosForTask(_ taskId: UUID) -> [SavedPhoto] {
+        return savedPhotos.filter { $0.taskId == taskId }
+    }
+
+    func getLatestPhotoForTask(_ taskId: UUID) -> SavedPhoto? {
+        return savedPhotos
+            .filter { $0.taskId == taskId }
+            .max(by: { $0.timestamp < $1.timestamp })
+    }
+
+    func deletePhotosForTask(_ taskId: UUID) {
+        let taskPhotos = getPhotosForTask(taskId)
+        for photo in taskPhotos {
+            deletePhoto(photo)
+        }
     }
     
     func checkCameraPermissions() {
@@ -662,63 +723,192 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     
-    func takeDualPhoto() {
-        print("📸 takeDualPhoto called")
+    func takeSequentialPhoto() {
+        print("📸 takeSequentialPhoto called - Phase: \(currentCapturePhase)")
 
-        // Clear previous images before taking new ones
+        switch currentCapturePhase {
+        case .readyForBack:
+            takeBackCameraPhoto()
+        case .readyForFront:
+            takeFrontCameraPhoto()
+        case .capturingBack, .capturingFront:
+            print("⚠️ Already capturing, ignoring tap")
+        case .completed:
+            print("⚠️ Capture already completed")
+        }
+    }
+
+    private func takeBackCameraPhoto() {
+        print("📸 Taking back camera photo...")
+
+        // Clear previous images
         clearCapturedImages()
-
-        // Reset capture flags
         frontImageCaptured = false
         backImageCaptured = false
 
+        currentCapturePhase = .capturingBack
+
         // Check if we're in simulator mode
         if isSimulator {
-            print("🤖 Running in simulator, generating mock images")
-            generateMockImages()
+            print("🤖 Simulator: Creating mock back camera image")
+            DispatchQueue.main.async {
+                self.backCameraImage = self.createMockImage(text: "Back Camera\nPhoto", backgroundColor: .systemBlue)
+                self.backImageCaptured = true
+                self.currentCapturePhase = .readyForFront
+                print("✅ Back camera photo captured (mock). Ready for front camera.")
+            }
             return
         }
 
-        // Validate camera setup
-        guard let frontOutput = self.frontPhotoOutput,
-              let backOutput = self.backPhotoOutput,
-              let frontSession = self.frontCaptureSession,
+        // Real device capture
+        guard let backOutput = self.backPhotoOutput,
               let backSession = self.backCaptureSession else {
-            print("❌ Camera not properly initialized")
-            print("Front output: \(self.frontPhotoOutput != nil)")
-            print("Back output: \(self.backPhotoOutput != nil)")
-            print("Front session: \(self.frontCaptureSession != nil)")
-            print("Back session: \(self.backCaptureSession != nil)")
-
-            // Fallback to mock images if hardware fails
-            print("🔄 Falling back to mock images due to camera setup failure")
-            generateMockImages()
+            print("❌ Back camera not available")
+            // Fall back to mock
+            DispatchQueue.main.async {
+                self.backCameraImage = self.createMockImage(text: "Back Camera\nUnavailable", backgroundColor: .systemRed)
+                self.backImageCaptured = true
+                self.currentCapturePhase = .readyForFront
+            }
             return
         }
 
-        // Ensure sessions are running
-        if !frontSession.isRunning {
-            print("⚠️ Front session not running, starting...")
-            frontSession.startRunning()
-        }
+        // Ensure session is running
         if !backSession.isRunning {
-            print("⚠️ Back session not running, starting...")
-            backSession.startRunning()
+            captureQueue.async {
+                backSession.startRunning()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.captureBackPhoto(output: backOutput)
+                }
+            }
+        } else {
+            captureBackPhoto(output: backOutput)
+        }
+    }
+
+    private func takeFrontCameraPhoto() {
+        print("📸 Taking front camera photo...")
+
+        currentCapturePhase = .capturingFront
+
+        // Check if we're in simulator mode
+        if isSimulator {
+            print("🤖 Simulator: Creating mock front camera image")
+            DispatchQueue.main.async {
+                self.frontCameraImage = self.createMockImage(text: "Front Camera\nPhoto", backgroundColor: .systemGreen)
+                self.frontImageCaptured = true
+                self.currentCapturePhase = .completed
+                self.processCapturedImages()
+                print("✅ Front camera photo captured (mock). Both photos complete.")
+            }
+            return
         }
 
-        print("📷 Both cameras ready, taking photos...")
+        // Real device capture
+        guard let frontOutput = self.frontPhotoOutput,
+              let frontSession = self.frontCaptureSession else {
+            print("❌ Front camera not available")
+            // Fall back to mock
+            DispatchQueue.main.async {
+                self.frontCameraImage = self.createMockImage(text: "Front Camera\nUnavailable", backgroundColor: .systemRed)
+                self.frontImageCaptured = true
+                self.currentCapturePhase = .completed
+                self.processCapturedImages()
+            }
+            return
+        }
 
-        // Create separate settings for each camera
-        let frontSettings = AVCapturePhotoSettings()
-        frontSettings.isHighResolutionPhotoEnabled = true
-        let backSettings = AVCapturePhotoSettings()
-        backSettings.isHighResolutionPhotoEnabled = true
+        // Ensure session is running
+        if !frontSession.isRunning {
+            captureQueue.async {
+                frontSession.startRunning()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.captureFrontPhoto(output: frontOutput)
+                }
+            }
+        } else {
+            captureFrontPhoto(output: frontOutput)
+        }
+    }
 
-        print("📷 Capturing front camera...")
-        frontOutput.capturePhoto(with: frontSettings, delegate: self)
+    private func captureBackPhoto(output: AVCapturePhotoOutput) {
+        let settings = AVCapturePhotoSettings()
+        if output.isHighResolutionCaptureEnabled {
+            settings.isHighResolutionPhotoEnabled = true
+        }
 
         print("📷 Capturing back camera...")
-        backOutput.capturePhoto(with: backSettings, delegate: self)
+        output.capturePhoto(with: settings, delegate: self)
+    }
+
+    private func captureFrontPhoto(output: AVCapturePhotoOutput) {
+        let settings = AVCapturePhotoSettings()
+        if output.isHighResolutionCaptureEnabled {
+            settings.isHighResolutionPhotoEnabled = true
+        }
+
+        print("📷 Capturing front camera...")
+        output.capturePhoto(with: settings, delegate: self)
+    }
+
+    func resetCaptureFlow() {
+        print("🔄 Resetting capture flow")
+        currentCapturePhase = .readyForBack
+        clearCapturedImages()
+        frontImageCaptured = false
+        backImageCaptured = false
+    }
+
+    private func performActualCapture(frontOutput: AVCapturePhotoOutput, backOutput: AVCapturePhotoOutput) {
+        print("📷 Performing actual photo capture...")
+
+        // Create separate settings for each camera with safe high resolution settings
+        let frontSettings = AVCapturePhotoSettings()
+        if frontOutput.isHighResolutionCaptureEnabled {
+            frontSettings.isHighResolutionPhotoEnabled = true
+            print("📷 Front camera: High resolution enabled")
+        } else {
+            print("📷 Front camera: High resolution not supported")
+        }
+
+        let backSettings = AVCapturePhotoSettings()
+        if backOutput.isHighResolutionCaptureEnabled {
+            backSettings.isHighResolutionPhotoEnabled = true
+            print("📷 Back camera: High resolution enabled")
+        } else {
+            print("📷 Back camera: High resolution not supported")
+        }
+
+        // Verify sessions are still running before capture
+        let frontStillRunning = self.frontCaptureSession?.isRunning ?? false
+        let backStillRunning = self.backCaptureSession?.isRunning ?? false
+        print("📊 Final session check - Front: \(frontStillRunning), Back: \(backStillRunning)")
+
+        // Capture photos with validation
+        if frontStillRunning {
+            print("📷 Capturing front camera...")
+            frontOutput.capturePhoto(with: frontSettings, delegate: self)
+        } else {
+            print("❌ Front session not running, skipping front capture")
+            DispatchQueue.main.async {
+                self.frontImageCaptured = true
+                self.processCapturedImages()
+            }
+        }
+
+        // Small delay before capturing back camera
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if backStillRunning {
+                print("📷 Capturing back camera...")
+                backOutput.capturePhoto(with: backSettings, delegate: self)
+            } else {
+                print("❌ Back session not running, skipping back capture")
+                DispatchQueue.main.async {
+                    self.backImageCaptured = true
+                    self.processCapturedImages()
+                }
+            }
+        }
     }
 
     private func generateMockImages() {
@@ -930,7 +1120,7 @@ class CameraManager: NSObject, ObservableObject {
             frontCaptureSession?.stopRunning()
             backCaptureSession?.stopRunning()
 
-            // Create separate capture sessions for compatibility with takeDualPhoto()
+            // Create separate capture sessions for sequential photo capture
             frontCaptureSession = AVCaptureSession()
             backCaptureSession = AVCaptureSession()
 
@@ -1000,7 +1190,18 @@ class CameraManager: NSObject, ObservableObject {
 
             // Start the sessions if at least one camera is available
             if frontCameraAvailable || backCameraAvailable {
-                startCameraSession()
+                // Small delay to ensure everything is properly set up
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    self.startCameraSession()
+                }
+            } else {
+                // If no cameras available but we're in simulator, still try to continue
+                if self.isSimulator {
+                    print("🤖 No hardware cameras in simulator, mock setup ready")
+                    DispatchQueue.main.async {
+                        self.cameraStatus = .ready
+                    }
+                }
             }
 
         } catch {
@@ -1018,6 +1219,10 @@ class CameraManager: NSObject, ObservableObject {
         // Handle simulator
         if isSimulator {
             let photoOutput = AVCapturePhotoOutput()
+
+            // Configure photo output capabilities
+            photoOutput.isHighResolutionCaptureEnabled = true
+
             if session.canAddOutput(photoOutput) {
                 session.addOutput(photoOutput)
 
@@ -1073,6 +1278,9 @@ class CameraManager: NSObject, ObservableObject {
         // Create photo output
         let photoOutput = AVCapturePhotoOutput()
 
+        // Configure photo output capabilities
+        photoOutput.isHighResolutionCaptureEnabled = true
+
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
 
@@ -1083,7 +1291,7 @@ class CameraManager: NSObject, ObservableObject {
                 backPhotoOutput = photoOutput
             }
 
-            print("✅ \(positionName) camera output added")
+            print("✅ \(positionName) camera output added (High Res: \(photoOutput.isHighResolutionCaptureEnabled))")
             return true
         } else {
             print("❌ Cannot add \(positionName) camera output")
@@ -1092,12 +1300,30 @@ class CameraManager: NSObject, ObservableObject {
     }
 
     func startCameraSession() {
+        print("📷 Starting camera sessions...")
         captureQueue.async {
-            self.frontCaptureSession?.startRunning()
-            self.backCaptureSession?.startRunning()
+            if let frontSession = self.frontCaptureSession, !frontSession.isRunning {
+                frontSession.startRunning()
+                print("✅ Front camera session started")
+            }
+
+            if let backSession = self.backCaptureSession, !backSession.isRunning {
+                backSession.startRunning()
+                print("✅ Back camera session started")
+            }
+
             // Legacy support for dual session
-            self.dualCaptureSession?.startRunning()
-            print("📷 Camera sessions started")
+            if let dualSession = self.dualCaptureSession, !dualSession.isRunning {
+                dualSession.startRunning()
+                print("✅ Dual camera session started")
+            }
+
+            // Verify session status
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let frontRunning = self.frontCaptureSession?.isRunning ?? false
+                let backRunning = self.backCaptureSession?.isRunning ?? false
+                print("📊 Session Status - Front: \(frontRunning), Back: \(backRunning)")
+            }
         }
     }
 
@@ -1133,10 +1359,8 @@ class CameraManager: NSObject, ObservableObject {
             return
         }
 
-        // Use the working takeDualPhoto implementation
-        captureQueue.async {
-            self.takeDualPhoto()
-        }
+        // Use the new sequential photo implementation
+        takeSequentialPhoto()
     }
 
 
@@ -1258,18 +1482,44 @@ class CameraManager: NSObject, ObservableObject {
     }
 }
 
-extension CameraManager: AVCapturePhotoCaptureDelegate {
+extension CameraManager {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         print("📷 Photo delegate called - processing photo")
 
         if let error = error {
-            print("❌ Photo capture error: \(error.localizedDescription)")
-            DispatchQueue.main.async {
-                self.cameraError = "Photo capture failed: \(error.localizedDescription)"
-                self.isCapturing = false
-                self.cameraStatus = .ready
-                self.captureCompletionHandler?(nil)
-                self.captureCompletionHandler = nil
+            let errorDescription = error.localizedDescription
+            print("❌ Photo capture error: \(errorDescription)")
+
+            // Handle specific "Cannot Record" error
+            if errorDescription.contains("Cannot Record") {
+                print("🔄 'Cannot Record' error detected - camera may be busy")
+
+                // Mark this camera as failed but continue with the other
+                DispatchQueue.main.async {
+                    if output == self.frontPhotoOutput {
+                        print("⚠️ Front camera failed, continuing with back camera only")
+                        self.frontImageCaptured = true
+                        self.frontCameraImage = self.createMockImage(text: "Front Camera\nUnavailable", backgroundColor: .systemRed)
+                    } else if output == self.backPhotoOutput {
+                        print("⚠️ Back camera failed, continuing with front camera only")
+                        self.backImageCaptured = true
+                        self.backCameraImage = self.createMockImage(text: "Back Camera\nUnavailable", backgroundColor: .systemRed)
+                    }
+
+                    // Check if we can still process with available images
+                    if self.shouldProcessCapturedImages() {
+                        self.processCapturedImages()
+                    }
+                }
+            } else {
+                // Other errors - fail completely
+                DispatchQueue.main.async {
+                    self.cameraError = "Photo capture failed: \(errorDescription)"
+                    self.isCapturing = false
+                    self.cameraStatus = .ready
+                    self.captureCompletionHandler?(nil)
+                    self.captureCompletionHandler = nil
+                }
             }
             return
         }
@@ -1292,18 +1542,15 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
                 print("📷 Front camera image captured")
                 self.frontCameraImage = image
                 self.frontImageCaptured = true
+                self.currentCapturePhase = .completed
+                print("✅ Sequential capture completed - both photos ready")
+                self.processCapturedImages()
             } else if output == self.backPhotoOutput {
                 print("📷 Back camera image captured")
                 self.backCameraImage = image
                 self.backImageCaptured = true
-            }
-
-            // Check if we have both images or enough for the capture type
-            let shouldProcess = self.shouldProcessCapturedImages()
-
-            if shouldProcess {
-                print("📷 Ready to process captured images...")
-                self.processCapturedImages()
+                self.currentCapturePhase = .readyForFront
+                print("✅ Back camera done - ready for front camera")
             }
         }
     }
@@ -1343,6 +1590,7 @@ class EnhancedScreenTimeModel: ObservableObject {
     @Published var friends: [User] = []
     @Published var recentTasks: [TaskItem] = []
     @Published var friendActivities: [FriendActivity] = []
+    @Published var socialPosts: [SocialPost] = []
     
     // Friend Management
     @Published var searchResults: [User] = []
@@ -1372,6 +1620,7 @@ class EnhancedScreenTimeModel: ObservableObject {
         loadMockData()
         setupMockUserDatabase()
         setupLocationTracking()
+        loadMockSocialPosts()
 
         // Request notification permission on init
         notificationManager.requestPermission()
@@ -1516,17 +1765,26 @@ class EnhancedScreenTimeModel: ObservableObject {
     
     // MARK: - Task Completion with Photo
     func completeTaskWithPhoto(_ task: TaskItem, photo: UIImage?) {
+        print("🔄 Starting completeTaskWithPhoto for task: \(task.title)")
+
         let credibilityMultiplier = currentUser.credibilityScore / 100.0
         let earnedXP = Int(Double(task.xpReward) * credibilityMultiplier)
-        
+
         xpBalance += earnedXP
         currentUser.xpBalance += earnedXP
         currentUser.totalXPEarned += earnedXP
-        
+
         if let index = recentTasks.firstIndex(where: { $0.id == task.id }) {
-            recentTasks[index].verificationPhoto = photo
-            recentTasks[index].completed = true
-            recentTasks[index].completedAt = Date()
+            print("✅ Found task at index \(index), marking as completed")
+            DispatchQueue.main.async {
+                self.recentTasks[index].verificationPhoto = photo
+                self.recentTasks[index].completed = true
+                self.recentTasks[index].completedAt = Date()
+                print("✅ Task marked completed: \(self.recentTasks[index].completed)")
+            }
+        } else {
+            print("❌ Could not find task with ID: \(task.id)")
+            print("🔍 Available task IDs in recentTasks: \(recentTasks.map { "\($0.title): \($0.id)" })")
         }
         
         let activity = FriendActivity(
@@ -1544,7 +1802,13 @@ class EnhancedScreenTimeModel: ObservableObject {
         )
         
         friendActivities.insert(activity, at: 0)
-        
+
+        // Create social post for all completed tasks (with or without photo)
+        print("📱 Creating social post for completed task...")
+        DispatchQueue.main.async {
+            self.createSocialPostFromTask(task: task, photo: photo, xpEarned: earnedXP)
+        }
+
         print("Completed task: \(task.title) for \(earnedXP) XP with photo verification")
 
         // Send notification to friends about task completion
@@ -1602,8 +1866,15 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     func startAppRestrictions() {
-        guard isAuthorized else {
+        // Check current authorization status directly
+        let currentAuthStatus = center.authorizationStatus
+        print("🔍 Current authorization status: \(currentAuthStatus)")
+
+        guard currentAuthStatus == .approved else {
             print("❌ Cannot start app restrictions - not authorized")
+            print("❌ Current status: \(currentAuthStatus)")
+            // Update our cached status
+            checkAuthorizationStatus()
             return
         }
 
@@ -1634,9 +1905,15 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     func removeAppRestrictions() {
-        guard isAuthorized else {
+        // Check current authorization status directly
+        let currentAuthStatus = center.authorizationStatus
+        print("🔍 Current authorization status for removal: \(currentAuthStatus)")
+
+        guard currentAuthStatus == .approved else {
             print("❌ Cannot remove app restrictions - not authorized")
-            print("❌ Current authorization status: \(authorizationStatus)")
+            print("❌ Current authorization status: \(currentAuthStatus)")
+            // Update our cached status
+            checkAuthorizationStatus()
             return
         }
 
@@ -1678,8 +1955,14 @@ class EnhancedScreenTimeModel: ObservableObject {
             verificationPhoto: nil,
             trackingRoute: nil
         )
-        
+
         friendActivities.insert(activity, at: 0)
+
+        // Create social post for completed task (without photo)
+        print("📱 Creating social post for completed task (no photo)...")
+        DispatchQueue.main.async {
+            self.createSocialPostFromTask(task: task, photo: nil, xpEarned: earnedXP)
+        }
     }
     
     func createCustomTask(title: String, category: TaskCategory) -> TaskItem {
@@ -1975,6 +2258,95 @@ class EnhancedScreenTimeModel: ObservableObject {
                 print("👍 Friends gave \(newKudos) kudos to your post!")
             }
         }
+    }
+
+    func refreshSocialFeed() {
+        // Refresh social feed - for now load mock data
+        print("🔄 Refreshing social feed...")
+        loadMockSocialPosts()
+    }
+
+    private func loadMockSocialPosts() {
+        // Create some mock social posts for testing
+        let mockPosts = [
+            SocialPost(
+                userId: "user1",
+                userName: "Alex Johnson",
+                userAvatar: nil,
+                taskId: UUID(),
+                taskTitle: "Clean my room",
+                taskDescription: "Organized closet and made bed",
+                completionTime: Date().addingTimeInterval(-3600), // 1 hour ago
+                xpEarned: 25,
+                photoFileName: "mock_photo_1.jpg",
+                likes: 12,
+                downvotes: 1,
+                comments: []
+            ),
+            SocialPost(
+                userId: "user2",
+                userName: "Sarah Smith",
+                userAvatar: nil,
+                taskId: UUID(),
+                taskTitle: "Morning exercise",
+                taskDescription: "30 minute jog around the park",
+                completionTime: Date().addingTimeInterval(-7200), // 2 hours ago
+                xpEarned: 35,
+                photoFileName: "mock_photo_2.jpg",
+                likes: 8,
+                downvotes: 0,
+                comments: []
+            )
+        ]
+
+        socialPosts = mockPosts
+    }
+
+    func createSocialPostFromTask(task: TaskItem, photo: UIImage?, xpEarned: Int) {
+        print("📱 Creating social post for completed task: \(task.title)")
+
+        // Save the photo and get filename (if photo exists)
+        let photoFileName: String?
+        if let photo = photo {
+            photoFileName = saveTaskPhoto(photo, taskTitle: task.title)
+            print("💾 Photo saved with filename: \(photoFileName ?? "none")")
+        } else {
+            photoFileName = nil
+            print("📝 Social post created without photo")
+        }
+
+        // Create social post
+        let socialPost = SocialPost(
+            userId: currentUser.id.uuidString,
+            userName: currentUser.username,
+            userAvatar: nil,
+            taskId: task.id,
+            taskTitle: task.title,
+            taskDescription: nil,
+            completionTime: Date(),
+            xpEarned: xpEarned,
+            photoFileName: photoFileName,
+            likes: 0,
+            downvotes: 0,
+            comments: []
+        )
+
+        // Add to social feed at the top
+        DispatchQueue.main.async {
+            self.socialPosts.insert(socialPost, at: 0)
+            print("✅ Social post created and added to feed (total posts: \(self.socialPosts.count))")
+        }
+    }
+
+    private func saveTaskPhoto(_ image: UIImage, taskTitle: String) -> String {
+        // Create a unique filename for the task photo
+        let fileName = "task_\(Date().timeIntervalSince1970)_\(taskTitle.replacingOccurrences(of: " ", with: "_")).jpg"
+
+        // For now, just return the filename - in a real app you'd save to disk
+        // The actual image saving logic would go here
+        print("📸 Saving task photo as: \(fileName)")
+
+        return fileName
     }
 }
 
@@ -2351,12 +2723,14 @@ struct CameraView: UIViewControllerRepresentable {
     @ObservedObject var cameraManager: CameraManager
     @Binding var isPresented: Bool
     let taskTitle: String
+    let taskId: UUID?
     let onPhotoTaken: (UIImage) -> Void
     
     func makeUIViewController(context: Context) -> CameraViewController {
         let controller = CameraViewController()
         controller.cameraManager = cameraManager
         controller.taskTitle = taskTitle
+        controller.taskId = taskId
         controller.onPhotoTaken = onPhotoTaken
         controller.onDismiss = {
             isPresented = false
@@ -2370,6 +2744,7 @@ struct CameraView: UIViewControllerRepresentable {
 class CameraViewController: UIViewController {
     var cameraManager: CameraManager?
     var taskTitle: String = ""
+    var taskId: UUID?
     var onPhotoTaken: ((UIImage) -> Void)?
     var onDismiss: (() -> Void)?
 
@@ -2400,15 +2775,52 @@ class CameraViewController: UIViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.imageObserver = self.cameraManager?.objectWillChange.sink { [weak self] in
                 DispatchQueue.main.async {
-                    guard let self = self,
-                          let capturedImage = self.cameraManager?.capturedImage,
-                          !self.isShowingPreview,
-                          capturedImage.size.width > 0 else { return }
+                    guard let self = self else { return }
 
-                    print("📸 Observer detected new captured image, showing preview")
-                    self.showImagePreview(capturedImage)
+                    // Update UI based on capture phase
+                    self.updateUIForCapturePhase()
+
+                    // Handle completed capture
+                    if let capturedImage = self.cameraManager?.capturedImage,
+                       !self.isShowingPreview,
+                       capturedImage.size.width > 0 {
+                        print("📸 Observer detected new captured image, showing preview")
+                        self.showImagePreview(capturedImage)
+                    }
                 }
             }
+        }
+    }
+
+    private func updateUIForCapturePhase() {
+        guard let phase = cameraManager?.currentCapturePhase else { return }
+
+        switch phase {
+        case .readyForBack:
+            captureButton?.setTitle("📸 Take Back Photo", for: .normal)
+            captureButton?.backgroundColor = UIColor.systemBlue
+            captureButton?.isEnabled = true
+            updateCameraStatus("Ready to take back camera photo", color: .green)
+        case .capturingBack:
+            captureButton?.setTitle("📸 Taking Back Photo...", for: .normal)
+            captureButton?.backgroundColor = UIColor.systemOrange
+            captureButton?.isEnabled = false
+            updateCameraStatus("📸 Taking back photo...", color: .blue)
+        case .readyForFront:
+            captureButton?.setTitle("🤳 Take Front Photo", for: .normal)
+            captureButton?.backgroundColor = UIColor.systemGreen
+            captureButton?.isEnabled = true
+            updateCameraStatus("Ready to take front camera photo", color: .green)
+        case .capturingFront:
+            captureButton?.setTitle("🤳 Taking Front Photo...", for: .normal)
+            captureButton?.backgroundColor = UIColor.systemOrange
+            captureButton?.isEnabled = false
+            updateCameraStatus("📸 Taking front photo...", color: .blue)
+        case .completed:
+            captureButton?.setTitle("✅ Photos Complete", for: .normal)
+            captureButton?.backgroundColor = UIColor.systemGray
+            captureButton?.isEnabled = false
+            updateCameraStatus("✅ Both photos captured", color: .green)
         }
     }
     
@@ -2599,6 +3011,8 @@ class CameraViewController: UIViewController {
         // Clean up existing preview layers first
         frontPreviewLayer?.removeFromSuperlayer()
         backPreviewLayer?.removeFromSuperlayer()
+        frontPreviewLayer = nil
+        backPreviewLayer = nil
 
         // Make sure we're on the main queue for UI operations
         DispatchQueue.main.async {
@@ -2610,25 +3024,51 @@ class CameraViewController: UIViewController {
             // Setup front camera preview
             if let frontSession = cameraManager.frontCaptureSession,
                let frontPreviewView = self.view.subviews.first(where: { $0.tag == 100 }) {
+                print("📱 Setting up front camera preview layer...")
+
                 self.frontPreviewLayer = AVCaptureVideoPreviewLayer(session: frontSession)
-                self.frontPreviewLayer?.videoGravity = .resizeAspectFill
-                self.frontPreviewLayer?.frame = frontPreviewView.bounds
-                frontPreviewView.layer.addSublayer(self.frontPreviewLayer!)
-                print("✅ Front camera preview layer setup")
+                guard let frontLayer = self.frontPreviewLayer else {
+                    print("❌ Failed to create front preview layer")
+                    return
+                }
+
+                frontLayer.videoGravity = .resizeAspectFill
+                frontLayer.frame = frontPreviewView.bounds
+                frontLayer.cornerRadius = 10
+                frontPreviewView.layer.addSublayer(frontLayer)
+
+                print("✅ Front camera preview layer setup - Frame: \(frontPreviewView.bounds), Session Running: \(frontSession.isRunning)")
             } else {
-                print("⚠️ Front camera session or preview view not available")
+                print("⚠️ Front camera session or preview view not available - Session: \(cameraManager.frontCaptureSession != nil), View: \(self.view.subviews.first(where: { $0.tag == 100 }) != nil)")
             }
 
             // Setup back camera preview
             if let backSession = cameraManager.backCaptureSession,
                let backPreviewView = self.view.subviews.first(where: { $0.tag == 101 }) {
+                print("📱 Setting up back camera preview layer...")
+
                 self.backPreviewLayer = AVCaptureVideoPreviewLayer(session: backSession)
-                self.backPreviewLayer?.videoGravity = .resizeAspectFill
-                self.backPreviewLayer?.frame = backPreviewView.bounds
-                backPreviewView.layer.addSublayer(self.backPreviewLayer!)
-                print("✅ Back camera preview layer setup")
+                guard let backLayer = self.backPreviewLayer else {
+                    print("❌ Failed to create back preview layer")
+                    return
+                }
+
+                backLayer.videoGravity = .resizeAspectFill
+                backLayer.frame = backPreviewView.bounds
+                backPreviewView.layer.addSublayer(backLayer)
+
+                print("✅ Back camera preview layer setup - Frame: \(backPreviewView.bounds), Session Running: \(backSession.isRunning)")
             } else {
-                print("⚠️ Back camera session or preview view not available")
+                print("⚠️ Back camera session or preview view not available - Session: \(cameraManager.backCaptureSession != nil), View: \(self.view.subviews.first(where: { $0.tag == 101 }) != nil)")
+            }
+
+            // Force layout update and update preview frames
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
+
+            // Update preview layer frames after layout
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.updatePreviewLayerFrames()
             }
         }
     }
@@ -2707,13 +3147,57 @@ class CameraViewController: UIViewController {
     
     private func takePictureNow() {
         print("📸 takePictureNow called")
-        cameraManager?.takeDualPhoto()
-        
+
+        // Add safety checks before attempting capture
+        guard let cameraManager = cameraManager else {
+            print("❌ Camera manager not available")
+            updateCameraStatus("❌ Camera not available", color: .red)
+            return
+        }
+
+        // Check camera status
+        switch cameraManager.cameraStatus {
+        case .ready, .frontOnly, .backOnly:
+            break // OK to proceed
+        case .initializing:
+            print("⚠️ Camera still initializing")
+            updateCameraStatus("⚠️ Camera initializing...", color: .orange)
+            return
+        case .failed:
+            print("❌ Camera failed, reinitializing...")
+            updateCameraStatus("🔄 Reinitializing camera...", color: .yellow)
+            cameraManager.setupDualCameraSystem()
+            return
+        case .capturing:
+            print("⚠️ Already capturing")
+            return
+        }
+
+        // Disable capture button temporarily
+        captureButton?.isEnabled = false
+        updateCameraStatus("📸 Capturing...", color: .blue)
+
+        // Attempt sequential capture
+        cameraManager.takeSequentialPhoto()
+
+        // Show flash effect
+        showFlashEffect()
+
+        // Re-enable button after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.captureButton?.isEnabled = true
+            if cameraManager.cameraError == nil {
+                self.updateCameraStatus("✅ Ready", color: .green)
+            }
+        }
+    }
+
+    private func showFlashEffect() {
         let flashView = UIView(frame: view.bounds)
         flashView.backgroundColor = .white
         flashView.alpha = 0
         view.addSubview(flashView)
-        
+
         UIView.animate(withDuration: 0.1, animations: {
             flashView.alpha = 0.8
         }, completion: { _ in
@@ -2723,8 +3207,6 @@ class CameraViewController: UIViewController {
                 flashView.removeFromSuperview()
             })
         })
-        
-        // Image preview will be shown automatically via observer when capture completes
     }
     
     @objc private func closeButtonTapped() {
@@ -2754,6 +3236,9 @@ class CameraViewController: UIViewController {
         print("🔄 Retake button tapped")
         isShowingPreview = false
 
+        // Reset the sequential capture flow
+        cameraManager?.resetCaptureFlow()
+
         // Clear captured images
         cameraManager?.clearCapturedImages()
 
@@ -2778,15 +3263,442 @@ class CameraViewController: UIViewController {
         }
 
         // Save the photo to persistent storage
-        let success = cameraManager?.savePhoto(image, taskTitle: taskTitle) ?? false
+        let success = cameraManager?.savePhoto(image, taskTitle: taskTitle, taskId: taskId) ?? false
         if success {
             print("✅ Photo saved to storage")
         } else {
             print("❌ Failed to save photo to storage")
         }
 
+        print("🔥🔥🔥 CameraViewController: Calling onPhotoTaken with image")
         onPhotoTaken?(image)
-        onDismiss?()
+        print("🔥🔥🔥 CameraViewController: NOT calling onDismiss - letting handlePost control dismissal")
+        // onDismiss?() // Let handlePost control the dismissal
+    }
+}
+
+// MARK: - Social View
+struct SocialView: View {
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    ForEach(model.socialPosts) { post in
+                        SocialPostView(post: post)
+                            .environmentObject(model)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Social")
+            .refreshable {
+                // Refresh social feed
+                model.refreshSocialFeed()
+            }
+        }
+    }
+}
+
+struct SocialPostView: View {
+    let post: SocialPost
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var showMainAsBack = true
+    @State private var showingFullView = false
+    @State private var showingComments = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with user info
+            HStack {
+                // User avatar
+                Circle()
+                    .fill(Color.purple.opacity(0.3))
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Text(String(post.userName.prefix(1)).uppercased())
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.purple)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(post.userName)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    HStack {
+                        Text(post.taskTitle)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        Text("•")
+                            .foregroundColor(.secondary)
+
+                        Text(post.timeAgo)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text("•")
+                            .foregroundColor(.secondary)
+
+                        Text("+\(post.xpEarned) XP")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.green)
+                    }
+                }
+
+                Spacer()
+            }
+
+            // Photo section with Instagram 4:5 ratio
+            if let photo = loadSocialPhoto() {
+                GeometryReader { geometry in
+                    let width = geometry.size.width
+                    let height = width * 1.25 // 4:5 ratio
+
+                    ZStack {
+                        // Main photo
+                        Button(action: { showingFullView = true }) {
+                            Image(uiImage: showMainAsBack ? photo.backImage : photo.frontImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: width, height: height)
+                                .clipped()
+                                .cornerRadius(20)
+                        }
+
+                        // Small overlay photo
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Button(action: { showMainAsBack.toggle() }) {
+                                    Image(uiImage: showMainAsBack ? photo.frontImage : photo.backImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 80, height: 106) // Maintain 4:5 ratio for small image
+                                        .clipped()
+                                        .cornerRadius(12)
+                                        .shadow(color: .black.opacity(0.25), radius: 3, x: 0, y: 2)
+                                }
+                                .padding(.trailing, 15)
+                                .padding(.top, 15)
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+                .aspectRatio(4/5, contentMode: .fit)
+            }
+
+            // Interactions section
+            HStack(spacing: 20) {
+                Button(action: { likePost() }) {
+                    HStack(spacing: 4) {
+                        Text("🟢")
+                        Text("\(post.likes)")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                }
+
+                Button(action: { downvotePost() }) {
+                    HStack(spacing: 4) {
+                        Text("🔻")
+                        Text("\(post.downvotes)")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                }
+
+                Button(action: { showingComments = true }) {
+                    HStack(spacing: 4) {
+                        Text("💬")
+                        Text("\(post.comments.count)")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                }
+
+                Spacer()
+            }
+            .foregroundColor(.primary)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .fullScreenCover(isPresented: $showingFullView) {
+            FullImageView(post: post, showMainAsBack: $showMainAsBack)
+                .environmentObject(model)
+        }
+        .sheet(isPresented: $showingComments) {
+            CommentsView(post: post)
+                .environmentObject(model)
+        }
+    }
+
+    private func loadSocialPhoto() -> (backImage: UIImage, frontImage: UIImage)? {
+        // Only show photos if this post has a photo filename
+        guard post.photoFileName != nil else {
+            return nil
+        }
+
+        // Try to load from actual task photos first
+        if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
+           let verificationPhoto = task.verificationPhoto {
+            // If we have the actual verification photo, try to extract back/front cameras
+            // For now, we'll use the verification photo as back camera and create a mock front camera
+            let backImage = verificationPhoto
+            let frontImage = createMockFrontCamera()
+            return (backImage, frontImage)
+        }
+
+        // Fallback to mock images for testing (only for posts that should have photos)
+        let backImage = createMockBackCamera()
+        let frontImage = createMockFrontCamera()
+        return (backImage, frontImage)
+    }
+
+    private func createMockBackCamera() -> UIImage {
+        let size = CGSize(width: 300, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let text = "📷\n\(post.taskTitle)"
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 20, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func createMockFrontCamera() -> UIImage {
+        let size = CGSize(width: 300, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            UIColor.systemGreen.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let text = "🤳\n\(post.userName)"
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 20, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func likePost() {
+        // Implement like functionality
+        if let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) {
+            model.socialPosts[index].likes += 1
+        }
+    }
+
+    private func downvotePost() {
+        // Implement downvote functionality
+        if let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) {
+            model.socialPosts[index].downvotes += 1
+        }
+    }
+}
+
+struct FullImageView: View {
+    let post: SocialPost
+    @Binding var showMainAsBack: Bool
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if let photo = loadSocialPhoto() {
+                Image(uiImage: showMainAsBack ? photo.backImage : photo.frontImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipped()
+                    .onTapGesture {
+                        showMainAsBack.toggle()
+                    }
+            }
+
+            // Close button
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title)
+                            .foregroundColor(.white)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    .padding()
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private func loadSocialPhoto() -> (backImage: UIImage, frontImage: UIImage)? {
+        // Only show photos if this post has a photo filename
+        guard post.photoFileName != nil else {
+            return nil
+        }
+
+        // Try to load from actual task photos first
+        if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
+           let verificationPhoto = task.verificationPhoto {
+            // Use actual verification photo as back camera
+            let backImage = verificationPhoto
+            let frontImage = createMockFrontCamera()
+            return (backImage, frontImage)
+        }
+
+        // Fallback to mock images
+        let backImage = createMockBackCamera()
+        let frontImage = createMockFrontCamera()
+        return (backImage, frontImage)
+    }
+
+    private func createMockBackCamera() -> UIImage {
+        let size = CGSize(width: 300, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let text = "📷\n\(post.taskTitle)"
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 24, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func createMockFrontCamera() -> UIImage {
+        let size = CGSize(width: 300, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            UIColor.systemGreen.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+
+            let text = "🤳\n\(post.userName)"
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 24, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: (size.width - textSize.width) / 2,
+                y: (size.height - textSize.height) / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+    }
+}
+
+struct CommentsView: View {
+    let post: SocialPost
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var newComment = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                // Comments list
+                List(post.comments) { comment in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(comment.userName)
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Text(comment.timestamp, style: .relative)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Text(comment.content)
+                            .font(.body)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // Add comment section
+                HStack {
+                    TextField("Add a comment...", text: $newComment)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                    Button("Post") {
+                        addComment()
+                    }
+                    .disabled(newComment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding()
+            }
+            .navigationTitle("Comments")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(trailing: Button("Done") { dismiss() })
+        }
+    }
+
+    private func addComment() {
+        let comment = SocialComment(
+            userId: model.currentUser.id.uuidString,
+            userName: model.currentUser.username,
+            content: newComment.trimmingCharacters(in: .whitespacesAndNewlines),
+            timestamp: Date()
+        )
+
+        if let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) {
+            model.socialPosts[index].comments.append(comment)
+        }
+
+        newComment = ""
     }
 }
 
@@ -2838,11 +3750,20 @@ struct ProfileView: View {
                             .fontWeight(.semibold)
                     }
 
-                    HStack {
-                        Text("Friends")
-                        Spacer()
-                        Text("\(model.friends.count)")
-                            .fontWeight(.semibold)
+                    NavigationLink(destination: FriendsView().environmentObject(model)) {
+                        HStack {
+                            Image(systemName: "person.2.fill")
+                                .foregroundColor(.blue)
+                            Text("Friends")
+                            Spacer()
+                            Text("\(model.friends.count)")
+                                .fontWeight(.semibold)
+                            if model.pendingFriendRequests.count > 0 {
+                                Text("(\(model.pendingFriendRequests.count))")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                        }
                     }
                 }
 
@@ -3076,14 +3997,13 @@ struct ContentView: View {
                 }
                 .tag(1)
             
-            FriendsView()
+            SocialView()
                 .environmentObject(model)
                 .tabItem {
-                    Image(systemName: "person.2.fill")
-                    Text("Friends")
+                    Image(systemName: "heart.circle.fill")
+                    Text("Social")
                 }
                 .tag(2)
-                .badge(model.pendingFriendRequests.count)
             
             FriendMapView()
                 .environmentObject(model)
@@ -3206,15 +4126,83 @@ struct NotificationSettingsView: View {
     }
 }
 
+// MARK: - Simple Camera View
+struct SimpleCameraView: UIViewControllerRepresentable {
+    let onPhotoTaken: (UIImage) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .camera
+        picker.allowsEditing = false
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: SimpleCameraView
+
+        init(_ parent: SimpleCameraView) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                print("📸 Simple camera captured image successfully")
+                parent.onPhotoTaken(image)
+            }
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            print("📸 Simple camera cancelled")
+        }
+    }
+}
+
 // MARK: - Enhanced Task Row with Camera
 struct EnhancedTaskRow: View {
-    let task: TaskItem
+    let taskId: UUID
     let onComplete: () -> Void
     let onCompleteWithPhoto: (UIImage) -> Void
-    
+
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @State private var showingCamera = false
     @State private var showingLocationTracking = false
+    @State private var localVerificationPhoto: UIImage? // Local backup for photo state
+
+    var task: TaskItem {
+        // Always get the current task from the model to ensure live updates
+        let foundTask = model.recentTasks.first(where: { $0.id == taskId }) ?? TaskItem(
+            title: "Unknown", category: .custom, xpReward: 0, estimatedMinutes: 0,
+            isCustom: false, completed: false, createdBy: "", isGroupTask: false,
+            participants: [], verificationRequired: false, location: nil,
+            locationCoordinate: nil, verificationPhoto: nil
+        )
+
+        return foundTask
+    }
+
+    // Use local photo state as backup if model photo isn't set
+    var hasVerificationPhoto: Bool {
+        let modelHasPhoto = task.verificationPhoto != nil
+        let localHasPhoto = localVerificationPhoto != nil
+        let result = modelHasPhoto || localHasPhoto
+
+        if task.verificationRequired {
+            print("🔍 TaskRow - '\(task.title)' model photo: \(modelHasPhoto), local photo: \(localHasPhoto), result: \(result)")
+        }
+
+        return result
+    }
+
+    var currentPhoto: UIImage? {
+        return task.verificationPhoto ?? localVerificationPhoto
+    }
     
     var needsLocationTracking: Bool {
         task.category == .outdoor || task.category == .exercise
@@ -3246,27 +4234,29 @@ struct EnhancedTaskRow: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .strikethrough(task.completed)
-                
+                    .foregroundColor(task.completed ? .secondary : .primary)
+
                 HStack {
                     Text(task.category.rawValue)
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.2))
+                        .background(task.completed ? Color.gray.opacity(0.2) : Color.blue.opacity(0.2))
                         .cornerRadius(4)
-                    
+                        .foregroundColor(task.completed ? .secondary : .primary)
+
                     Text("\(task.xpReward) XP")
                         .font(.caption)
-                        .foregroundColor(.green)
-                    
+                        .foregroundColor(task.completed ? .secondary : .green)
+
                     Text("~\(task.estimatedMinutes)m")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     if task.verificationRequired {
                         Image(systemName: "camera.fill")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(task.completed ? .secondary : .orange)
                     }
                     
                     if needsLocationTracking {
@@ -3312,11 +4302,23 @@ struct EnhancedTaskRow: View {
                     }
 
                     if task.verificationRequired {
-                        Button("📸 Verify") {
-                            showingCamera = true
+                        if hasVerificationPhoto {
+                            Button("✅ Complete") {
+                                print("🎯 Complete button pressed for task: \(task.title)")
+                                print("🎯 Photo already exists, calling onComplete() directly")
+                                onComplete()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .tint(.green)
+                        } else {
+                            Button("📸 Verify") {
+                                print("📸 Verify button pressed for task: \(task.title)")
+                                showingCamera = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                     }
 
                     if !needsLocationTracking && !task.verificationRequired {
@@ -3332,14 +4334,23 @@ struct EnhancedTaskRow: View {
                     .foregroundColor(.green)
             }
         }
-        .fullScreenCover(isPresented: $showingCamera) {
-            EnhancedCameraView(
-                isPresented: $showingCamera,
-                taskTitle: task.title
-            ) { photo in
-                onCompleteWithPhoto(photo)
+        .sheet(isPresented: $showingCamera) {
+            SimpleCameraView { photo in
+                print("🔥 SIMPLE CAMERA: Photo captured for task: \(task.title)")
+
+                // Set both local and model photo
+                localVerificationPhoto = photo
+
+                if let index = model.recentTasks.firstIndex(where: { $0.id == taskId }) {
+                    model.recentTasks[index].verificationPhoto = photo
+                    model.objectWillChange.send()
+                }
+
+                // AUTO-COMPLETE: Immediately complete the task after photo
+                print("🎯 AUTO-COMPLETE: Completing task automatically after photo")
+                showingCamera = false
+                onComplete()
             }
-            .environmentObject(model)
         }
         .fullScreenCover(isPresented: $showingLocationTracking) {
             LocationTrackingView(
@@ -3377,6 +4388,12 @@ struct EnhancedTaskRow: View {
                     )
                     
                     model.friendActivities.insert(activity, at: 0)
+
+                    // Create social post for location-tracked task completion
+                    print("📱 Creating social post for location-tracked task...")
+                    DispatchQueue.main.async {
+                        model.createSocialPostFromTask(task: task, photo: nil, xpEarned: totalXP)
+                    }
                 }
                 showingLocationTracking = false
             }
@@ -3402,22 +4419,46 @@ struct EnhancedTasksView: View {
             List {
                 if !incompleteTasks.isEmpty {
                     Section("To Do") {
-                        ForEach(incompleteTasks.indices, id: \.self) { index in
-                            let task = incompleteTasks[index]
-                            EnhancedTaskRow(
-                                task: task,
+                        ForEach(incompleteTasks, id: \.id) { task in
+                            // Find the actual task in model.recentTasks to ensure live updates
+                            if let originalIndex = model.recentTasks.firstIndex(where: { $0.id == task.id }) {
+                                EnhancedTaskRow(
+                                    taskId: task.id,
                                 onComplete: {
-                                    if let originalIndex = model.recentTasks.firstIndex(where: { $0.id == task.id }) {
-                                        model.completeTask(model.recentTasks[originalIndex])
-                                        model.recentTasks[originalIndex].completed = true
-                                    }
+                                    model.completeTask(model.recentTasks[originalIndex])
+                                    model.recentTasks[originalIndex].completed = true
                                 },
                                 onCompleteWithPhoto: { photo in
-                                    if let originalIndex = model.recentTasks.firstIndex(where: { $0.id == task.id }) {
-                                        model.completeTaskWithPhoto(model.recentTasks[originalIndex], photo: photo)
+                                    print("🚨 onCompleteWithPhoto CALLED for task: \(model.recentTasks[originalIndex].title) with ID: \(model.recentTasks[originalIndex].id)")
+                                    print("🚨 Photo size: \(photo.size), originalIndex: \(originalIndex)")
+
+                                    // Save photo to persistent storage with task ID
+                                    let saveSuccess = model.cameraManager.savePhoto(photo, taskTitle: model.recentTasks[originalIndex].title, taskId: model.recentTasks[originalIndex].id)
+                                    if saveSuccess {
+                                        print("✅ Photo saved to persistent storage with task ID: \(model.recentTasks[originalIndex].id)")
+                                    } else {
+                                        print("❌ Failed to save photo to persistent storage")
                                     }
+
+                                    // CRITICAL: Save the photo AND complete the task
+                                    print("🔄 Before update - Task has photo: \(model.recentTasks[originalIndex].verificationPhoto != nil)")
+                                    model.recentTasks[originalIndex].verificationPhoto = photo
+                                    print("🔄 After update - Task has photo: \(model.recentTasks[originalIndex].verificationPhoto != nil)")
+
+                                    // 🎯 COMPLETE THE TASK - This was missing!
+                                    print("🎯 COMPLETING TASK: \(model.recentTasks[originalIndex].title)")
+                                    model.completeTask(model.recentTasks[originalIndex])
+                                    model.recentTasks[originalIndex].completed = true
+                                    model.recentTasks[originalIndex].completedAt = Date()
+                                    print("✅ Task marked as completed: \(model.recentTasks[originalIndex].completed)")
+
+                                    // Force UI refresh
+                                    model.objectWillChange.send()
+
+                                    print("📸 Task completion process finished for: \(model.recentTasks[originalIndex].title)")
                                 }
                             )
+                            }
                         }
                     }
                 }
@@ -3426,7 +4467,7 @@ struct EnhancedTasksView: View {
                     Section("Completed") {
                         ForEach(completedTasks, id: \.id) { task in
                             EnhancedTaskRow(
-                                task: task,
+                                taskId: task.id,
                                 onComplete: {},
                                 onCompleteWithPhoto: { _ in }
                             )
@@ -4475,12 +5516,14 @@ struct SafariTestView: View {
     }
 }
 
+
 // MARK: - Enhanced Camera System with Immediate Preview & Social Posting
 
 struct EnhancedCameraView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @Binding var isPresented: Bool
     let taskTitle: String
+    let taskId: UUID
     let onPhotoPosted: (UIImage) -> Void
 
     @State private var currentPhase: CameraPhase = .capture
@@ -4502,7 +5545,26 @@ struct EnhancedCameraView: View {
 
             switch currentPhase {
             case .capture:
-                CaptureView(onCapture: handlePhotoCapture)
+                CameraView(
+                    cameraManager: model.cameraManager,
+                    isPresented: $isPresented,
+                    taskTitle: taskTitle,
+                    taskId: taskId,
+                    onPhotoTaken: { image in
+                        print("🔥🔥🔥 EnhancedCameraView: onPhotoTaken called with image")
+                        self.capturedImage = image
+
+                        // DIRECT CALLBACK: Skip the preview/post flow and call callback directly
+                        print("🔥🔥🔥 EnhancedCameraView: Calling onPhotoPosted directly")
+                        let watermarkedImage = model.cameraManager.addTimestampWatermark(to: image, taskTitle: taskTitle)
+                        self.onPhotoPosted(watermarkedImage)
+
+                        // Dismiss camera after short delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.dismissCamera()
+                        }
+                    }
+                )
             case .preview:
                 PreviewView(
                     image: capturedImage,
@@ -4579,6 +5641,9 @@ struct EnhancedCameraView: View {
     }
 
     private func handleRetake() {
+        // Reset the sequential capture flow
+        model.cameraManager.resetCaptureFlow()
+
         withAnimation(.easeInOut(duration: 0.3)) {
             currentPhase = .capture
             capturedImage = nil
@@ -4595,30 +5660,31 @@ struct EnhancedCameraView: View {
         // Apply watermark
         let watermarkedImage = model.cameraManager.addTimestampWatermark(to: image, taskTitle: taskTitle)
 
-        // Save to storage
-        _ = model.cameraManager.savePhoto(watermarkedImage, taskTitle: taskTitle)
+        // Save photo to task and dismiss immediately (no auto-completion)
+        print("📸 CRITICAL: About to call onPhotoPosted callback with watermarked image")
+        print("📸 CRITICAL: Watermarked image size: \(watermarkedImage.size)")
+        print("📸 CRITICAL: Task title: \(taskTitle), Task ID: \(taskId)")
+        self.onPhotoPosted(watermarkedImage)
+        print("📸 CRITICAL: onPhotoPosted callback completed")
 
-        // Create social post
-        model.createSocialPost(
-            with: watermarkedImage,
-            taskTitle: taskTitle,
-            xpEarned: 25, // Default XP for photo verification
-            location: model.locationManager.currentLocation?.description
-        )
+        withAnimation(.easeInOut(duration: 0.3)) {
+            self.currentPhase = .success
+        }
 
-        // Simulate posting delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                self.currentPhase = .success
-            }
-
-            // Call completion handler
-            self.onPhotoPosted(watermarkedImage)
+        // Dismiss camera quickly so user can see the "Complete" button
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            print("🏁 Dismissing camera - user should now see Complete button")
+            print("🏁 About to call dismissCamera() and onPhotoPosted callback")
+            self.dismissCamera()
         }
     }
 
     private func dismissCamera() {
-        isPresented = false
+        print("🚪 Dismissing camera view")
+        DispatchQueue.main.async {
+            self.isPresented = false
+            print("✅ Camera dismissed")
+        }
     }
 }
 
@@ -4700,10 +5766,47 @@ struct PreviewView: View {
     let image: UIImage?
     let onRetake: () -> Void
     let onPost: () -> Void
+    @EnvironmentObject var model: EnhancedScreenTimeModel
+    @State private var showMainAsBack = true // true = back camera main, false = front camera main
 
     var body: some View {
         ZStack {
-            if let image = image {
+            Color.black.ignoresSafeArea()
+
+            // Main photo and overlay
+            if let backImage = model.cameraManager.backCameraImage,
+               let frontImage = model.cameraManager.frontCameraImage {
+
+                // Main photo (larger)
+                Image(uiImage: showMainAsBack ? backImage : frontImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+
+                // Overlay photo (smaller, top-right)
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: swapPhotos) {
+                            Image(uiImage: showMainAsBack ? frontImage : backImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 120, height: 160)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.white, lineWidth: 3)
+                                )
+                                .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 2)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.top, 60)
+                    }
+                    Spacer()
+                }
+            } else if let image = image {
+                // Fallback to single image if dual photos not available
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -4729,12 +5832,12 @@ struct PreviewView: View {
                         .cornerRadius(12)
                     }
 
-                    // Post button
+                    // Accept button
                     Button(action: onPost) {
                         VStack {
-                            Image(systemName: "paperplane.fill")
+                            Image(systemName: "checkmark.circle.fill")
                                 .font(.title2)
-                            Text("Post")
+                            Text("Accept")
                                 .font(.caption)
                         }
                         .foregroundColor(.white)
@@ -4746,6 +5849,11 @@ struct PreviewView: View {
                 .padding(.bottom, 50)
             }
         }
+    }
+
+    private func swapPhotos() {
+        showMainAsBack.toggle()
+        print("📱 Photos swapped - Main camera: \(showMainAsBack ? "Back" : "Front")")
     }
 }
 
@@ -4780,12 +5888,12 @@ struct SuccessView: View {
                 .foregroundColor(.green)
 
             VStack(spacing: 10) {
-                Text("Posted Successfully!")
+                Text("Photos Saved!")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
 
-                Text("Your task verification has been shared with friends")
+                Text("Click the Complete button to finish your task")
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)

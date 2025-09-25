@@ -17,23 +17,43 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
 
-        print("Device Activity Monitor - intervalDidStart: \(activity)")
-
-        // Load app selection from shared storage
-        guard let data = userDefaults?.data(forKey: "familyActivitySelection"),
-              let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) else {
-            print("No app selection found for activity: \(activity)")
-            return
-        }
+        print("🔄 Device Activity Monitor - intervalDidStart: \(activity)")
+        print("📂 UserDefaults suite: \(userDefaults?.description ?? "nil")")
 
         // Apply restrictions based on activity type
         switch activity.rawValue {
         case "screenTimeSession":
-            // For screen time sessions, we unblock apps temporarily
+            print("🔓 SCREEN TIME SESSION STARTING - REMOVING ALL RESTRICTIONS")
+
+            // For screen time sessions, we completely remove all restrictions
+            store.shield.applications = nil
+            store.shield.applicationCategories = nil
+            store.shield.webDomains = nil
+
+            // Also clear all other settings
             store.clearAllSettings()
-            print("Screen time session started - apps unblocked")
+
+            print("✅ Screen time session started - all apps should now be unblocked")
+            print("🔍 Current shield state after clearing:")
+            print("   - Applications: \(store.shield.applications == nil ? "nil" : "has value")")
+            print("   - Categories: \(store.shield.applicationCategories == nil ? "nil" : "has value")")
+            print("   - Web domains: \(store.shield.webDomains == nil ? "nil" : "has value")")
 
         case "timerRestriction", "dailyRestriction", "usageThreshold":
+            print("🔒 BLOCKING ACTIVITY STARTING - APPLYING RESTRICTIONS")
+
+            // Load app selection from shared storage and apply restrictions
+            guard let data = userDefaults?.data(forKey: "familyActivitySelection"),
+                  let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) else {
+                print("❌ No app selection found for activity: \(activity)")
+                return
+            }
+
+            print("📱 Found app selection - applying restrictions...")
+            print("   - Apps to block: \(selection.applicationTokens.count)")
+            print("   - Categories to block: \(selection.categoryTokens.count)")
+            print("   - Web domains to block: \(selection.webDomainTokens.count)")
+
             // Apply restrictions for blocking activities
             if !selection.applicationTokens.isEmpty {
                 store.shield.applications = selection.applicationTokens
@@ -47,10 +67,10 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
                 store.shield.webDomains = selection.webDomainTokens
             }
 
-            print("Restrictions applied for activity: \(activity)")
+            print("✅ Restrictions applied for activity: \(activity)")
 
         default:
-            print("Unknown activity started: \(activity)")
+            print("❓ Unknown activity started: \(activity)")
         }
     }
 

@@ -19,11 +19,11 @@ class ScreenTimeManager: ObservableObject {
     }
 
     func requestAuthorization() async throws {
-        print("🔐 Requesting Screen Time authorization for child management...")
+        print("🔐 Requesting Screen Time authorization for individual management...")
         print("🔐 Current status before request: \(authorizationStatus)")
 
         do {
-            try await authorizationCenter.requestAuthorization(for: .child)
+            try await authorizationCenter.requestAuthorization(for: .individual)
             await MainActor.run {
                 updateAuthorizationStatus()
                 print("🔐 Authorization request completed. New status: \(self.authorizationStatus)")
