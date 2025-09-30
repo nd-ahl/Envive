@@ -14,6 +14,9 @@
 		89FD67652E81315900C1C642 /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89FD674C2E81266200C1C642 /* ManagedSettings.framework */; };
 		89FD67672E81315900C1C642 /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89FD67662E81315900C1C642 /* FamilyControls.framework */; };
 		89FD676B2E81315900C1C642 /* DeviceActivityMonitorExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 89FD67612E81315900C1C642 /* DeviceActivityMonitorExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		89FD686F2E8B7F0A00C1C642 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89FD682A2E85F80B00C1C642 /* WidgetKit.framework */; };
+		89FD68702E8B7F0A00C1C642 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89FD682C2E85F80B00C1C642 /* SwiftUI.framework */; };
+		89FD687F2E8B7F0B00C1C642 /* EnviveNewWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 89FD686E2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,6 +48,13 @@
 			remoteGlobalIDString = 89FD67602E81315900C1C642;
 			remoteInfo = DeviceActivityMonitorExtension;
 		};
+		89FD687D2E8B7F0B00C1C642 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 89FD66572E7E7F6600C1C642 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 89FD686D2E8B7F0A00C1C642;
+			remoteInfo = EnviveNewWidgetsExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -55,6 +65,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				89FD676B2E81315900C1C642 /* DeviceActivityMonitorExtension.appex in Embed Foundation Extensions */,
+				89FD687F2E8B7F0B00C1C642 /* EnviveNewWidgetsExtension.appex in Embed Foundation Extensions */,
 				89FD67572E81266200C1C642 /* ShieldConfigurationExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
@@ -72,6 +83,9 @@
 		89FD67612E81315900C1C642 /* DeviceActivityMonitorExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DeviceActivityMonitorExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		89FD67622E81315900C1C642 /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
 		89FD67662E81315900C1C642 /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
+		89FD682A2E85F80B00C1C642 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		89FD682C2E85F80B00C1C642 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		89FD686E2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EnviveNewWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -81,6 +95,27 @@
 				Info.plist,
 			);
 			target = 89FD665E2E7E7F6600C1C642 /* EnviveNew */;
+		};
+		89FD67512E81266200C1C642 /* Exceptions for "ShieldConfigurationExtension" folder in "ShieldConfigurationExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 89FD67492E81266200C1C642 /* ShieldConfigurationExtension */;
+		};
+		89FD67682E81315900C1C642 /* Exceptions for "DeviceActivityMonitorExtension" folder in "DeviceActivityMonitorExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 89FD67602E81315900C1C642 /* DeviceActivityMonitorExtension */;
+		};
+		89FD68832E8B7F0B00C1C642 /* Exceptions for "EnviveNewWidgets" folder in "EnviveNewWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 89FD686D2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -105,12 +140,26 @@
 		};
 		89FD67502E81266200C1C642 /* ShieldConfigurationExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				89FD67512E81266200C1C642 /* Exceptions for "ShieldConfigurationExtension" folder in "ShieldConfigurationExtension" target */,
+			);
 			path = ShieldConfigurationExtension;
 			sourceTree = "<group>";
 		};
 		89FD67642E81315900C1C642 /* DeviceActivityMonitorExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				89FD67682E81315900C1C642 /* Exceptions for "DeviceActivityMonitorExtension" folder in "DeviceActivityMonitorExtension" target */,
+			);
 			path = DeviceActivityMonitorExtension;
+			sourceTree = "<group>";
+		};
+		89FD68712E8B7F0A00C1C642 /* EnviveNewWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				89FD68832E8B7F0B00C1C642 /* Exceptions for "EnviveNewWidgets" folder in "EnviveNewWidgetsExtension" target */,
+			);
+			path = EnviveNewWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -156,6 +205,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		89FD686B2E8B7F0A00C1C642 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89FD68702E8B7F0A00C1C642 /* SwiftUI.framework in Frameworks */,
+				89FD686F2E8B7F0A00C1C642 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -167,6 +225,7 @@
 				89FD667E2E7E7F6B00C1C642 /* EnviveNewUITests */,
 				89FD67502E81266200C1C642 /* ShieldConfigurationExtension */,
 				89FD67642E81315900C1C642 /* DeviceActivityMonitorExtension */,
+				89FD68712E8B7F0A00C1C642 /* EnviveNewWidgets */,
 				89FD674B2E81266200C1C642 /* Frameworks */,
 				89FD66602E7E7F6600C1C642 /* Products */,
 			);
@@ -180,6 +239,7 @@
 				89FD667B2E7E7F6B00C1C642 /* EnviveNewUITests.xctest */,
 				89FD674A2E81266200C1C642 /* ShieldConfigurationExtension.appex */,
 				89FD67612E81315900C1C642 /* DeviceActivityMonitorExtension.appex */,
+				89FD686E2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -191,6 +251,8 @@
 				89FD674E2E81266200C1C642 /* ManagedSettingsUI.framework */,
 				89FD67622E81315900C1C642 /* DeviceActivity.framework */,
 				89FD67662E81315900C1C642 /* FamilyControls.framework */,
+				89FD682A2E85F80B00C1C642 /* WidgetKit.framework */,
+				89FD682C2E85F80B00C1C642 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -212,6 +274,7 @@
 			dependencies = (
 				89FD67562E81266200C1C642 /* PBXTargetDependency */,
 				89FD676A2E81315900C1C642 /* PBXTargetDependency */,
+				89FD687E2E8B7F0B00C1C642 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				89FD66612E7E7F6600C1C642 /* EnviveNew */,
@@ -313,6 +376,28 @@
 			productReference = 89FD67612E81315900C1C642 /* DeviceActivityMonitorExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		89FD686D2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 89FD68802E8B7F0B00C1C642 /* Build configuration list for PBXNativeTarget "EnviveNewWidgetsExtension" */;
+			buildPhases = (
+				89FD686A2E8B7F0A00C1C642 /* Sources */,
+				89FD686B2E8B7F0A00C1C642 /* Frameworks */,
+				89FD686C2E8B7F0A00C1C642 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				89FD68712E8B7F0A00C1C642 /* EnviveNewWidgets */,
+			);
+			name = EnviveNewWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = EnviveNewWidgetsExtension;
+			productReference = 89FD686E2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -340,6 +425,9 @@
 					89FD67602E81315900C1C642 = {
 						CreatedOnToolsVersion = 26.0;
 					};
+					89FD686D2E8B7F0A00C1C642 = {
+						CreatedOnToolsVersion = 26.0;
+					};
 				};
 			};
 			buildConfigurationList = 89FD665A2E7E7F6600C1C642 /* Build configuration list for PBXProject "EnviveNew" */;
@@ -364,6 +452,7 @@
 				89FD667A2E7E7F6B00C1C642 /* EnviveNewUITests */,
 				89FD67492E81266200C1C642 /* ShieldConfigurationExtension */,
 				89FD67602E81315900C1C642 /* DeviceActivityMonitorExtension */,
+				89FD686D2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -398,6 +487,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		89FD675F2E81315900C1C642 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		89FD686C2E8B7F0A00C1C642 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -442,6 +538,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		89FD686A2E8B7F0A00C1C642 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -464,6 +567,11 @@
 			isa = PBXTargetDependency;
 			target = 89FD67602E81315900C1C642 /* DeviceActivityMonitorExtension */;
 			targetProxy = 89FD67692E81315900C1C642 /* PBXContainerItemProxy */;
+		};
+		89FD687E2E8B7F0B00C1C642 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 89FD686D2E8B7F0A00C1C642 /* EnviveNewWidgetsExtension */;
+			targetProxy = 89FD687D2E8B7F0B00C1C642 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -865,6 +973,66 @@
 			};
 			name = Release;
 		};
+		89FD68812E8B7F0B00C1C642 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5TBWU99J4Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EnviveNewWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = EnviveNewWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.neal.envivenew.EnviveNewWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		89FD68822E8B7F0B00C1C642 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5TBWU99J4Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = EnviveNewWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = EnviveNewWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.neal.envivenew.EnviveNewWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -918,6 +1086,15 @@
 			buildConfigurations = (
 				89FD676D2E81315900C1C642 /* Debug */,
 				89FD676E2E81315900C1C642 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		89FD68802E8B7F0B00C1C642 /* Build configuration list for PBXNativeTarget "EnviveNewWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89FD68812E8B7F0B00C1C642 /* Debug */,
+				89FD68822E8B7F0B00C1C642 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -523,6 +523,8 @@ struct SocialPost: Identifiable, Codable {
     var likes: Int = 0
     var downvotes: Int = 0
     var comments: [SocialComment] = []
+    var likedBy: [String] = [] // Array of user IDs who liked this post
+    var downvotedBy: [String] = [] // Array of user IDs who downvoted this post
 
     var timeAgo: String {
         let formatter = RelativeDateTimeFormatter()
@@ -574,8 +576,8 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     private var dualCaptureSession: AVCaptureSession?
     var frontCaptureSession: AVCaptureSession?
     var backCaptureSession: AVCaptureSession?
-    private var frontCamera: AVCaptureDevice?
-    private var backCamera: AVCaptureDevice?
+    var frontCamera: AVCaptureDevice?
+    var backCamera: AVCaptureDevice?
     private var frontInput: AVCaptureDeviceInput?
     private var backInput: AVCaptureDeviceInput?
     var frontPhotoOutput: AVCapturePhotoOutput?
@@ -716,9 +718,11 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
 
     func clearCapturedImages() {
         DispatchQueue.main.async {
+            // Release memory immediately for better performance
             self.capturedImage = nil
             self.frontCameraImage = nil
             self.backCameraImage = nil
+            self.captureCompletionHandler = nil
         }
     }
     
@@ -777,9 +781,8 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         if !backSession.isRunning {
             captureQueue.async {
                 backSession.startRunning()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self.captureBackPhoto(output: backOutput)
-                }
+                // Start capture immediately - session will be ready
+                self.captureBackPhoto(output: backOutput)
             }
         } else {
             captureBackPhoto(output: backOutput)
@@ -822,9 +825,8 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         if !frontSession.isRunning {
             captureQueue.async {
                 frontSession.startRunning()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self.captureFrontPhoto(output: frontOutput)
-                }
+                // Start capture immediately - session will be ready
+                self.captureFrontPhoto(output: frontOutput)
             }
         } else {
             captureFrontPhoto(output: frontOutput)
@@ -1082,11 +1084,9 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
                     return
                 }
 
-                // Add a small delay to ensure permission dialog is dismissed
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.captureQueue.async {
-                        self.initializeCameras()
-                    }
+                // Initialize cameras immediately after permission grant
+                self.captureQueue.async {
+                    self.initializeCameras()
                 }
             }
         }
@@ -1132,12 +1132,12 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
                 return
             }
 
-            // Set session presets for high quality
-            if frontSession.canSetSessionPreset(.photo) {
-                frontSession.sessionPreset = .photo
+            // Set session presets optimized for preview performance
+            if frontSession.canSetSessionPreset(.high) {
+                frontSession.sessionPreset = .high
             }
-            if backSession.canSetSessionPreset(.photo) {
-                backSession.sessionPreset = .photo
+            if backSession.canSetSessionPreset(.high) {
+                backSession.sessionPreset = .high
             }
 
             var frontCameraAvailable = false
@@ -1189,10 +1189,8 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
 
             // Start the sessions if at least one camera is available
             if frontCameraAvailable || backCameraAvailable {
-                // Small delay to ensure everything is properly set up
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.startCameraSession()
-                }
+                // Start immediately for faster preview
+                self.startCameraSession()
             } else {
                 // If no cameras available but we're in simulator, still try to continue
                 if self.isSimulator {
@@ -1601,6 +1599,10 @@ class EnhancedScreenTimeModel: ObservableObject {
     @Published var sentFriendRequests: [User] = []
     @Published var allUsers: [User] = []
     @Published var isSearching = false
+
+    // Toast notifications
+    @Published var toastMessage: String?
+    @Published var showToast = false
     
     // Camera
     @Published var cameraManager = CameraManager()
@@ -1612,6 +1614,8 @@ class EnhancedScreenTimeModel: ObservableObject {
     @Published var notificationManager = NotificationManager()
     // App Selection Store (shared with ParentControlView)
     @Published var appSelectionStore = AppSelectionStore()
+    // Credibility Manager (shared across app)
+    @Published var credibilityManager = CredibilityManager()
 
     private let center = AuthorizationCenter.shared
     private let store = ManagedSettingsStore()
@@ -1630,6 +1634,9 @@ class EnhancedScreenTimeModel: ObservableObject {
 
         // Ensure apps are blocked if no session is active
         ensureAppsAreBlocked()
+
+        // Sync credibility manager with current user score
+        credibilityManager.credibilityScore = Int(currentUser.credibilityScore)
     }
     
     // MARK: - Location Methods
@@ -1735,14 +1742,32 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     func removeFriend(_ user: User) {
-        friends.removeAll { $0.username == user.username }
-        currentUser.friends.removeAll { $0 == user.username }
-        
-        if let index = allUsers.firstIndex(where: { $0.username == user.username }) {
+        let username = user.username
+        friends.removeAll { $0.username == username }
+        currentUser.friends.removeAll { $0 == username }
+
+        if let index = allUsers.firstIndex(where: { $0.username == username }) {
             allUsers[index].friends.removeAll { $0 == currentUser.username }
         }
-        
-        print("Removed \(user.username) from friends")
+
+        print("Removed \(username) from friends")
+
+        // Show toast notification
+        showToastNotification("\(username) has been removed as a friend")
+    }
+
+    func showToastNotification(_ message: String) {
+        toastMessage = message
+        withAnimation {
+            showToast = true
+        }
+
+        // Auto-dismiss after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation {
+                self.showToast = false
+            }
+        }
     }
     
     func cancelFriendRequest(to user: User) {
@@ -2308,11 +2333,15 @@ class EnhancedScreenTimeModel: ObservableObject {
     func createSocialPostFromTask(task: TaskItem, photo: UIImage?, xpEarned: Int) {
         print("📱 Creating social post for completed task: \(task.title)")
 
-        // Save the photo and get filename (if photo exists)
+        // Save the photo and get filename (if photo exists OR if task has verification photo)
         let photoFileName: String?
         if let photo = photo {
             photoFileName = saveTaskPhoto(photo, taskTitle: task.title)
             print("💾 Photo saved with filename: \(photoFileName ?? "none")")
+        } else if task.verificationPhoto != nil {
+            // Task has a verification photo, indicate this in the social post
+            photoFileName = "task_verification_photo"
+            print("💾 Social post created with existing task verification photo")
         } else {
             photoFileName = nil
             print("📝 Social post created without photo")
@@ -2783,6 +2812,22 @@ class CameraViewController: UIViewController {
     private var isShowingPreview = false
     private var imageObserver: AnyCancellable?
     private var captureCompletionHandler: ((UIImage?) -> Void)?
+
+    // Video recording properties
+    enum CaptureMode {
+        case photo
+        case video
+    }
+    private var captureMode: CaptureMode = .photo
+    private var isRecording = false
+    private var frontVideoOutput: AVCaptureMovieFileOutput?
+    private var backVideoOutput: AVCaptureMovieFileOutput?
+    private var frontVideoURL: URL?
+    private var backVideoURL: URL?
+    private var recordingTimer: Timer?
+    private var recordingDuration: TimeInterval = 0
+    private var progressLayer: CAShapeLayer?
+    private var outerRingView: UIView?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -2790,17 +2835,33 @@ class CameraViewController: UIViewController {
 
         // Initialize camera manager first
         print("🔧 Initializing camera manager...")
+
+        // Observe camera status to setup preview when ready
+        setupCameraStatusObserver()
+
+        // Start camera initialization
         cameraManager?.setupDualCameraSystem()
-
-        // Then setup our camera preview with more time for initialization
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            print("🔧 Setting up camera preview...")
-            self.setupCamera()
-
-            // Debug camera manager state
-            self.debugCameraManagerState()
-        }
     }
+
+    private func setupCameraStatusObserver() {
+        // Observe when camera becomes ready
+        cameraManager?.objectWillChange.sink { [weak self] _ in
+            guard let self = self else { return }
+
+            DispatchQueue.main.async {
+                // Check if camera is ready and preview hasn't been set up yet
+                if self.cameraPreviewLayer == nil,
+                   let status = self.cameraManager?.cameraStatus,
+                   (status == .ready || status == .frontOnly || status == .backOnly) {
+                    print("🔧 Camera is ready, setting up preview...")
+                    self.setupCamera()
+                    self.debugCameraManagerState()
+                }
+            }
+        }.store(in: &cancellables)
+    }
+
+    private var cancellables = Set<AnyCancellable>()
 
     private func debugCameraManagerState() {
         guard let cameraManager = self.cameraManager else {
@@ -2818,22 +2879,20 @@ class CameraViewController: UIViewController {
     }
 
     private func setupImageObserver() {
-        // Observe captured image changes with delay to prevent immediate triggers
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.imageObserver = self.cameraManager?.objectWillChange.sink { [weak self] in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
+        // Observe captured image changes immediately for faster response
+        self.imageObserver = self.cameraManager?.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
 
-                    // Update UI based on capture phase
-                    self.updateUIForCapturePhase()
+                // Update UI based on capture phase
+                self.updateUIForCapturePhase()
 
-                    // Handle completed capture
-                    if let capturedImage = self.cameraManager?.capturedImage,
-                       !self.isShowingPreview,
-                       capturedImage.size.width > 0 {
-                        print("📸 Observer detected new captured image, showing preview")
-                        self.showImagePreview(capturedImage)
-                    }
+                // Handle completed capture
+                if let capturedImage = self.cameraManager?.capturedImage,
+                   !self.isShowingPreview,
+                   capturedImage.size.width > 0 {
+                    print("📸 Observer detected new captured image, showing preview")
+                    self.showImagePreview(capturedImage)
                 }
             }
         }
@@ -2881,41 +2940,98 @@ class CameraViewController: UIViewController {
         cameraPreviewView.backgroundColor = .black
         view.addSubview(cameraPreviewView)
 
-        // Close button (top-left)
+        // Close button (top-left) - Apple style with chevron
         let closeButton = UIButton(type: .system)
-        closeButton.setTitle("✕", for: .normal)
-        closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
-        closeButton.setTitleColor(.white, for: .normal)
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        closeButton.setImage(UIImage(systemName: "chevron.down", withConfiguration: chevronConfig), for: .normal)
+        closeButton.tintColor = .white
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
         view.addSubview(closeButton)
 
-        // Flip camera button (top-right)
+        // Flip camera button (top-right) - Apple style with icon
         let flipButton = UIButton(type: .system)
-        flipButton.setTitle("🔄", for: .normal)
-        flipButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
-        flipButton.setTitleColor(.white, for: .normal)
+        let flipConfig = UIImage.SymbolConfiguration(pointSize: 24, weight: .medium)
+        flipButton.setImage(UIImage(systemName: "arrow.triangle.2.circlepath.camera", withConfiguration: flipConfig), for: .normal)
+        flipButton.tintColor = .white
         flipButton.translatesAutoresizingMaskIntoConstraints = false
         flipButton.addTarget(self, action: #selector(flipCameraButtonTapped), for: .touchUpInside)
         view.addSubview(flipButton)
 
-        // Flash toggle button (top-center)
+        // Flash toggle button (top-left, below close) - Apple style
         let flashButton = UIButton(type: .system)
-        flashButton.setTitle("⚡", for: .normal)
-        flashButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
-        flashButton.setTitleColor(.white, for: .normal)
+        let flashConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        flashButton.setImage(UIImage(systemName: "bolt.slash.fill", withConfiguration: flashConfig), for: .normal)
+        flashButton.tintColor = .white
+        flashButton.tag = 999 // Tag for easy access
         flashButton.translatesAutoresizingMaskIntoConstraints = false
         flashButton.addTarget(self, action: #selector(flashButtonTapped), for: .touchUpInside)
         view.addSubview(flashButton)
 
-        // Simple white capture button (bottom-center)
+        // Apple-style capture button with outer ring
+        let captureButtonContainer = UIView()
+        captureButtonContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(captureButtonContainer)
+
+        // Outer ring
+        let outerRing = UIView()
+        outerRing.backgroundColor = .clear
+        outerRing.layer.borderColor = UIColor.white.cgColor
+        outerRing.layer.borderWidth = 4
+        outerRing.layer.cornerRadius = 40
+        outerRing.translatesAutoresizingMaskIntoConstraints = false
+        captureButtonContainer.addSubview(outerRing)
+        self.outerRingView = outerRing
+
+        // Inner white button
         let captureButton = UIButton(type: .custom)
         captureButton.backgroundColor = .white
-        captureButton.layer.cornerRadius = 35
+        captureButton.layer.cornerRadius = 32
         captureButton.translatesAutoresizingMaskIntoConstraints = false
         captureButton.addTarget(self, action: #selector(captureButtonTapped), for: .touchUpInside)
-        view.addSubview(captureButton)
+        captureButtonContainer.addSubview(captureButton)
         self.captureButton = captureButton
+
+        // Add constraints for capture button
+        NSLayoutConstraint.activate([
+            captureButtonContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            captureButtonContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            captureButtonContainer.widthAnchor.constraint(equalToConstant: 80),
+            captureButtonContainer.heightAnchor.constraint(equalToConstant: 80),
+
+            outerRing.centerXAnchor.constraint(equalTo: captureButtonContainer.centerXAnchor),
+            outerRing.centerYAnchor.constraint(equalTo: captureButtonContainer.centerYAnchor),
+            outerRing.widthAnchor.constraint(equalToConstant: 80),
+            outerRing.heightAnchor.constraint(equalToConstant: 80),
+
+            captureButton.centerXAnchor.constraint(equalTo: captureButtonContainer.centerXAnchor),
+            captureButton.centerYAnchor.constraint(equalTo: captureButtonContainer.centerYAnchor),
+            captureButton.widthAnchor.constraint(equalToConstant: 64),
+            captureButton.heightAnchor.constraint(equalToConstant: 64)
+        ])
+
+        // Add pinch gesture for zoom
+        let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchToZoom(_:)))
+        cameraPreviewView.addGestureRecognizer(pinchGesture)
+
+        // Add tap gesture for focus
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapToFocus(_:)))
+        cameraPreviewView.addGestureRecognizer(tapGesture)
+
+        // Zoom indicator (like BeReal - "1x" button at bottom)
+        let zoomLabel = UILabel()
+        zoomLabel.text = "1×"
+        zoomLabel.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        zoomLabel.textColor = .white
+        zoomLabel.textAlignment = .center
+        zoomLabel.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+        zoomLabel.layer.cornerRadius = 18
+        zoomLabel.clipsToBounds = true
+        zoomLabel.translatesAutoresizingMaskIntoConstraints = false
+        zoomLabel.tag = 888 // Tag for easy access
+        view.addSubview(zoomLabel)
+
+        // Mode selector removed temporarily - VIDEO feature will be added back later
 
         // Black transition view (initially hidden)
         let blackTransitionView = UIView()
@@ -2967,29 +3083,29 @@ class CameraViewController: UIViewController {
             cameraPreviewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             cameraPreviewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            // Close button
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            // Close button (top-left)
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
 
-            // Flip camera button
-            flipButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            // Flip camera button (top-right)
+            flipButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             flipButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             flipButton.widthAnchor.constraint(equalToConstant: 44),
             flipButton.heightAnchor.constraint(equalToConstant: 44),
 
-            // Flash button
-            flashButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            // Flash button (top-center)
+            flashButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             flashButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             flashButton.widthAnchor.constraint(equalToConstant: 44),
             flashButton.heightAnchor.constraint(equalToConstant: 44),
 
-            // Capture button (large white circle)
-            captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
-            captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            captureButton.widthAnchor.constraint(equalToConstant: 70),
-            captureButton.heightAnchor.constraint(equalToConstant: 70),
+            // Zoom indicator label (bottom, above capture button)
+            zoomLabel.bottomAnchor.constraint(equalTo: captureButtonContainer.topAnchor, constant: -20),
+            zoomLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            zoomLabel.widthAnchor.constraint(equalToConstant: 50),
+            zoomLabel.heightAnchor.constraint(equalToConstant: 36),
 
             // Black transition view (full screen)
             blackTransitionView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -3072,6 +3188,14 @@ class CameraViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
+        // If camera is already ready but preview wasn't set up, set it up now
+        if cameraPreviewLayer == nil,
+           let status = cameraManager?.cameraStatus,
+           (status == .ready || status == .frontOnly || status == .backOnly) {
+            print("🔧 Camera already ready in viewDidAppear, setting up preview...")
+            setupCamera()
+        }
+
         // Update preview layer frames when view appears to handle rotation/resize
         DispatchQueue.main.async {
             self.updatePreviewLayerFrames()
@@ -3108,7 +3232,21 @@ class CameraViewController: UIViewController {
     }
     
     @objc private func captureButtonTapped() {
-        print("🔘 BeReal-style capture initiated")
+        print("🔘 Photo capture initiated")
+
+        // Add instant haptic feedback on button press
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.impactOccurred()
+
+        // Animate button press like native iOS camera
+        UIView.animate(withDuration: 0.1, animations: {
+            self.captureButton?.transform = CGAffineTransform(scaleX: 0.85, y: 0.85)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.captureButton?.transform = .identity
+            }
+        }
+
         startBeRealCapture()
     }
 
@@ -3165,13 +3303,11 @@ class CameraViewController: UIViewController {
             return
         }
 
-        // Handle simulator mode - generate mock images
+        // Handle simulator mode - generate mock images instantly
         #if targetEnvironment(simulator)
         print("🤖 Simulator mode: generating mock \(position == .back ? "rear" : "front") camera image")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let mockImage = self.createMockImage(text: "\(position == .back ? "Rear" : "Front") Camera\nMock Photo", backgroundColor: position == .back ? .systemBlue : .systemGreen)
-            completion(mockImage)
-        }
+        let mockImage = self.createMockImage(text: "\(position == .back ? "Rear" : "Front") Camera\nMock Photo", backgroundColor: position == .back ? .systemBlue : .systemGreen)
+        completion(mockImage)
         return
         #endif
 
@@ -3193,7 +3329,8 @@ class CameraViewController: UIViewController {
             print("🔄 Starting \(position == .back ? "rear" : "front") camera session...")
             DispatchQueue.global(qos: .userInitiated).async {
                 captureSession.startRunning()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                // Retry capture immediately after starting session
+                DispatchQueue.main.async {
                     self.captureSpecificCamera(position: position, completion: completion)
                 }
             }
@@ -3250,11 +3387,15 @@ class CameraViewController: UIViewController {
         print("⚫ Showing black screen transition")
 
         DispatchQueue.main.async {
-            // Show black screen
+            // Show black screen with flash effect (instant feedback)
             self.blackTransitionView?.isHidden = false
 
-            // Hide after 1 second and call completion
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            // Add haptic feedback for capture
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+
+            // Quick transition (0.3s instead of 1s for faster UX)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.blackTransitionView?.isHidden = true
                 completion()
             }
@@ -3288,20 +3429,22 @@ class CameraViewController: UIViewController {
         }
 
         DispatchQueue.main.async {
-            // Step 1: Show main camera image at second 3
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                self.imagePreviewView?.image = main
-                self.imagePreviewView?.isHidden = false
+            // Show main image immediately for instant feedback
+            self.imagePreviewView?.image = main
+            self.imagePreviewView?.isHidden = false
 
-                // Step 2: Add overlay camera with slide-in animation at second 4
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.addOverlayCameraWithAnimation(overlayImage: overlayImage)
+            // Add haptic feedback for successful capture
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
 
-                    // Show the retake and use photo buttons
-                    self.showFinalButtons()
+            // Add overlay with quick animation (0.2s delay instead of 3s total)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.addOverlayCameraWithAnimation(overlayImage: overlayImage)
 
-                    self.isCapturing = false
-                }
+                // Show the retake and use photo buttons
+                self.showFinalButtons()
+
+                self.isCapturing = false
             }
         }
     }
@@ -3421,19 +3564,308 @@ class CameraViewController: UIViewController {
         onDismiss?()
     }
 
+    // MARK: - Mode Switching
+
+    @objc private func switchToVideoMode() {
+        guard captureMode != .video else { return }
+        print("📹 Switching to VIDEO mode")
+
+        captureMode = .video
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
+        // Update UI
+        UIView.animate(withDuration: 0.2) {
+            // Change capture button to red
+            self.captureButton?.backgroundColor = .systemRed
+
+            // Update mode button styles
+            if let videoButton = self.view.viewWithTag(777) as? UIButton {
+                videoButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+                videoButton.setTitleColor(.white, for: .normal)
+            }
+            if let photoButton = self.view.viewWithTag(666) as? UIButton {
+                photoButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+                photoButton.setTitleColor(UIColor.white.withAlphaComponent(0.5), for: .normal)
+            }
+        }
+
+        // Setup video outputs if not already configured
+        setupVideoOutputs()
+    }
+
+    @objc private func switchToPhotoMode() {
+        guard captureMode != .photo else { return }
+        print("📸 Switching to PHOTO mode")
+
+        captureMode = .photo
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
+        // Update UI
+        UIView.animate(withDuration: 0.2) {
+            // Change capture button to white
+            self.captureButton?.backgroundColor = .white
+
+            // Update mode button styles
+            if let videoButton = self.view.viewWithTag(777) as? UIButton {
+                videoButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+                videoButton.setTitleColor(UIColor.white.withAlphaComponent(0.5), for: .normal)
+            }
+            if let photoButton = self.view.viewWithTag(666) as? UIButton {
+                photoButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+                photoButton.setTitleColor(.white, for: .normal)
+            }
+        }
+    }
+
+    // MARK: - Video Recording Setup
+
+    private func setupVideoOutputs() {
+        guard let cameraManager = cameraManager else {
+            print("❌ Camera manager is nil")
+            return
+        }
+
+        print("🔧 Setting up video outputs...")
+
+        DispatchQueue.main.async {
+            // Setup front video output
+            if let frontSession = cameraManager.frontCaptureSession {
+                if self.frontVideoOutput == nil {
+                    let frontOutput = AVCaptureMovieFileOutput()
+
+                    // Set max duration
+                    frontOutput.maxRecordedDuration = CMTime(seconds: 30, preferredTimescale: 1)
+
+                    frontSession.beginConfiguration()
+                    if frontSession.canAddOutput(frontOutput) {
+                        frontSession.addOutput(frontOutput)
+                        self.frontVideoOutput = frontOutput
+                        print("✅ Front video output configured")
+                    } else {
+                        print("❌ Cannot add front video output")
+                    }
+                    frontSession.commitConfiguration()
+                } else {
+                    print("ℹ️ Front video output already exists")
+                }
+            } else {
+                print("❌ Front capture session not available")
+            }
+
+            // Setup back video output
+            if let backSession = cameraManager.backCaptureSession {
+                if self.backVideoOutput == nil {
+                    let backOutput = AVCaptureMovieFileOutput()
+
+                    // Set max duration
+                    backOutput.maxRecordedDuration = CMTime(seconds: 30, preferredTimescale: 1)
+
+                    backSession.beginConfiguration()
+                    if backSession.canAddOutput(backOutput) {
+                        backSession.addOutput(backOutput)
+                        self.backVideoOutput = backOutput
+                        print("✅ Back video output configured")
+                    } else {
+                        print("❌ Cannot add back video output")
+                    }
+                    backSession.commitConfiguration()
+                } else {
+                    print("ℹ️ Back video output already exists")
+                }
+            } else {
+                print("❌ Back capture session not available")
+            }
+        }
+    }
+
+    // MARK: - Video Recording
+
+    private func startVideoRecording() {
+        guard !isRecording else {
+            print("⚠️ Already recording")
+            return
+        }
+
+        print("🎥 Attempting to start video recording...")
+
+        // Ensure video outputs are set up
+        if frontVideoOutput == nil || backVideoOutput == nil {
+            print("⚠️ Video outputs not ready, setting up now...")
+            setupVideoOutputs()
+
+            // Try again after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.startVideoRecording()
+            }
+            return
+        }
+
+        guard let frontOutput = frontVideoOutput,
+              let backOutput = backVideoOutput else {
+            print("❌ Video outputs still not available")
+            return
+        }
+
+        // Check if outputs are recording already
+        if frontOutput.isRecording || backOutput.isRecording {
+            print("⚠️ Outputs already recording")
+            return
+        }
+
+        isRecording = true
+        recordingDuration = 0
+
+        // Animate button to recording state (rounded square like iOS)
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5) {
+            self.captureButton?.layer.cornerRadius = 8 // Square with rounded corners
+            self.captureButton?.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
+        }
+
+        // Generate unique file URLs
+        let frontURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("front_\(UUID().uuidString)")
+            .appendingPathExtension("mov")
+        let backURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("back_\(UUID().uuidString)")
+            .appendingPathExtension("mov")
+
+        // Remove files if they exist
+        try? FileManager.default.removeItem(at: frontURL)
+        try? FileManager.default.removeItem(at: backURL)
+
+        self.frontVideoURL = frontURL
+        self.backVideoURL = backURL
+
+        print("📁 Front video will be saved to: \(frontURL.lastPathComponent)")
+        print("📁 Back video will be saved to: \(backURL.lastPathComponent)")
+
+        // Ensure sessions are running
+        guard let frontSession = cameraManager?.frontCaptureSession,
+              let backSession = cameraManager?.backCaptureSession,
+              frontSession.isRunning,
+              backSession.isRunning else {
+            print("❌ Camera sessions not running")
+            isRecording = false
+            return
+        }
+
+        // Start recording both cameras
+        print("🎬 Starting front camera recording...")
+        frontOutput.startRecording(to: frontURL, recordingDelegate: self)
+
+        print("🎬 Starting back camera recording...")
+        backOutput.startRecording(to: backURL, recordingDelegate: self)
+
+        // Start progress animation
+        startRecordingProgressAnimation()
+
+        // Start timer for duration tracking and auto-stop at 30s
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.recordingDuration += 0.1
+
+            // Auto-stop at 30 seconds
+            if self.recordingDuration >= 30.0 {
+                self.stopVideoRecording()
+            }
+        }
+
+        print("✅ Video recording started successfully")
+    }
+
+    private func stopVideoRecording() {
+        guard isRecording else { return }
+
+        isRecording = false
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+
+        // Animate button back to normal state
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5) {
+            self.captureButton?.layer.cornerRadius = 32 // Back to circle
+            self.captureButton?.transform = .identity
+        }
+
+        // Stop recording both cameras
+        frontVideoOutput?.stopRecording()
+        backVideoOutput?.stopRecording()
+
+        // Remove progress animation
+        stopRecordingProgressAnimation()
+
+        print("🎥 Stopped video recording at \(recordingDuration)s")
+    }
+
+    private func startRecordingProgressAnimation() {
+        guard let outerRing = outerRingView else { return }
+
+        // Create circular progress layer
+        let progressLayer = CAShapeLayer()
+        let circularPath = UIBezierPath(
+            arcCenter: CGPoint(x: 40, y: 40),
+            radius: 38,
+            startAngle: -.pi / 2,
+            endAngle: 3 * .pi / 2,
+            clockwise: true
+        )
+
+        progressLayer.path = circularPath.cgPath
+        progressLayer.strokeColor = UIColor.systemRed.cgColor
+        progressLayer.lineWidth = 4
+        progressLayer.fillColor = UIColor.clear.cgColor
+        progressLayer.lineCap = .round
+        progressLayer.strokeEnd = 0
+
+        outerRing.layer.addSublayer(progressLayer)
+        self.progressLayer = progressLayer
+
+        // Animate stroke end from 0 to 1 over 30 seconds
+        let animation = CABasicAnimation(keyPath: "strokeEnd")
+        animation.toValue = 1
+        animation.duration = 30
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+
+        progressLayer.add(animation, forKey: "progressAnimation")
+    }
+
+    private func stopRecordingProgressAnimation() {
+        progressLayer?.removeFromSuperlayer()
+        progressLayer = nil
+    }
+
     @objc private func flipCameraButtonTapped() {
         print("🔄 Flip camera button tapped")
+
+        // Add haptic feedback for camera flip
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
         currentCameraPosition = currentCameraPosition == .back ? .front : .back
         setupSingleCameraPreview(position: currentCameraPosition)
     }
 
     @objc private func flashButtonTapped() {
         print("⚡ Flash button tapped")
+
+        // Add haptic feedback for flash toggle
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
         isFlashOn.toggle()
 
-        // Update flash appearance
-        if let flashButton = view.subviews.compactMap({ $0 as? UIButton }).first(where: { $0.titleLabel?.text == "⚡" }) {
-            flashButton.backgroundColor = isFlashOn ? UIColor.yellow.withAlphaComponent(0.3) : UIColor.clear
+        // Update flash icon with proper SF Symbol
+        if let flashButton = view.viewWithTag(999) as? UIButton {
+            let flashConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+            let iconName = isFlashOn ? "bolt.fill" : "bolt.slash.fill"
+            flashButton.setImage(UIImage(systemName: iconName, withConfiguration: flashConfig), for: .normal)
+            flashButton.tintColor = isFlashOn ? .yellow : .white
         }
 
         configureFlash()
@@ -3450,6 +3882,103 @@ class CameraViewController: UIViewController {
         // Configure flash settings based on current state
         // This will be applied during capture
         print("Flash configured: \(isFlashOn ? "ON" : "OFF") for \(currentCameraPosition == .back ? "rear" : "front") camera")
+    }
+
+    // MARK: - Gesture Handlers
+
+    @objc private func handlePinchToZoom(_ gesture: UIPinchGestureRecognizer) {
+        guard let cameraManager = self.cameraManager else { return }
+
+        let camera = currentCameraPosition == .back ? cameraManager.backCamera : cameraManager.frontCamera
+        guard let device = camera else { return }
+
+        do {
+            try device.lockForConfiguration()
+
+            let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0)
+            let currentZoom = device.videoZoomFactor
+
+            if gesture.state == .changed {
+                let pinchVelocity = gesture.velocity
+                var newZoom = currentZoom + (pinchVelocity > 0 ? 0.05 : -0.05)
+                newZoom = min(max(newZoom, 1.0), maxZoom)
+
+                device.videoZoomFactor = newZoom
+
+                // Update zoom label
+                if let zoomLabel = view.viewWithTag(888) as? UILabel {
+                    zoomLabel.text = String(format: "%.1f×", newZoom)
+                }
+
+                // Haptic feedback on zoom change
+                if abs(newZoom - currentZoom) > 0.1 {
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+                }
+            }
+
+            device.unlockForConfiguration()
+        } catch {
+            print("❌ Error configuring zoom: \(error)")
+        }
+    }
+
+    @objc private func handleTapToFocus(_ gesture: UITapGestureRecognizer) {
+        guard let cameraManager = self.cameraManager else { return }
+
+        let camera = currentCameraPosition == .back ? cameraManager.backCamera : cameraManager.frontCamera
+        guard let device = camera else { return }
+
+        let touchPoint = gesture.location(in: view)
+        let focusPoint = CGPoint(x: touchPoint.x / view.bounds.width, y: touchPoint.y / view.bounds.height)
+
+        do {
+            try device.lockForConfiguration()
+
+            if device.isFocusPointOfInterestSupported {
+                device.focusPointOfInterest = focusPoint
+                device.focusMode = .autoFocus
+            }
+
+            if device.isExposurePointOfInterestSupported {
+                device.exposurePointOfInterest = focusPoint
+                device.exposureMode = .autoExpose
+            }
+
+            device.unlockForConfiguration()
+
+            // Visual feedback for tap-to-focus
+            showFocusIndicator(at: touchPoint)
+
+            // Haptic feedback
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+
+            print("📍 Focus set at: \(focusPoint)")
+        } catch {
+            print("❌ Error configuring focus: \(error)")
+        }
+    }
+
+    private func showFocusIndicator(at point: CGPoint) {
+        // Create focus indicator square
+        let focusView = UIView(frame: CGRect(x: 0, y: 0, width: 80, height: 80))
+        focusView.center = point
+        focusView.layer.borderColor = UIColor.yellow.cgColor
+        focusView.layer.borderWidth = 2
+        focusView.alpha = 0
+        view.addSubview(focusView)
+
+        // Animate indicator
+        UIView.animate(withDuration: 0.3, animations: {
+            focusView.alpha = 1
+        }) { _ in
+            UIView.animate(withDuration: 0.3, delay: 0.5, animations: {
+                focusView.alpha = 0
+            }) { _ in
+                focusView.removeFromSuperview()
+            }
+        }
     }
 
     private func showImagePreview(_ image: UIImage) {
@@ -3595,6 +4124,65 @@ extension CameraViewController: AVCapturePhotoCaptureDelegate {
     }
 }
 
+// MARK: - CameraViewController Video Delegate
+extension CameraViewController: AVCaptureFileOutputRecordingDelegate {
+    func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
+        print("✅ 🎥 Started recording to: \(fileURL.lastPathComponent)")
+
+        DispatchQueue.main.async {
+            // Visual confirmation that recording started
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+        }
+    }
+
+    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
+        if let error = error {
+            print("❌ Video recording error: \(error.localizedDescription)")
+            print("❌ Error domain: \((error as NSError).domain)")
+            print("❌ Error code: \((error as NSError).code)")
+
+            DispatchQueue.main.async {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.error)
+            }
+            return
+        }
+
+        print("✅ Finished recording to: \(outputFileURL.lastPathComponent)")
+
+        // Check file size
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: outputFileURL.path),
+           let fileSize = attributes[.size] as? Int64 {
+            print("📊 Video file size: \(fileSize / 1024) KB")
+        }
+
+        // Check if both videos are complete
+        DispatchQueue.main.async {
+            if let frontURL = self.frontVideoURL,
+               let backURL = self.backVideoURL,
+               FileManager.default.fileExists(atPath: frontURL.path),
+               FileManager.default.fileExists(atPath: backURL.path) {
+                print("🎬 Both videos recorded successfully!")
+                print("📁 Front: \(frontURL.lastPathComponent)")
+                print("📁 Back: \(backURL.lastPathComponent)")
+                self.showVideoPreview()
+            } else {
+                print("⏳ Waiting for other camera to finish...")
+            }
+        }
+    }
+
+    private func showVideoPreview() {
+        print("🎬 Showing video preview")
+        // TODO: Implement video preview screen with player
+        // For now, just show an alert
+        let alert = UIAlertController(title: "✅ Videos Recorded!", message: "Both front and back videos captured successfully", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+
 // MARK: - Social View
 struct SocialView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
@@ -3633,6 +4221,14 @@ struct SocialPostView: View {
     @State private var showingComments = false
     @State private var showingEditAlert = false
     @State private var editedTitle = ""
+
+    var userHasLiked: Bool {
+        post.likedBy.contains(model.currentUser.id.uuidString)
+    }
+
+    var userHasDownvoted: Bool {
+        post.downvotedBy.contains(model.currentUser.id.uuidString)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3723,21 +4319,23 @@ struct SocialPostView: View {
             HStack(spacing: 20) {
                 Button(action: { likePost() }) {
                     HStack(spacing: 4) {
-                        Text("🟢")
+                        Text(userHasLiked ? "🟢" : "⚪")
                         Text("\(post.likes)")
                             .font(.caption)
                             .fontWeight(.medium)
                     }
                 }
+                .foregroundColor(userHasLiked ? .green : .primary)
 
                 Button(action: { downvotePost() }) {
                     HStack(spacing: 4) {
-                        Text("🔻")
+                        Text(userHasDownvoted ? "🔻" : "🔸")
                         Text("\(post.downvotes)")
                             .font(.caption)
                             .fontWeight(.medium)
                     }
                 }
+                .foregroundColor(userHasDownvoted ? .red : .primary)
 
                 Button(action: { showingComments = true }) {
                     HStack(spacing: 4) {
@@ -3793,25 +4391,85 @@ struct SocialPostView: View {
     }
 
     private func loadSocialPhoto() -> (backImage: UIImage, frontImage: UIImage)? {
-        // Only show photos if this post has a photo filename
-        guard post.photoFileName != nil else {
-            return nil
-        }
-
         // Try to load from actual task photos first
         if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
            let verificationPhoto = task.verificationPhoto {
-            // The verificationPhoto is already a combined dual-camera image from the BeReal-style capture
-            // We should display it as-is, not split it or add another overlay
-            // Use the combined image as the main image and create a simple front image placeholder
-            let backImage = verificationPhoto
-            let frontImage = createSimplePlaceholder(text: "📷")
-            return (backImage, frontImage)
+            // The verificationPhoto is a composite image with:
+            // - Full-size back camera image as the main image
+            // - Front camera image overlaid at 25% size in the top-right corner
+            // We need to split these into separate images for proper toggling
+            return splitCompositeImage(verificationPhoto)
+        }
+
+        // Only show fallback mock images if this post indicates it should have a photo
+        guard post.photoFileName != nil else {
+            return nil
         }
 
         // Fallback to mock images for testing (only for posts that should have photos)
         let backImage = createMockBackCamera()
         let frontImage = createMockFrontCamera()
+        return (backImage, frontImage)
+    }
+
+    private func splitCompositeImage(_ compositeImage: UIImage, hideEmbeddedOverlay: Bool = true) -> (backImage: UIImage, frontImage: UIImage) {
+        let imageSize = compositeImage.size
+
+        // Calculate the overlay position and size (must match combineEnhancedDualImages())
+        // Overlay is 25% of main image size, positioned 20px from top-right
+        let overlaySize = CGSize(
+            width: imageSize.width * 0.25,
+            height: imageSize.height * 0.25
+        )
+
+        let overlayRect = CGRect(
+            x: imageSize.width - overlaySize.width - 20,
+            y: 20,
+            width: overlaySize.width,
+            height: overlaySize.height
+        )
+
+        // Extract the front camera image from the overlay area
+        let frontRenderer = UIGraphicsImageRenderer(size: overlaySize)
+        let frontImage = frontRenderer.image { context in
+            // Crop the front camera overlay from the composite
+            if let cgImage = compositeImage.cgImage?.cropping(to: CGRect(
+                x: overlayRect.origin.x * compositeImage.scale,
+                y: overlayRect.origin.y * compositeImage.scale,
+                width: overlayRect.width * compositeImage.scale,
+                height: overlayRect.height * compositeImage.scale
+            )) {
+                let croppedImage = UIImage(cgImage: cgImage, scale: compositeImage.scale, orientation: compositeImage.imageOrientation)
+                croppedImage.draw(in: CGRect(origin: .zero, size: overlaySize))
+            }
+        }
+
+        // Determine whether to hide the embedded overlay or show full composite
+        let backImage: UIImage
+
+        if hideEmbeddedOverlay {
+            // For feed view: hide the embedded overlay to avoid duplicate windows
+            // Account for the white border (4px stroke on each side, inset by -2 = ~6px total margin)
+            let borderMargin: CGFloat = 6
+            let overlayWithBorder = overlayRect.insetBy(dx: -borderMargin, dy: -borderMargin)
+
+            let backRenderer = UIGraphicsImageRenderer(size: imageSize)
+            backImage = backRenderer.image { context in
+                // Draw the full composite
+                compositeImage.draw(at: .zero)
+
+                let cgContext = context.cgContext
+
+                // Black out the embedded overlay area (including border)
+                cgContext.setBlendMode(.normal)
+                cgContext.setFillColor(UIColor.black.cgColor)
+                cgContext.fill(overlayWithBorder)
+            }
+        } else {
+            // For full-screen view: show the full composite with embedded overlay
+            backImage = compositeImage
+        }
+
         return (backImage, frontImage)
     }
 
@@ -3893,17 +4551,168 @@ struct SocialPostView: View {
     }
 
     private func likePost() {
-        // Implement like functionality
-        if let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) {
-            model.socialPosts[index].likes += 1
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("🟢 LIKE BUTTON PRESSED")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        guard let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) else {
+            print("❌ ERROR: Could not find post in socialPosts array")
+            return
         }
+
+        let currentUserId = model.currentUser.id.uuidString
+        let hasLiked = model.socialPosts[index].likedBy.contains(currentUserId)
+        let hasDownvoted = model.socialPosts[index].downvotedBy.contains(currentUserId)
+
+        print("📊 Current State BEFORE:")
+        print("  - Credibility: \(model.credibilityManager.credibilityScore)")
+        print("  - User has liked: \(hasLiked)")
+        print("  - User has downvoted: \(hasDownvoted)")
+        print("  - Post author ID: \(post.userId)")
+        print("  - Current user ID: \(currentUserId)")
+        print("  - Is own post: \(post.userId == currentUserId)")
+
+        if hasLiked {
+            print("➡️  Action: REMOVING LIKE")
+            // User has already liked - remove like
+            model.socialPosts[index].likedBy.removeAll { $0 == currentUserId }
+            model.socialPosts[index].likes -= 1
+            print("✓ Like removed. No credibility change.")
+        } else {
+            print("➡️  Action: ADDING LIKE")
+            // If user has downvoted, remove the downvote first AND restore credibility
+            if hasDownvoted {
+                print("⚠️  User previously downvoted this post - removing downvote first")
+                model.socialPosts[index].downvotedBy.removeAll { $0 == currentUserId }
+                model.socialPosts[index].downvotes -= 1
+
+                // Restore credibility if this was a self-downvote
+                if post.userId == currentUserId {
+                    print("🔄 RESTORING CREDIBILITY (self-downvote undo)")
+                    let credibilityBefore = model.credibilityManager.credibilityScore
+                    let reviewerId = model.currentUser.id
+                    model.credibilityManager.undoDownvote(
+                        taskId: post.taskId,
+                        reviewerId: reviewerId
+                    )
+
+                    // Sync credibility score to currentUser
+                    model.currentUser.credibilityScore = Double(model.credibilityManager.credibilityScore)
+                    let credibilityAfter = model.credibilityManager.credibilityScore
+
+                    print("💚 Switched from downvote to like - Credibility restored:")
+                    print("   BEFORE: \(credibilityBefore)")
+                    print("   AFTER: \(credibilityAfter)")
+                    print("   CHANGE: +\(credibilityAfter - credibilityBefore)")
+                } else {
+                    print("ℹ️  Other user's post - no credibility change for you")
+                }
+            }
+            // Add like
+            model.socialPosts[index].likedBy.append(currentUserId)
+            model.socialPosts[index].likes += 1
+            print("✓ Like added successfully")
+        }
+
+        print("📊 Final State AFTER:")
+        print("  - Credibility: \(model.credibilityManager.credibilityScore)")
+        print("  - Tier: \(model.credibilityManager.getCurrentTier().name)")
+        print("  - Conversion Rate: \(model.credibilityManager.getFormattedConversionRate())")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
     }
 
     private func downvotePost() {
-        // Implement downvote functionality
-        if let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) {
-            model.socialPosts[index].downvotes += 1
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("🔸 DOWNVOTE BUTTON PRESSED")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        guard let index = model.socialPosts.firstIndex(where: { $0.id == post.id }) else {
+            print("❌ ERROR: Could not find post in socialPosts array")
+            return
         }
+
+        let currentUserId = model.currentUser.id.uuidString
+        let hasLiked = model.socialPosts[index].likedBy.contains(currentUserId)
+        let hasDownvoted = model.socialPosts[index].downvotedBy.contains(currentUserId)
+
+        print("📊 Current State BEFORE:")
+        print("  - Credibility: \(model.credibilityManager.credibilityScore)")
+        print("  - User has liked: \(hasLiked)")
+        print("  - User has downvoted: \(hasDownvoted)")
+        print("  - Post author ID: \(post.userId)")
+        print("  - Current user ID: \(currentUserId)")
+        print("  - Is own post: \(post.userId == currentUserId)")
+
+        if hasDownvoted {
+            print("➡️  Action: REMOVING DOWNVOTE")
+            // User has already downvoted - remove downvote and restore credibility
+            model.socialPosts[index].downvotedBy.removeAll { $0 == currentUserId }
+            model.socialPosts[index].downvotes -= 1
+
+            // Only affect credibility if downvoting your OWN post
+            if post.userId == currentUserId {
+                print("🔄 RESTORING CREDIBILITY (undo self-downvote)")
+                let credibilityBefore = model.credibilityManager.credibilityScore
+                // Undo the credibility penalty for self-downvote
+                let reviewerId = model.currentUser.id
+                model.credibilityManager.undoDownvote(
+                    taskId: post.taskId,
+                    reviewerId: reviewerId
+                )
+
+                // Sync credibility score to currentUser
+                model.currentUser.credibilityScore = Double(model.credibilityManager.credibilityScore)
+                let credibilityAfter = model.credibilityManager.credibilityScore
+
+                print("↩️  Self-downvote removed - Credibility restored:")
+                print("   BEFORE: \(credibilityBefore)")
+                print("   AFTER: \(credibilityAfter)")
+                print("   CHANGE: +\(credibilityAfter - credibilityBefore)")
+            } else {
+                print("↩️  Downvote removed from another user's post (no credibility change for you)")
+            }
+        } else {
+            print("➡️  Action: ADDING DOWNVOTE")
+            // If user has liked, remove the like first
+            if hasLiked {
+                print("⚠️  User previously liked this post - removing like first")
+                model.socialPosts[index].likedBy.removeAll { $0 == currentUserId }
+                model.socialPosts[index].likes -= 1
+            }
+            // Add downvote
+            model.socialPosts[index].downvotedBy.append(currentUserId)
+            model.socialPosts[index].downvotes += 1
+
+            // Only affect credibility if downvoting your OWN post (for testing)
+            if post.userId == currentUserId {
+                print("🔻 APPLYING CREDIBILITY PENALTY (self-downvote)")
+                let credibilityBefore = model.credibilityManager.credibilityScore
+                // Apply credibility penalty for self-downvote
+                let reviewerId = model.currentUser.id
+                model.credibilityManager.processDownvote(
+                    taskId: post.taskId,
+                    reviewerId: reviewerId,
+                    notes: "Self-downvoted on social feed"
+                )
+
+                // Sync credibility score to currentUser
+                model.currentUser.credibilityScore = Double(model.credibilityManager.credibilityScore)
+                let credibilityAfter = model.credibilityManager.credibilityScore
+
+                print("🔻 Self-downvote applied:")
+                print("   BEFORE: \(credibilityBefore)")
+                print("   AFTER: \(credibilityAfter)")
+                print("   PENALTY: \(credibilityAfter - credibilityBefore)")
+            } else {
+                print("🔻 Downvoted another user's post (their credibility would decrease in multi-user system)")
+            }
+        }
+
+        print("📊 Final State AFTER:")
+        print("  - Credibility: \(model.credibilityManager.credibilityScore)")
+        print("  - Tier: \(model.credibilityManager.getCurrentTier().name)")
+        print("  - Conversion Rate: \(model.credibilityManager.getFormattedConversionRate())")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
     }
 }
 
@@ -3946,24 +4755,85 @@ struct FullImageView: View {
     }
 
     private func loadSocialPhoto() -> (backImage: UIImage, frontImage: UIImage)? {
-        // Only show photos if this post has a photo filename
-        guard post.photoFileName != nil else {
-            return nil
-        }
-
         // Try to load from actual task photos first
         if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
            let verificationPhoto = task.verificationPhoto {
-            // The verificationPhoto is already a combined dual-camera image from the BeReal-style capture
-            // Use it as-is and provide a clear placeholder for the overlay
-            let backImage = verificationPhoto
-            let frontImage = createSimplePlaceholder(text: "📷")
-            return (backImage, frontImage)
+            // The verificationPhoto is a composite image with:
+            // - Full-size back camera image as the main image
+            // - Front camera image overlaid at 25% size in the top-right corner
+            // For full-screen view: show the full composite with embedded overlay
+            return splitCompositeImage(verificationPhoto, hideEmbeddedOverlay: false)
+        }
+
+        // Only show fallback mock images if this post indicates it should have a photo
+        guard post.photoFileName != nil else {
+            return nil
         }
 
         // Fallback to mock images
         let backImage = createMockBackCamera()
         let frontImage = createMockFrontCamera()
+        return (backImage, frontImage)
+    }
+
+    private func splitCompositeImage(_ compositeImage: UIImage, hideEmbeddedOverlay: Bool = true) -> (backImage: UIImage, frontImage: UIImage) {
+        let imageSize = compositeImage.size
+
+        // Calculate the overlay position and size (must match combineEnhancedDualImages())
+        // Overlay is 25% of main image size, positioned 20px from top-right
+        let overlaySize = CGSize(
+            width: imageSize.width * 0.25,
+            height: imageSize.height * 0.25
+        )
+
+        let overlayRect = CGRect(
+            x: imageSize.width - overlaySize.width - 20,
+            y: 20,
+            width: overlaySize.width,
+            height: overlaySize.height
+        )
+
+        // Extract the front camera image from the overlay area
+        let frontRenderer = UIGraphicsImageRenderer(size: overlaySize)
+        let frontImage = frontRenderer.image { context in
+            // Crop the front camera overlay from the composite
+            if let cgImage = compositeImage.cgImage?.cropping(to: CGRect(
+                x: overlayRect.origin.x * compositeImage.scale,
+                y: overlayRect.origin.y * compositeImage.scale,
+                width: overlayRect.width * compositeImage.scale,
+                height: overlayRect.height * compositeImage.scale
+            )) {
+                let croppedImage = UIImage(cgImage: cgImage, scale: compositeImage.scale, orientation: compositeImage.imageOrientation)
+                croppedImage.draw(in: CGRect(origin: .zero, size: overlaySize))
+            }
+        }
+
+        // Determine whether to hide the embedded overlay or show full composite
+        let backImage: UIImage
+
+        if hideEmbeddedOverlay {
+            // For feed view: hide the embedded overlay to avoid duplicate windows
+            // Account for the white border (4px stroke on each side, inset by -2 = ~6px total margin)
+            let borderMargin: CGFloat = 6
+            let overlayWithBorder = overlayRect.insetBy(dx: -borderMargin, dy: -borderMargin)
+
+            let backRenderer = UIGraphicsImageRenderer(size: imageSize)
+            backImage = backRenderer.image { context in
+                // Draw the full composite
+                compositeImage.draw(at: .zero)
+
+                let cgContext = context.cgContext
+
+                // Black out the embedded overlay area (including border)
+                cgContext.setBlendMode(.normal)
+                cgContext.setFillColor(UIColor.black.cgColor)
+                cgContext.fill(overlayWithBorder)
+            }
+        } else {
+            // For full-screen view: show the full composite with embedded overlay
+            backImage = compositeImage
+        }
+
         return (backImage, frontImage)
     }
 
@@ -4440,6 +5310,13 @@ struct ContentView: View {
                     Text("Profile")
                 }
                 .tag(6)
+
+            CredibilityTestingView()
+                .tabItem {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                    Text("Credibility")
+                }
+                .tag(7)
         }
         .onAppear {
             // Request permissions
@@ -4578,6 +5455,8 @@ struct EnhancedTaskRow: View {
     @State private var showingCamera = false
     @State private var showingLocationTracking = false
     @State private var localVerificationPhoto: UIImage? // Local backup for photo state
+    @State private var isEditingCompletedTask = false
+    @State private var editedTaskTitle = ""
 
     var task: TaskItem {
         // Always get the current task from the model to ensure live updates
@@ -4611,6 +5490,18 @@ struct EnhancedTaskRow: View {
     var needsLocationTracking: Bool {
         task.category == .outdoor || task.category == .exercise
     }
+
+    func saveEditedTask() {
+        if let index = model.recentTasks.firstIndex(where: { $0.id == taskId }) {
+            model.recentTasks[index].title = editedTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            isEditingCompletedTask = false
+
+            // Update any associated social posts with the new title
+            if let postIndex = model.socialPosts.firstIndex(where: { $0.taskId == taskId }) {
+                model.socialPosts[postIndex].taskTitle = editedTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+    }
     
     var body: some View {
         HStack {
@@ -4634,11 +5525,21 @@ struct EnhancedTaskRow: View {
             .disabled(task.completed)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .strikethrough(task.completed)
-                    .foregroundColor(task.completed ? .secondary : .primary)
+                if isEditingCompletedTask && task.completed {
+                    TextField("Task title", text: $editedTaskTitle)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onAppear {
+                            editedTaskTitle = task.title
+                        }
+                } else {
+                    Text(task.title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .strikethrough(task.completed)
+                        .foregroundColor(task.completed ? .secondary : .primary)
+                }
 
                 HStack {
                     Text(task.category.rawValue)
@@ -4734,8 +5635,39 @@ struct EnhancedTaskRow: View {
                     }
                 }
             } else {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                // Completed task controls
+                if isEditingCompletedTask {
+                    HStack(spacing: 8) {
+                        Button("Save") {
+                            saveEditedTask()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.blue)
+
+                        Button("Cancel") {
+                            isEditingCompletedTask = false
+                            editedTaskTitle = task.title
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+
+                        Button(action: {
+                            isEditingCompletedTask = true
+                            editedTaskTitle = task.title
+                        }) {
+                            Image(systemName: "pencil")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
             }
         }
         .fullScreenCover(isPresented: $showingCamera) {
@@ -4992,6 +5924,9 @@ struct FriendsView: View {
                 }
             }
         }
+        .overlay(
+            ToastView(message: model.toastMessage ?? "", isShowing: $model.showToast)
+        )
     }
     
     private var friendsListView: some View {
@@ -5025,7 +5960,7 @@ struct FriendsView: View {
             if !model.friends.isEmpty {
                 Section("Friends") {
                     ForEach(Array(model.friends.sorted(by: { $0.totalXPEarned > $1.totalXPEarned }).enumerated()), id: \.element.id) { index, friend in
-                        FriendLeaderboardRow(friend: friend, rank: index + 1) {
+                        FriendLeaderboardRowWithSwipe(friend: friend, rank: index + 1) {
                             model.removeFriend(friend)
                         }
                     }
@@ -5239,24 +6174,49 @@ struct SentRequestRow: View {
     }
 }
 
-struct FriendLeaderboardRow: View {
+struct FriendLeaderboardRowWithSwipe: View {
     let friend: User
     let rank: Int
     let onRemoveFriend: (() -> Void)?
-    
+    @State private var showingRemoveAlert = false
+
     init(friend: User, rank: Int, onRemoveFriend: (() -> Void)? = nil) {
         self.friend = friend
         self.rank = rank
         self.onRemoveFriend = onRemoveFriend
     }
-    
+
+    var body: some View {
+        FriendLeaderboardRow(friend: friend, rank: rank)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    showingRemoveAlert = true
+                } label: {
+                    Label("Remove", systemImage: "person.badge.minus")
+                }
+            }
+            .alert("Remove Friend?", isPresented: $showingRemoveAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Remove", role: .destructive) {
+                    onRemoveFriend?()
+                }
+            } message: {
+                Text("Are you sure you would like to remove \(friend.username) as a friend?")
+            }
+    }
+}
+
+struct FriendLeaderboardRow: View {
+    let friend: User
+    let rank: Int
+
     var body: some View {
         HStack {
             Text("\(rank)")
                 .font(.headline)
                 .foregroundColor(rank <= 3 ? .yellow : .secondary)
                 .frame(width: 30)
-            
+
             Circle()
                 .fill(Color.purple.opacity(0.3))
                 .frame(width: 40, height: 40)
@@ -5265,7 +6225,7 @@ struct FriendLeaderboardRow: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 )
-            
+
             VStack(alignment: .leading) {
                 Text(friend.username)
                     .font(.subheadline)
@@ -5274,9 +6234,9 @@ struct FriendLeaderboardRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             VStack(alignment: .trailing) {
                 Text("\(friend.totalXPEarned)")
                     .font(.subheadline)
@@ -5284,14 +6244,6 @@ struct FriendLeaderboardRow: View {
                 Text("Total XP")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            }
-            
-            if let onRemoveFriend = onRemoveFriend {
-                Button(action: onRemoveFriend) {
-                    Image(systemName: "person.badge.minus")
-                        .foregroundColor(.red)
-                }
-                .buttonStyle(.borderless)
             }
         }
         .padding(.vertical, 4)
@@ -5436,14 +6388,11 @@ struct EnhancedHomeView: View {
                             )
                     }
 
-                    // Screen Time Status Banner
-                    ScreenTimeStatusBanner()
-
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
                         StatCard(title: "XP Balance", value: "\(model.currentUser.xpBalance)", color: .blue, icon: "star.fill")
                         StatCard(title: "Minutes Earned", value: "\(model.minutesEarned)", color: .green, icon: "clock.fill")
                         StatCard(title: "Total XP", value: "\(model.currentUser.totalXPEarned)", color: .orange, icon: "trophy.fill")
-                        StatCard(title: "Credibility", value: "\(Int(model.currentUser.credibilityScore))%", color: .purple, icon: "checkmark.seal.fill")
+                        StatCard(title: "Credibility", value: "\(model.credibilityManager.credibilityScore)", color: credibilityColor(score: model.credibilityManager.credibilityScore), icon: "checkmark.seal.fill")
                     }
                     
                     VStack(spacing: 12) {
@@ -5722,6 +6671,17 @@ struct EnhancedHomeView: View {
         }
     }
     
+    private func credibilityColor(score: Int) -> Color {
+        switch score {
+        case 80...100:
+            return .green
+        case 50...79:
+            return .yellow
+        default:
+            return .red
+        }
+    }
+
     private func timeString(from timeInterval: TimeInterval) -> String {
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
@@ -6375,6 +7335,38 @@ struct CameraStatusIndicator: View {
         case .failed:
             return "Camera error"
         }
+    }
+}
+
+// MARK: - Toast Notification View
+struct ToastView: View {
+    let message: String
+    @Binding var isShowing: Bool
+
+    var body: some View {
+        VStack {
+            if isShowing && !message.isEmpty {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.white)
+                    Text(message)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(Color.green)
+                        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                )
+                .padding(.top, 50)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            Spacer()
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isShowing)
     }
 }
 

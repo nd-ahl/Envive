@@ -191,6 +191,80 @@ Create a comprehensive family ecosystem app that transforms screen time manageme
     - [ ] Child acceptance/rejection UI
     - [ ] Profile completion workflow
 
+- [ ] **Credibility & Accountability System**
+  - [ ] **Database Schema Updates**
+    - [ ] Add `credibility_score` field to users table (INTEGER, default: 100, range: 0-100)
+    - [ ] Add `credibility_history` JSONB field to track downvote events with timestamps
+    - [ ] Create `task_verifications` table to track parent approval/rejection of tasks
+      - Columns: id, task_id, user_id (child), reviewer_id (parent), status (approved/rejected), created_at, notes
+    - [ ] Add `consecutive_approved_tasks` counter to users table for streak tracking
+    - [ ] Create database function to calculate XP conversion rate based on credibility score
+
+  - [ ] **Credibility Calculation Logic (CredibilityManager.swift)**
+    - [ ] Create CredibilityManager service class
+    - [ ] Implement base credibility score system (0-100 range)
+    - [ ] Implement downvote penalty logic:
+      - Single downvote: -10 points
+      - Stacking penalty: -15 points if within 7 days of previous downvote
+    - [ ] Implement recovery mechanisms:
+      - +2 points per approved task
+      - +5 bonus after 10 consecutive approved tasks
+    - [ ] Implement time-based downvote decay:
+      - 50% weight reduction after 30 days
+      - Full removal after 60 days
+    - [ ] Create credibility history tracking with event timestamps
+
+  - [ ] **XP Conversion System Enhancement**
+    - [ ] Update ScreenTimeRewardManager with credibility-based conversion
+    - [ ] Implement dynamic conversion formula: `minutes = XP × (0.3 + (credibility_score / 100) × 0.9)`
+    - [ ] Create conversion rate tiers:
+      - 90-100: 1.2x multiplier (Excellent)
+      - 75-89: 1.0x multiplier (Good)
+      - 60-74: 0.8x multiplier (Fair)
+      - 40-59: 0.5x multiplier (Poor)
+      - 0-39: 0.3x multiplier (Very Poor)
+    - [ ] Add redemption bonus: 1.3x multiplier for 7 days when reaching 95+ from below 60
+    - [ ] Display conversion rate to user before redeeming XP
+
+  - [ ] **Parent Verification Interface**
+    - [ ] Create TaskVerificationView for parents to review child tasks
+    - [ ] Show pending tasks awaiting parent approval with photos/location data
+    - [ ] Implement approve/reject actions with optional notes
+    - [ ] Add bulk approval for multiple tasks
+    - [ ] Display child's current credibility score in parent dashboard
+    - [ ] Show credibility trend graph (last 30/60/90 days)
+
+  - [ ] **Child Accountability Interface**
+    - [ ] Display credibility score prominently in profile (with color coding: Green 80-100, Yellow 50-79, Red 0-49)
+    - [ ] Show XP-to-minutes conversion rate preview before redemption
+    - [ ] Display streak counter for consecutive approved tasks
+    - [ ] Create credibility history timeline showing events and score changes
+    - [ ] Add appeal button for contested downvotes (24-hour window)
+    - [ ] Show estimated recovery path (e.g., "Complete 15 approved tasks to reach Good status")
+
+  - [ ] **Warning & Appeal System**
+    - [ ] Implement first-time warning dialog explaining credibility consequences
+    - [ ] Create appeal workflow: child contests → parent reviews → final decision
+    - [ ] Add 24-hour appeal window after downvote
+    - [ ] Store appeal status and parent response in database
+    - [ ] Notify child when parent responds to appeal
+
+  - [ ] **Notification System Integration**
+    - [ ] Notify child when parent rejects task (with credibility impact)
+    - [ ] Notify parent when child appeals a downvote
+    - [ ] Celebrate milestone: "10 consecutive approved tasks! +5 bonus"
+    - [ ] Alert child when credibility drops below threshold (e.g., < 60)
+    - [ ] Notify when redemption bonus is unlocked (95+ credibility)
+
+  - [ ] **Testing & Validation**
+    - [ ] Test downvote penalty calculation and stacking
+    - [ ] Verify time-based decay logic (30/60 day thresholds)
+    - [ ] Test XP conversion at different credibility levels
+    - [ ] Validate streak tracking and bonus awards
+    - [ ] Test appeal workflow from child and parent perspectives
+    - [ ] Verify redemption bonus activation and expiration
+    - [ ] Load test credibility calculations with historical data
+
 - [ ] **Test User Management System**
   - [ ] Development user switcher for testing parent/child workflows
   - [ ] Test data seeding and management

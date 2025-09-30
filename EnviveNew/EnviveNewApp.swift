@@ -29,8 +29,24 @@ struct EnviveNewApp: App {
 
     private func handleURLScheme(_ url: URL) {
         print("Received URL scheme: \(url)")
-        // Handle the URL scheme - app is already opening so just log for now
-        // You can add specific handling here if needed for different URL paths
+
+        // Handle different URL paths
+        switch url.path {
+        case "/screentime":
+            // User tapped on Dynamic Island/Live Activity during screen time session
+            print("Opening app from screen time Live Activity")
+            // The app will automatically show the current screen time session state
+            // since the ScreenTimeRewardManager is already tracking the active session
+            break
+        case "/spend":
+            // User tapped "Spend Time" button in Focus widget
+            print("Opening app from Focus widget - user wants to spend screen time")
+            // Navigate to screen time spending interface
+            // You can add navigation logic here to go directly to the spending screen
+            break
+        default:
+            print("Unknown URL path: \(url.path)")
+        }
     }
 
     private func requestScreenTimeAuthorization() async {

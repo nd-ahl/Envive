@@ -11,6 +11,9 @@ struct ChildScreenTimeView: View {
 
     var body: some View {
         VStack(spacing: 20) {
+            // Credibility Badge at top
+            credibilityBadgeCard
+
             screenTimeStatusCard
 
             if rewardManager.isScreenTimeActive {
@@ -21,6 +24,76 @@ struct ChildScreenTimeView: View {
         }
         .sheet(isPresented: $showingSessionOptions) {
             sessionSelectionSheet
+        }
+    }
+
+    private var credibilityBadgeCard: some View {
+        let status = rewardManager.getCredibilityStatus()
+
+        return HStack(spacing: 12) {
+            Image(systemName: tierIcon(for: status.tier.name))
+                .font(.title2)
+                .foregroundColor(colorForTier(status.tier.color))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Credibility: \(status.tier.name)")
+                    .font(.headline)
+                    .foregroundColor(colorForTier(status.tier.color))
+
+                Text("Conversion rate: \(rewardManager.getFormattedConversionRate())")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(status.score)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(colorForTier(status.tier.color))
+
+                Text("/ 100")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(colorForTier(status.tier.color).opacity(0.1))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(colorForTier(status.tier.color).opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private func colorForTier(_ tier: String) -> Color {
+        switch tier.lowercased() {
+        case "green":
+            return .green
+        case "yellow":
+            return .yellow
+        case "red":
+            return .red
+        default:
+            return .gray
+        }
+    }
+
+    private func tierIcon(for tierName: String) -> String {
+        switch tierName {
+        case "Excellent":
+            return "star.fill"
+        case "Good":
+            return "checkmark.circle.fill"
+        case "Fair":
+            return "circle.fill"
+        case "Poor":
+            return "exclamationmark.triangle.fill"
+        case "Very Poor":
+            return "xmark.circle.fill"
+        default:
+            return "circle.fill"
         }
     }
 
@@ -106,13 +179,13 @@ struct ChildScreenTimeView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("\(scheduler.remainingMinutes) minutes")
+                    Text(rewardManager.formattedRemainingTime())
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.green)
                 }
 
-                ProgressView(value: Double(scheduler.remainingMinutes), total: Double(rewardManager.activeSessionMinutes))
+                ProgressView(value: Double(rewardManager.remainingSessionMinutes), total: Double(rewardManager.activeSessionMinutes))
                     .progressViewStyle(LinearProgressViewStyle(tint: .green))
                     .scaleEffect(y: 2)
             }
@@ -270,44 +343,81 @@ struct ScreenTimeStatusBanner: View {
     @StateObject private var rewardManager = ScreenTimeRewardManager()
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: rewardManager.isScreenTimeActive ? "play.circle.fill" : "hourglass")
-                .font(.title2)
-                .foregroundColor(rewardManager.isScreenTimeActive ? .green : .blue)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: rewardManager.isScreenTimeActive ? "play.circle.fill" : "hourglass")
+                    .font(.title2)
+                    .foregroundColor(rewardManager.isScreenTimeActive ? .green : .blue)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(rewardManager.isScreenTimeActive ? "Session Active" : "Screen Time")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rewardManager.isScreenTimeActive ? "Session Active" : "Screen Time")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    if rewardManager.isScreenTimeActive {
+                        Text("\(rewardManager.formattedRemainingTime()) remaining")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("\(rewardManager.formattedEarnedTime()) earned")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
 
                 if rewardManager.isScreenTimeActive {
-                    Text("\(rewardManager.formattedActiveTime()) remaining")
+                    Text("🔓")
+                        .font(.title2)
+                } else if rewardManager.hasEarnedTime {
+                    Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
-                    Text("\(rewardManager.formattedEarnedTime()) earned")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Text("🔒")
+                        .font(.title2)
                 }
             }
 
-            Spacer()
+            // Compact credibility indicator
+            let status = rewardManager.getCredibilityStatus()
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(colorForTier(status.tier.color))
+                    .frame(width: 8, height: 8)
 
-            if rewardManager.isScreenTimeActive {
-                Text("🔓")
-                    .font(.title2)
-            } else if rewardManager.hasEarnedTime {
-                Image(systemName: "chevron.right")
+                Text("Credibility: \(status.score)")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            } else {
-                Text("🔒")
-                    .font(.title2)
+
+                Text("•")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text("\(rewardManager.getFormattedConversionRate()) rate")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
             }
         }
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
+    }
+
+    private func colorForTier(_ tier: String) -> Color {
+        switch tier.lowercased() {
+        case "green":
+            return .green
+        case "yellow":
+            return .yellow
+        case "red":
+            return .red
+        default:
+            return .gray
+        }
     }
 }
 

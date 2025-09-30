@@ -26,14 +26,10 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
                 color: UIColor.secondaryLabel
             ),
             primaryButtonLabel: ShieldConfiguration.Label(
-                text: "Open Envive",
+                text: "Go to Home Screen",
                 color: UIColor.white
             ),
-            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0), // #8A6AF7
-            secondaryButtonLabel: ShieldConfiguration.Label(
-                text: "Go to Home Screen",
-                color: UIColor.systemBlue
-            )
+            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0) // #8A6AF7
         )
     }
 
@@ -52,14 +48,10 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
                 color: UIColor.secondaryLabel
             ),
             primaryButtonLabel: ShieldConfiguration.Label(
-                text: "Open Envive",
+                text: "Go to Home Screen",
                 color: UIColor.white
             ),
-            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0), // #8A6AF7
-            secondaryButtonLabel: ShieldConfiguration.Label(
-                text: "Go to Home Screen",
-                color: UIColor.systemBlue
-            )
+            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0) // #8A6AF7
         )
     }
 
@@ -78,14 +70,10 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
                 color: UIColor.secondaryLabel
             ),
             primaryButtonLabel: ShieldConfiguration.Label(
-                text: "Open Envive",
+                text: "Go to Home Screen",
                 color: UIColor.white
             ),
-            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0), // #8A6AF7
-            secondaryButtonLabel: ShieldConfiguration.Label(
-                text: "Go to Home Screen",
-                color: UIColor.systemBlue
-            )
+            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0) // #8A6AF7
         )
     }
 
@@ -104,14 +92,10 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
                 color: UIColor.secondaryLabel
             ),
             primaryButtonLabel: ShieldConfiguration.Label(
-                text: "Open Envive",
+                text: "Go to Home Screen",
                 color: UIColor.white
             ),
-            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0), // #8A6AF7
-            secondaryButtonLabel: ShieldConfiguration.Label(
-                text: "Go to Home Screen",
-                color: UIColor.systemBlue
-            )
+            primaryButtonBackgroundColor: UIColor(red: 0.541, green: 0.416, blue: 0.969, alpha: 1.0) // #8A6AF7
         )
     }
 }
