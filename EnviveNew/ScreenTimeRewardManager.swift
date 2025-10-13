@@ -24,7 +24,7 @@ class ScreenTimeRewardManager: ObservableObject {
     private let settingsManager = SettingsManager()
     private let scheduler = ActivityScheduler()
     private let appSelectionStore = AppSelectionStore()
-    private let credibilityManager = CredibilityManager()
+    private let credibilityManager: CredibilityManager
 
     private var sessionTimer: Timer?
     private var currentActivity: Any? // Will hold Activity<ScreenTimeActivityAttributes> on iOS 16.1+
@@ -32,7 +32,8 @@ class ScreenTimeRewardManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let earnedMinutesKey = "earnedScreenTimeMinutes"
 
-    init() {
+    init(credibilityManager: CredibilityManager = CredibilityManager()) {
+        self.credibilityManager = credibilityManager
         loadEarnedMinutes()
     }
 

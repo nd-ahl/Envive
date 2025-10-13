@@ -41,8 +41,21 @@ struct EnviveNewApp: App {
         case "/spend":
             // User tapped "Spend Time" button in Focus widget
             print("Opening app from Focus widget - user wants to spend screen time")
-            // Navigate to screen time spending interface
-            // You can add navigation logic here to go directly to the spending screen
+
+            // Extract minutes parameter from URL query
+            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let queryItems = components.queryItems,
+               let minutesString = queryItems.first(where: { $0.name == "minutes" })?.value,
+               let minutes = Int(minutesString) {
+                print("Widget requested \(minutes) minutes of screen time")
+
+                // Post notification with minutes to start session
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("StartScreenTimeSession"),
+                    object: nil,
+                    userInfo: ["minutes": minutes]
+                )
+            }
             break
         default:
             print("Unknown URL path: \(url.path)")

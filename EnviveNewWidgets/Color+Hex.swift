@@ -41,3 +41,11 @@ extension Color {
     static let mintAccent = Color(hex: "6FCFA3")
     static let emeraldDepth = Color(hex: "2F9E77")
 }
+
+// MARK: - Envive Spending Widget Color Palette
+extension Color {
+    static let envivePink = Color(hex: "FF6B9D")
+    static let envivePurple = Color(hex: "C770F0")
+    static let enviveBlue = Color(hex: "6B8AFF")
+    static let enviveTeal = Color(hex: "4ECDC4")
+}

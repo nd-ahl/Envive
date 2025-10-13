@@ -1585,7 +1585,22 @@ class EnhancedScreenTimeModel: ObservableObject {
     @Published var isSessionPaused = false
     @Published var sessionTimeAllocated: TimeInterval = 0  // Total time user allocated for session
     @Published var sessionTimeUsed: TimeInterval = 0      // Time actually spent/used
-    
+
+    // Session timing for background handling
+    private var sessionStartTime: Date?
+    private var sessionEndTime: Date?
+    private var pausedTime: Date?
+
+    // Streak tracking
+    @Published var currentStreak: Int = UserDefaults.standard.integer(forKey: "currentStreak")
+    @Published var hasCompletedTaskToday: Bool = false
+    @Published var shouldShowStreakFireAnimation: Bool = false
+    @Published var justIncrementedStreak: Bool = false
+    var lastTaskCompletionDate: Date? {
+        get { UserDefaults.standard.object(forKey: "lastTaskCompletionDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "lastTaskCompletionDate") }
+    }
+
     // Social Features
     @Published var currentUser: User = User(username: "You", xpBalance: 0, totalXPEarned: 0, credibilityScore: 100.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false, currentLocation: nil, isSharingLocation: false)
     @Published var friends: [User] = []
@@ -1637,8 +1652,92 @@ class EnhancedScreenTimeModel: ObservableObject {
 
         // Sync credibility manager with current user score
         credibilityManager.credibilityScore = Int(currentUser.credibilityScore)
+
+        // Check streak status on app launch
+        checkStreakStatus()
+
+        // Listen for widget requests to start screen time session
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("StartScreenTimeSession"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let minutes = notification.userInfo?["minutes"] as? Int {
+                print("🎯 Received widget request to start \(minutes) minute session")
+                self?.startEarnedSession(duration: minutes)
+            }
+        }
+
+        // Check for pending widget session requests
+        checkForPendingWidgetSession()
+
+        // Check for widget end session requests
+        checkForEndSessionRequest()
     }
-    
+
+    func checkForPendingWidgetSession() {
+        print("🔍 Checking for pending widget session...")
+
+        // Use shared container to read widget data
+        guard let sharedDefaults = UserDefaults(suiteName: "group.com.neal.envivenew.screentime") else {
+            print("❌ Failed to access shared UserDefaults container")
+            return
+        }
+
+        // Check if there's a pending session request from the widget
+        if let minutes = sharedDefaults.object(forKey: "PendingScreenTimeMinutes") as? Int,
+           let timestamp = sharedDefaults.object(forKey: "PendingScreenTimeTimestamp") as? TimeInterval {
+
+            let requestDate = Date(timeIntervalSince1970: timestamp)
+            let now = Date()
+
+            // Only honor requests made in the last 10 seconds to avoid stale requests
+            if now.timeIntervalSince(requestDate) < 10 {
+                print("🎯 Found pending widget request for \(minutes) minutes (requested \(now.timeIntervalSince(requestDate))s ago)")
+
+                // Clear the pending request
+                sharedDefaults.removeObject(forKey: "PendingScreenTimeMinutes")
+                sharedDefaults.removeObject(forKey: "PendingScreenTimeTimestamp")
+                sharedDefaults.synchronize()
+
+                // Start the session after a short delay to ensure UI is ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    print("🚀 Starting session from widget request...")
+                    self.startEarnedSession(duration: minutes)
+                }
+            } else {
+                print("⚠️ Found stale widget request (requested \(now.timeIntervalSince(requestDate))s ago), ignoring")
+                sharedDefaults.removeObject(forKey: "PendingScreenTimeMinutes")
+                sharedDefaults.removeObject(forKey: "PendingScreenTimeTimestamp")
+                sharedDefaults.synchronize()
+            }
+        } else {
+            print("ℹ️ No pending widget session found")
+        }
+    }
+
+    func checkForEndSessionRequest() {
+        print("🔍 Checking for widget end session request...")
+
+        guard let sharedDefaults = UserDefaults(suiteName: "group.com.neal.envivenew.screentime") else {
+            print("❌ Failed to access shared UserDefaults container")
+            return
+        }
+
+        if sharedDefaults.bool(forKey: "EndSessionRequested") {
+            print("🛑 Widget requested to end session")
+            sharedDefaults.set(false, forKey: "EndSessionRequested")
+            sharedDefaults.synchronize()
+
+            if isSessionActive {
+                print("🚀 Ending session from widget request...")
+                endSession()
+            } else {
+                print("ℹ️ No active session to end")
+            }
+        }
+    }
+
     // MARK: - Location Methods
     func setupLocationTracking() {
         // Request location permission on init
@@ -1793,7 +1892,12 @@ class EnhancedScreenTimeModel: ObservableObject {
     
     // MARK: - Task Completion with Photo
     func completeTaskWithPhoto(_ task: TaskItem, photo: UIImage?) {
-        print("🔄 Starting completeTaskWithPhoto for task: \(task.title)")
+        print("🔄 ========== TASK COMPLETION START ==========")
+        print("🔄 Task: \(task.title)")
+        print("🔄 Has Photo: \(photo != nil)")
+        print("🔄 Current Streak Before: \(currentStreak)")
+        print("🔄 Has Completed Today Before: \(hasCompletedTaskToday)")
+        print("🔄 Last Completion: \(lastTaskCompletionDate?.description ?? "Never")")
 
         let credibilityMultiplier = currentUser.credibilityScore / 100.0
         let earnedXP = Int(Double(task.xpReward) * credibilityMultiplier)
@@ -1839,6 +1943,18 @@ class EnhancedScreenTimeModel: ObservableObject {
 
         print("Completed task: \(task.title) for \(earnedXP) XP with photo verification")
 
+        // Update streak (this returns true if fire animation should show)
+        print("🔄 About to call updateStreak()...")
+        let shouldShowFire = updateStreak()
+        print("🔄 updateStreak() returned: \(shouldShowFire)")
+        print("🔄 Current Streak After: \(currentStreak)")
+        print("🔄 shouldShowStreakFireAnimation: \(shouldShowStreakFireAnimation)")
+        print("🔄 ========== TASK COMPLETION END ==========")
+
+        if shouldShowFire {
+            print("🔥 First task of the day - streak is now \(currentStreak)")
+        }
+
         // Send notification to friends about task completion
         notificationManager.sendFriendCompletedTaskNotification(
             friendName: currentUser.username,
@@ -1847,18 +1963,122 @@ class EnhancedScreenTimeModel: ObservableObject {
             hasPhoto: photo != nil
         )
     }
-    
+
+    // MARK: - Streak Methods
+    func checkStreakStatus() {
+        let calendar = Calendar.current
+        let now = Date()
+
+        guard let lastCompletion = lastTaskCompletionDate else {
+            // No previous completion - streak is 0
+            currentStreak = 0
+            hasCompletedTaskToday = false
+            return
+        }
+
+        // Check if last completion was today
+        if calendar.isDateInToday(lastCompletion) {
+            hasCompletedTaskToday = true
+            return
+        }
+
+        // Check if last completion was yesterday
+        if calendar.isDateInYesterday(lastCompletion) {
+            // Streak continues, but they haven't completed today yet
+            hasCompletedTaskToday = false
+            return
+        }
+
+        // Last completion was more than 1 day ago - streak is lost
+        if currentStreak > 0 {
+            print("💔 Streak lost! Was \(currentStreak) days")
+            // Don't reset here - let the view show the loss alert
+        }
+    }
+
+    func updateStreak() -> Bool {
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Check if they already completed a task today
+        if hasCompletedTaskToday {
+            print("⚠️ Already completed a task today - no streak update")
+            return false // Don't increment streak
+        }
+
+        var shouldShowFireAnimation = false
+
+        if let lastCompletion = lastTaskCompletionDate {
+            if calendar.isDateInYesterday(lastCompletion) {
+                // Increment streak - completed yesterday and now today
+                currentStreak += 1
+                shouldShowFireAnimation = true
+                print("✅ Streak continued! Yesterday was last completion. Streak now: \(currentStreak)")
+            } else if !calendar.isDateInToday(lastCompletion) {
+                // Streak was broken - start over
+                print("💔 Streak was broken. Last completion was \(lastCompletion). Starting fresh.")
+                currentStreak = 1
+                shouldShowFireAnimation = true
+            } else {
+                print("⚠️ Last completion was today - this shouldn't happen")
+            }
+        } else {
+            // First ever task
+            print("🎉 First ever task! Starting streak at 1")
+            currentStreak = 1
+            shouldShowFireAnimation = true
+        }
+
+        // Update stored values
+        lastTaskCompletionDate = now
+        hasCompletedTaskToday = true
+        UserDefaults.standard.set(currentStreak, forKey: "currentStreak")
+
+        // Trigger fire animation in views
+        if shouldShowFireAnimation {
+            DispatchQueue.main.async {
+                self.shouldShowStreakFireAnimation = true
+                self.justIncrementedStreak = true
+            }
+        }
+
+        print("🔥 Streak updated to \(currentStreak) days. Fire animation: \(shouldShowFireAnimation)")
+        return shouldShowFireAnimation
+    }
+
+    func resetStreak() {
+        currentStreak = 0
+        UserDefaults.standard.set(0, forKey: "currentStreak")
+        lastTaskCompletionDate = nil
+        hasCompletedTaskToday = false
+    }
+
+    func hasLostStreak() -> Bool {
+        guard let lastCompletion = lastTaskCompletionDate else { return false }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Check if last completion was more than 1 day ago AND streak > 0
+        if currentStreak > 0 &&
+           !calendar.isDateInToday(lastCompletion) &&
+           !calendar.isDateInYesterday(lastCompletion) {
+            return true
+        }
+        return false
+    }
+
     // MARK: - Original Methods
     func loadMockData() {
         recentTasks = [
-            TaskItem(title: "Morning run", category: .exercise, xpReward: 25, estimatedMinutes: 30, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: []),
-            TaskItem(title: "Clean room", category: .chores, xpReward: 15, estimatedMinutes: 20, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: []),
-            TaskItem(title: "Study math", category: .study, xpReward: 30, estimatedMinutes: 45, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: false, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: [])
+            TaskItem(title: "Morning run", category: .exercise, xpReward: 30, estimatedMinutes: 30, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: []),
+            TaskItem(title: "Clean room", category: .chores, xpReward: 20, estimatedMinutes: 20, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: []),
+            TaskItem(title: "Study math", category: .study, xpReward: 45, estimatedMinutes: 45, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: false, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: [])
         ]
         
         friendActivities = [
-            FriendActivity(userId: "1", username: "Oliver", activity: "Completed a 5-mile hike", xpEarned: 40, timestamp: Date().addingTimeInterval(-3600), location: "Little Cottonwood Canyon", locationCoordinate: CLLocationCoordinate2D(latitude: 40.5734, longitude: -111.7551), kudos: 3, hasVerificationPhoto: true, verificationPhoto: nil, trackingRoute: nil),
-            FriendActivity(userId: "2", username: "Emma", activity: "Finished homework", xpEarned: 25, timestamp: Date().addingTimeInterval(-7200), location: nil, locationCoordinate: nil, kudos: 1, hasVerificationPhoto: false, verificationPhoto: nil, trackingRoute: nil),
+            FriendActivity(userId: "1", username: "Oliver", activity: "Completed a 5-mile hike", xpEarned: 90, timestamp: Date().addingTimeInterval(-3600), location: "Little Cottonwood Canyon", locationCoordinate: CLLocationCoordinate2D(latitude: 40.5734, longitude: -111.7551), kudos: 3, hasVerificationPhoto: true, verificationPhoto: nil, trackingRoute: nil),
+            FriendActivity(userId: "2", username: "Emma", activity: "Finished homework", xpEarned: 30, timestamp: Date().addingTimeInterval(-7200), location: nil, locationCoordinate: nil, kudos: 1, hasVerificationPhoto: false, verificationPhoto: nil, trackingRoute: nil),
             FriendActivity(userId: "3", username: "Jake", activity: "Helped with dishes", xpEarned: 15, timestamp: Date().addingTimeInterval(-10800), location: nil, locationCoordinate: nil, kudos: 2, hasVerificationPhoto: true, verificationPhoto: nil, trackingRoute: nil)
         ]
     }
@@ -2019,54 +2239,54 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     func calculateXPForTask(category: TaskCategory, minutes: Int) -> Int {
-        let baseXPPerMinute: Double
-        
-        switch category {
-        case .exercise:
-            baseXPPerMinute = 1.2
-        case .study:
-            baseXPPerMinute = 1.5
-        case .chores:
-            baseXPPerMinute = 0.8
-        case .creative:
-            baseXPPerMinute = 1.0
-        case .outdoor:
-            baseXPPerMinute = 1.3
-        case .health:
-            baseXPPerMinute = 1.1
-        case .social:
-            baseXPPerMinute = 0.7
-        case .custom:
-            baseXPPerMinute = 1.0
-        }
-        
-        return max(5, Int(Double(minutes) * baseXPPerMinute))
+        // Simple 1:1 ratio: 1 minute of work = 1 XP
+        // Credibility multiplier is the only variable that affects final screen time
+        return max(5, minutes)
     }
     
     func convertXPToMinutes(conversionRate: Int = 5) {
-        let newMinutes = xpBalance / conversionRate
-        let usedXP = newMinutes * conversionRate
-        
-        minutesEarned += newMinutes
-        xpBalance -= usedXP
-        currentUser.xpBalance -= usedXP
+        // Use credibility-based conversion
+        let earnedMinutes = credibilityManager.calculateXPToMinutes(xpAmount: xpBalance)
+
+        minutesEarned += earnedMinutes
+
+        // Deduct all XP used
+        let usedXP = xpBalance
+        xpBalance = 0
+        currentUser.xpBalance = 0
+
+        // Sync credibility score
+        currentUser.credibilityScore = Double(credibilityManager.credibilityScore)
+
+        let rate = credibilityManager.getFormattedConversionRate()
+        let tier = credibilityManager.getCurrentTier().name
+        print("✨ Converted \(usedXP) XP → \(earnedMinutes) minutes (Rate: \(rate), Tier: \(tier))")
     }
     
     func startEarnedSession(duration: Int) {
-        print("🚀 Starting earned session...")
-        logCurrentShieldStatus()
-
+        print("🚀 ============ START EARNED SESSION ============")
         print("🚀 Duration requested: \(duration) minutes")
         print("🚀 Minutes available: \(minutesEarned)")
         print("🚀 Is session active: \(isSessionActive)")
         print("🚀 Is session paused: \(isSessionPaused)")
         print("🚀 Authorization status: \(authorizationStatus)")
+        logCurrentShieldStatus()
 
-        guard duration <= minutesEarned, !isSessionActive, !isSessionPaused else {
-            print("❌ Cannot start session - guard conditions failed")
-            logCurrentShieldStatus()
+        // Check guard conditions individually for better debugging
+        if duration > minutesEarned {
+            print("❌ FAIL: Not enough minutes (need \(duration), have \(minutesEarned))")
             return
         }
+        if isSessionActive {
+            print("❌ FAIL: Session already active")
+            return
+        }
+        if isSessionPaused {
+            print("❌ FAIL: Session is paused")
+            return
+        }
+
+        print("✅ All checks passed - starting session")
 
         print("🔓 Removing app restrictions before starting session...")
         removeAppRestrictions()
@@ -2076,7 +2296,14 @@ class EnhancedScreenTimeModel: ObservableObject {
         sessionTimeRemaining = TimeInterval(duration * 60)
         sessionTimeAllocated = TimeInterval(duration * 60)
         sessionTimeUsed = 0
+
+        // Store absolute start and end times for background handling
+        sessionStartTime = Date()
+        sessionEndTime = Date().addingTimeInterval(TimeInterval(duration * 60))
+        pausedTime = nil
+
         print("✅ Session state updated - \(duration) minutes allocated")
+        print("⏰ Session will end at: \(sessionEndTime!)")
 
         sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             DispatchQueue.main.async {
@@ -2091,6 +2318,7 @@ class EnhancedScreenTimeModel: ObservableObject {
         }
         print("⏱️ Session timer started successfully")
         logCurrentShieldStatus()
+        print("🚀 ============ SESSION STARTED SUCCESSFULLY ============")
     }
     
     func endSession() {
@@ -2108,6 +2336,11 @@ class EnhancedScreenTimeModel: ObservableObject {
         sessionTimeAllocated = 0
         sessionTimeUsed = 0
 
+        // Clear timestamps
+        sessionStartTime = nil
+        sessionEndTime = nil
+        pausedTime = nil
+
         startAppRestrictions()
         print("Session ended. Used \(minutesUsed) minutes, \(minutesEarned) minutes remaining")
     }
@@ -2121,6 +2354,7 @@ class EnhancedScreenTimeModel: ObservableObject {
         // Mark session as paused instead of ending
         isSessionActive = false
         isSessionPaused = true
+        pausedTime = Date()
         // Keep sessionTimeRemaining and sessionTimeUsed values
 
         startAppRestrictions()
@@ -2133,6 +2367,13 @@ class EnhancedScreenTimeModel: ObservableObject {
         removeAppRestrictions()
         isSessionActive = true
         isSessionPaused = false
+
+        // Adjust end time based on how long we were paused
+        if let paused = pausedTime {
+            let pauseDuration = Date().timeIntervalSince(paused)
+            sessionEndTime = sessionEndTime?.addingTimeInterval(pauseDuration)
+        }
+        pausedTime = nil
 
         sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             DispatchQueue.main.async {
@@ -2147,8 +2388,43 @@ class EnhancedScreenTimeModel: ObservableObject {
         print("Session resumed. \(Int(sessionTimeRemaining / 60)) minutes remaining")
     }
 
+    // MARK: - Session Time Synchronization
+    func syncSessionTime() {
+        // Only sync if session is active (not paused)
+        guard isSessionActive, let endTime = sessionEndTime else { return }
+
+        let now = Date()
+
+        // Check if session has expired
+        if now >= endTime {
+            print("⏰ Session expired while app was in background - ending session")
+            endSession()
+            return
+        }
+
+        // Calculate actual time remaining based on wall-clock time
+        let actualTimeRemaining = endTime.timeIntervalSince(now)
+        let timeDifference = abs(sessionTimeRemaining - actualTimeRemaining)
+
+        // Only update if there's a significant difference (more than 2 seconds)
+        if timeDifference > 2 {
+            print("🔄 Syncing session time: was \(Int(sessionTimeRemaining))s, now \(Int(actualTimeRemaining))s")
+
+            // Update time used based on how much actually elapsed
+            if let startTime = sessionStartTime {
+                let totalElapsed = now.timeIntervalSince(startTime)
+                sessionTimeUsed = totalElapsed
+            }
+
+            sessionTimeRemaining = actualTimeRemaining
+        }
+    }
+
     // MARK: - Failsafe and Cleanup
     func ensureAppsAreBlocked() {
+        // Sync session timer first if active
+        syncSessionTime()
+
         // Failsafe: If no session is active or paused, ensure apps are blocked
         if !isSessionActive && !isSessionPaused {
             print("🔒 Ensuring apps are blocked (failsafe)")
@@ -4980,6 +5256,13 @@ struct CommentsView: View {
 struct ProfileView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @State private var showingNotificationSettings = false
+    @State private var showingEditName = false
+    @State private var showingEditAge = false
+    @State private var tempName: String = ""
+
+    // Persisted user data
+    @AppStorage("userName") private var userName: String = "User"
+    @AppStorage("userAge") private var userAge: Int = 13
 
     var body: some View {
         NavigationView {
@@ -4990,13 +5273,13 @@ struct ProfileView: View {
                             .fill(Color.purple.opacity(0.3))
                             .frame(width: 60, height: 60)
                             .overlay(
-                                Text(String(model.currentUser.username.prefix(1)))
+                                Text(String(userName.prefix(1)))
                                     .font(.title2)
                                     .fontWeight(.semibold)
                             )
 
                         VStack(alignment: .leading) {
-                            Text(model.currentUser.username)
+                            Text(userName)
                                 .font(.title3)
                                 .fontWeight(.semibold)
                             Text("Credibility: \(Int(model.currentUser.credibilityScore))%")
@@ -5007,6 +5290,43 @@ struct ProfileView: View {
                         Spacer()
                     }
                     .padding(.vertical, 8)
+                }
+
+                Section("Personal Information") {
+                    Button(action: {
+                        tempName = userName
+                        showingEditName = true
+                    }) {
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.blue)
+                            Text("Name")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text(userName)
+                                .foregroundColor(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button(action: {
+                        showingEditAge = true
+                    }) {
+                        HStack {
+                            Image(systemName: "calendar")
+                                .foregroundColor(.blue)
+                            Text("Age")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text("\(userAge)")
+                                .foregroundColor(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 Section("Statistics") {
@@ -5087,6 +5407,70 @@ struct ProfileView: View {
             .sheet(isPresented: $showingNotificationSettings) {
                 NotificationSettingsView()
                     .environmentObject(model)
+            }
+            .sheet(isPresented: $showingEditAge) {
+                EditAgeView(userAge: $userAge)
+            }
+            .alert("Edit Name", isPresented: $showingEditName) {
+                TextField("Enter your name", text: $tempName)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") {
+                    if !tempName.trimmingCharacters(in: .whitespaces).isEmpty {
+                        userName = tempName
+                    }
+                }
+            } message: {
+                Text("What would you like to be called?")
+            }
+        }
+    }
+}
+
+// MARK: - Edit Age View
+struct EditAgeView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var userAge: Int
+
+    @State private var editedAge: Int
+
+    init(userAge: Binding<Int>) {
+        self._userAge = userAge
+        self._editedAge = State(initialValue: userAge.wrappedValue)
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                Text("Select Your Age")
+                    .font(.headline)
+                    .padding(.top, 20)
+
+                Picker("Age", selection: $editedAge) {
+                    ForEach(5...100, id: \.self) { age in
+                        Text("\(age)").tag(age)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .padding()
+
+                Spacer()
+            }
+            .navigationTitle("Edit Age")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        userAge = editedAge
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
             }
         }
     }
@@ -5331,6 +5715,9 @@ struct ContentView: View {
             case .active:
                 print("App became active - ensuring screen time restrictions are properly applied")
                 model.ensureAppsAreBlocked()
+                // Check for pending widget session requests when app becomes active
+                model.checkForPendingWidgetSession()
+                model.checkForEndSessionRequest()
             case .inactive:
                 print("App became inactive")
             case .background:
@@ -5786,17 +6173,9 @@ struct EnhancedTasksView: View {
                                         print("❌ Failed to save photo to persistent storage")
                                     }
 
-                                    // CRITICAL: Save the photo AND complete the task
-                                    print("🔄 Before update - Task has photo: \(model.recentTasks[originalIndex].verificationPhoto != nil)")
-                                    model.recentTasks[originalIndex].verificationPhoto = photo
-                                    print("🔄 After update - Task has photo: \(model.recentTasks[originalIndex].verificationPhoto != nil)")
-
-                                    // 🎯 COMPLETE THE TASK - This was missing!
-                                    print("🎯 COMPLETING TASK: \(model.recentTasks[originalIndex].title)")
-                                    model.completeTask(model.recentTasks[originalIndex])
-                                    model.recentTasks[originalIndex].completed = true
-                                    model.recentTasks[originalIndex].completedAt = Date()
-                                    print("✅ Task marked as completed: \(model.recentTasks[originalIndex].completed)")
+                                    // Complete task with photo - this handles XP, social posts, AND streak tracking
+                                    print("🎯 COMPLETING TASK WITH PHOTO: \(model.recentTasks[originalIndex].title)")
+                                    model.completeTaskWithPhoto(model.recentTasks[originalIndex], photo: photo)
 
                                     // Force UI refresh
                                     model.objectWillChange.send()
@@ -6361,7 +6740,24 @@ struct EnhancedHomeView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @State private var selectedDuration = 30
     @State private var showingAddTask = false
-    
+    @State private var previousLevel = 1
+    @State private var showingLevelUp = false
+    @State private var showingConfetti = false
+    @State private var newLevel = 1
+
+    // Access stored user name
+    @AppStorage("userName") private var userName: String = "User"
+
+    // Streak animations
+    @State private var showingStreakFire = false
+    @State private var showingStreakLost = false
+    @State private var lostStreakValue = 0
+    @State private var hasCheckedStreakLoss = false
+
+    private var currentUserLevel: UserLevel {
+        UserLevel(totalXP: model.currentUser.totalXPEarned)
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -6371,27 +6767,33 @@ struct EnhancedHomeView: View {
                             Text("Welcome back,")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                            Text(model.currentUser.username)
+                            Text(userName)
                                 .font(.title2)
                                 .fontWeight(.bold)
                         }
-                        
+
                         Spacer()
-                        
-                        Circle()
-                            .fill(Color.purple.opacity(0.3))
-                            .frame(width: 50, height: 50)
-                            .overlay(
-                                Text(String(model.currentUser.username.prefix(1)))
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                            )
+
+                        NavigationLink(destination: ProfileView().environmentObject(model)) {
+                            Circle()
+                                .fill(Color.purple.opacity(0.3))
+                                .frame(width: 50, height: 50)
+                                .overlay(
+                                    Text(String(userName.prefix(1)))
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+                                )
+                        }
                     }
+
+                    // Level Progress Bar
+                    LevelProgressBar(userLevel: currentUserLevel)
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
                         StatCard(title: "XP Balance", value: "\(model.currentUser.xpBalance)", color: .blue, icon: "star.fill")
                         StatCard(title: "Minutes Earned", value: "\(model.minutesEarned)", color: .green, icon: "clock.fill")
-                        StatCard(title: "Total XP", value: "\(model.currentUser.totalXPEarned)", color: .orange, icon: "trophy.fill")
+                        StatCard(title: "Day Streak", value: "\(model.currentStreak)", color: .orange, icon: "flame.fill")
                         StatCard(title: "Credibility", value: "\(model.credibilityManager.credibilityScore)", color: credibilityColor(score: model.credibilityManager.credibilityScore), icon: "checkmark.seal.fill")
                     }
                     
@@ -6401,14 +6803,14 @@ struct EnhancedHomeView: View {
                                 .font(.headline)
                             Spacer()
                         }
-                        
+
                         HStack(spacing: 12) {
                             Button(action: { showingAddTask = true }) {
                                 Label("Add Task", systemImage: "plus.circle.fill")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
-                            
+
                             if model.xpBalance >= 5 {
                                 Button(action: { model.convertXPToMinutes() }) {
                                     Label("Convert XP", systemImage: "arrow.triangle.2.circlepath")
@@ -6418,6 +6820,52 @@ struct EnhancedHomeView: View {
                             }
                         }
                     }
+
+                    // DEBUG: Streak Testing (remove this later)
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("🔥 Streak Debug")
+                                .font(.headline)
+                                .foregroundColor(.orange)
+                            Spacer()
+                        }
+
+                        HStack(spacing: 8) {
+                            Button("Test Fire 🔥") {
+                                print("🧪 Manual fire trigger - Current streak: \(model.currentStreak)")
+                                showingStreakFire = true
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .tint(.orange)
+
+                            Button("+1 Streak") {
+                                model.currentStreak += 1
+                                UserDefaults.standard.set(model.currentStreak, forKey: "currentStreak")
+                                model.shouldShowStreakFireAnimation = true
+                                print("🧪 Manually incremented streak to \(model.currentStreak)")
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .tint(.green)
+
+                            Button("Reset") {
+                                model.resetStreak()
+                                print("🧪 Reset streak to 0")
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                        }
+
+                        Text("Streak: \(model.currentStreak) | Last: \(model.lastTaskCompletionDate?.description ?? "Never") | Today: \(model.hasCompletedTaskToday ? "✓" : "✗")")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(12)
                     
                     if model.isSessionActive {
                         VStack(spacing: 12) {
@@ -6668,6 +7116,67 @@ struct EnhancedHomeView: View {
                 AddTaskView()
                     .environmentObject(model)
             }
+            .onChange(of: model.currentUser.totalXPEarned) { oldValue, newValue in
+                // Detect level up
+                let oldLevel = UserLevel(totalXP: oldValue).currentLevel
+                let newLevelValue = currentUserLevel.currentLevel
+
+                if newLevelValue > oldLevel {
+                    // Level up detected!
+                    newLevel = newLevelValue
+                    withAnimation {
+                        showingConfetti = true
+                        showingLevelUp = true
+                    }
+
+                    // Auto-hide confetti after 3 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation {
+                            showingConfetti = false
+                        }
+                    }
+                }
+                previousLevel = newLevelValue
+            }
+            .onAppear {
+                // Check for streak loss on first appearance
+                if !hasCheckedStreakLoss && model.hasLostStreak() {
+                    lostStreakValue = model.currentStreak
+                    model.resetStreak()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        showingStreakLost = true
+                    }
+                    hasCheckedStreakLoss = true
+                }
+            }
+            .onChange(of: model.shouldShowStreakFireAnimation) { oldValue, newValue in
+                // Show fire animation when triggered by model
+                if newValue {
+                    showingStreakFire = true
+                    // Reset the trigger after a delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        model.shouldShowStreakFireAnimation = false
+                    }
+                }
+            }
+            .overlay(
+                ZStack {
+                    // Confetti overlay for level-up
+                    if showingConfetti {
+                        ConfettiView()
+                            .transition(.opacity)
+                    }
+
+                    // Level-up popup overlay
+                    LevelUpPopup(level: newLevel, isShowing: $showingLevelUp)
+
+                    // Streak fire animation overlay
+                    StreakFireAnimation(streak: model.currentStreak, isShowing: $showingStreakFire)
+
+                    // Streak lost alert overlay
+                    StreakLostAlert(lostStreak: lostStreakValue, isShowing: $showingStreakLost)
+                }
+            )
         }
     }
     
@@ -7367,6 +7876,394 @@ struct ToastView: View {
             Spacer()
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isShowing)
+    }
+}
+
+// MARK: - Level System
+struct UserLevel {
+    let currentLevel: Int
+    let currentLevelXP: Int // XP at start of current level
+    let nextLevelXP: Int    // XP needed for next level
+    let progressInLevel: Int // XP earned in current level
+    let totalXP: Int
+
+    init(totalXP: Int) {
+        self.totalXP = totalXP
+
+        // Calculate level based on XP thresholds
+        // Level 1: 0-100, Level 2: 100-250, Level 3: 250-500, Level 4: 500-1000, etc.
+        var level = 1
+        var xpForCurrentLevel = 0
+        var xpForNextLevel = 100
+
+        while totalXP >= xpForNextLevel {
+            level += 1
+            xpForCurrentLevel = xpForNextLevel
+            xpForNextLevel = xpForCurrentLevel + (level * 100) // Exponential growth
+        }
+
+        self.currentLevel = level
+        self.currentLevelXP = xpForCurrentLevel
+        self.nextLevelXP = xpForNextLevel
+        self.progressInLevel = totalXP - xpForCurrentLevel
+    }
+
+    var progressPercentage: Double {
+        let xpNeededForLevel = nextLevelXP - currentLevelXP
+        return Double(progressInLevel) / Double(xpNeededForLevel)
+    }
+}
+
+// MARK: - Level Progress Bar
+struct LevelProgressBar: View {
+    let userLevel: UserLevel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Level \(userLevel.currentLevel)")
+                    .font(.headline)
+                    .fontWeight(.bold)
+
+                Spacer()
+
+                Text("\(userLevel.progressInLevel)/\(userLevel.nextLevelXP - userLevel.currentLevelXP) XP")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(height: 8)
+
+                    // Progress gradient
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            LinearGradient(
+                                colors: [.purple, .blue, .cyan, .green],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geometry.size.width * userLevel.progressPercentage, height: 8)
+                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: userLevel.progressPercentage)
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+}
+
+// MARK: - Confetti View
+struct ConfettiView: View {
+    @State private var confettiPieces: [ConfettiPiece] = []
+
+    struct ConfettiPiece: Identifiable {
+        let id = UUID()
+        let color: Color
+        let x: CGFloat
+        let y: CGFloat
+        let rotation: Double
+        let scale: CGFloat
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(confettiPieces) { piece in
+                    Circle()
+                        .fill(piece.color)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(piece.scale)
+                        .rotationEffect(.degrees(piece.rotation))
+                        .position(x: piece.x, y: piece.y)
+                }
+            }
+            .onAppear {
+                createConfetti(in: geometry.size)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func createConfetti(in size: CGSize) {
+        let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
+
+        for _ in 0..<50 {
+            confettiPieces.append(
+                ConfettiPiece(
+                    color: colors.randomElement()!,
+                    x: CGFloat.random(in: 0...size.width),
+                    y: CGFloat.random(in: -50...size.height/2),
+                    rotation: Double.random(in: 0...360),
+                    scale: CGFloat.random(in: 0.5...1.5)
+                )
+            )
+        }
+    }
+}
+
+// MARK: - Level Up Popup
+struct LevelUpPopup: View {
+    let level: Int
+    @Binding var isShowing: Bool
+
+    private var encouragementMessage: String {
+        let messages = [
+            "Amazing! You're crushing it! 🎉",
+            "Wow! Keep up the incredible work! 🌟",
+            "Fantastic! You're on fire! 🔥",
+            "Awesome! You're leveling up fast! 🚀",
+            "Incredible! Keep going strong! 💪",
+            "Outstanding! You're doing great! ⭐",
+            "Brilliant! Way to go! 🎊",
+            "Superb! You're unstoppable! 🏆"
+        ]
+        return messages.randomElement() ?? "Great job! 🎉"
+    }
+
+    var body: some View {
+        if isShowing {
+            ZStack {
+                // Semi-transparent background
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation {
+                            isShowing = false
+                        }
+                    }
+
+                VStack(spacing: 20) {
+                    Text("🎉 LEVEL UP! 🎉")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+
+                    Text("Level \(level)")
+                        .font(.system(size: 48, weight: .heavy))
+                        .foregroundColor(.yellow)
+
+                    Text(encouragementMessage)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+
+                    Button(action: {
+                        withAnimation {
+                            isShowing = false
+                        }
+                    }) {
+                        Text("Keep Going!")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(
+                                LinearGradient(
+                                    colors: [.purple, .blue],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 40)
+                }
+                .padding(30)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(
+                            LinearGradient(
+                                colors: [.purple.opacity(0.95), .blue.opacity(0.95)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                )
+                .padding(40)
+                .scaleEffect(isShowing ? 1.0 : 0.5)
+                .opacity(isShowing ? 1.0 : 0)
+                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isShowing)
+            }
+        }
+    }
+}
+
+// MARK: - Streak Fire Animation
+struct StreakFireAnimation: View {
+    let streak: Int
+    @Binding var isShowing: Bool
+
+    @State private var flames: [FlameParticle] = []
+    @State private var scale: CGFloat = 0.5
+
+    struct FlameParticle: Identifiable {
+        let id = UUID()
+        let xOffset: CGFloat
+        let yOffset: CGFloat
+        let size: CGFloat
+        let delay: Double
+    }
+
+    var body: some View {
+        if isShowing {
+            ZStack {
+                // Semi-transparent background
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation {
+                            isShowing = false
+                        }
+                    }
+
+                VStack(spacing: 24) {
+                    // Animated flames
+                    ZStack {
+                        ForEach(flames) { flame in
+                            Text("🔥")
+                                .font(.system(size: flame.size))
+                                .offset(x: flame.xOffset, y: flame.yOffset)
+                                .opacity(isShowing ? 1.0 : 0)
+                                .animation(
+                                    .easeOut(duration: 0.8).delay(flame.delay),
+                                    value: isShowing
+                                )
+                        }
+                    }
+                    .frame(height: 150)
+
+                    // Streak number
+                    Text("\(streak)")
+                        .font(.system(size: 80, weight: .heavy))
+                        .foregroundColor(.orange)
+
+                    Text("Day Streak!")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.orange)
+                }
+                .scaleEffect(scale)
+                .onAppear {
+                    // Generate flame particles
+                    for i in 0..<8 {
+                        let angle = Double(i) * (360.0 / 8.0) * .pi / 180.0
+                        let radius: CGFloat = 50
+                        flames.append(FlameParticle(
+                            xOffset: cos(angle) * radius,
+                            yOffset: sin(angle) * radius,
+                            size: CGFloat.random(in: 40...60),
+                            delay: Double(i) * 0.05
+                        ))
+                    }
+
+                    // Scale animation
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.6)) {
+                        scale = 1.0
+                    }
+
+                    // Auto-hide after 2.5 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        withAnimation {
+                            isShowing = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Streak Lost Alert
+struct StreakLostAlert: View {
+    let lostStreak: Int
+    @Binding var isShowing: Bool
+    @State private var dismissing = false
+    @State private var finalPosition: CGPoint = .zero
+
+    var body: some View {
+        if isShowing {
+            ZStack {
+                // Background
+                if !dismissing {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                }
+
+                // Alert box
+                VStack(spacing: 20) {
+                    Text("💔")
+                        .font(.system(size: 60))
+
+                    Text("Streak Lost")
+                        .font(.title)
+                        .fontWeight(.bold)
+
+                    Text("You lost your \(lostStreak) day streak")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    Text("Start a new one today!")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+
+                    Button(action: {
+                        startDismissAnimation()
+                    }) {
+                        Text("Got it")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.orange)
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(30)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color(.systemBackground))
+                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                )
+                .padding(40)
+                .scaleEffect(dismissing ? 0.1 : 1.0)
+                .offset(
+                    x: dismissing ? finalPosition.x : 0,
+                    y: dismissing ? finalPosition.y : 0
+                )
+                .opacity(dismissing ? 0 : 1)
+            }
+        }
+    }
+
+    private func startDismissAnimation() {
+        // Calculate position of streak card (approximate - bottom right area)
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+        finalPosition = CGPoint(
+            x: screenWidth / 2 - 100,
+            y: -screenHeight / 2 + 300 // Approximate position of streak card
+        )
+
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            dismissing = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            isShowing = false
+            dismissing = false
+        }
     }
 }
 

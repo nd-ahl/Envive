@@ -42,6 +42,18 @@ struct FocusWidget_Previews: PreviewProvider {
                 .previewContext(WidgetPreviewContext(family: .systemMedium))
                 .environment(\.colorScheme, .dark)
                 .previewDisplayName("Medium - Normal (Dark)")
+
+            // MARK: - Time Options State Previews
+
+            // Small - Time Options
+            FocusWidgetEntryView(entry: FocusWidgetEntry.withTimeOptions)
+                .previewContext(WidgetPreviewContext(family: .systemSmall))
+                .previewDisplayName("Small - Time Options")
+
+            // Medium - Time Options
+            FocusWidgetEntryView(entry: FocusWidgetEntry.withTimeOptions)
+                .previewContext(WidgetPreviewContext(family: .systemMedium))
+                .previewDisplayName("Medium - Time Options")
         }
     }
 }

@@ -13,5 +13,7 @@ struct EnviveNewWidgetsBundle: WidgetBundle {
     var body: some Widget {
         EnviveNewWidgets()
         EnviveNewWidgetsLiveActivity()
+        FocusWidget()
+        EnviveSpendingWidget()
     }
 }
