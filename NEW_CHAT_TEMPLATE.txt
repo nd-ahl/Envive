@@ -1,0 +1,59 @@
+═══════════════════════════════════════════════════════════════
+COPY EVERYTHING BELOW THIS LINE AND PASTE INTO YOUR NEW CHAT
+═══════════════════════════════════════════════════════════════
+
+I'm continuing development on the Envive iOS SwiftUI app.
+
+PROJECT: Envive - Parent/child screen time management through task completion
+LOCATION: /Users/nealahlstrom/github/Envive
+
+PHASE 3 STATUS: ✅ Complete (Backend + Parent UI)
+
+WHAT'S DONE:
+✅ 5-level task difficulty system (Level 1=5 XP → Level 5=60 XP)
+✅ 200+ pre-seeded task templates across 11 categories
+✅ TaskService with approve/decline/edit logic
+✅ TaskRepository for data persistence
+✅ ParentDashboardView - shows pending task approvals (ContentView Tab 5)
+✅ TaskReviewView - approve/decline/edit interface
+✅ Credibility system: score = earning % (90 cred = earn 90% XP)
+✅ Approval: +5 credibility, Decline: -20 credibility
+✅ Photo required for all tasks
+✅ Parent approval required before XP awarded
+✅ 1 XP = 1 minute screen time (no multipliers)
+
+CRITICAL DESIGN RULE:
+⚠️ Task Level = SCREEN TIME REWARD (not work duration)
+   "Doing dishes" might take 20 min but is Level 2 (15 XP) because that's the VALUE
+
+WHAT'S PENDING:
+❌ ChildDashboardView - child home screen
+❌ TaskSearchView - search/claim tasks
+❌ TaskDetailView - view details + select level
+❌ TaskInProgressView - photo capture + completion
+❌ AssignTaskView - parent assigns tasks
+❌ NotificationService - task completion alerts
+
+REFERENCE FILES:
+📄 Full technical reference: /Users/nealahlstrom/github/Envive/PHASE3_TASK_SYSTEM_REFERENCE.md
+📄 Quick start guide: /Users/nealahlstrom/github/Envive/QUICK_START_GUIDE.md
+
+KEY FILES:
+- Models: EnviveNew/Core/Models/TaskLevel.swift, TaskTemplate.swift, TaskAssignment.swift
+- Service: EnviveNew/Services/Tasks/TaskService.swift
+- Repository: EnviveNew/Repositories/TaskRepository.swift
+- Parent Views: EnviveNew/Views/Parent/ParentDashboardView.swift, TaskReviewView.swift
+- App Entry: EnviveNew/ContentView.swift (Tab 5 = Task Approvals)
+- DI: EnviveNew/Core/DependencyContainer.swift
+
+PLEASE READ FOR FULL CONTEXT:
+/Users/nealahlstrom/github/Envive/PHASE3_TASK_SYSTEM_REFERENCE.md
+
+═══════════════════════════════════════════════════════════════
+NOW ADD YOUR REQUEST BELOW:
+═══════════════════════════════════════════════════════════════
+
+I need help with:
+
+[WRITE YOUR QUESTION/REQUEST HERE]
+

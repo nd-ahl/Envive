@@ -481,6 +481,15 @@ class CredibilityManagerTests {
 
 // MARK: - Test Data Generator
 
+// Mock data structure for testing
+struct ChildProfile {
+    let name: String
+    let credibilityScore: Int
+    let consecutiveApprovedTasks: Int
+    let totalTasksCompleted: Int
+    let pendingVerifications: Int
+}
+
 class CredibilityTestDataGenerator {
 
     static func generateMockChild(
@@ -512,6 +521,7 @@ class CredibilityTestDataGenerator {
             taskDescription: "Description for \(taskTitle)",
             taskCategory: ["Exercise", "Study", "Chores", "Creative"].randomElement()!,
             taskXPReward: Int.random(in: 50...200),
+            taskTimeMinutes: Int.random(in: 10...60),
             locationName: Bool.random() ? "Home" : "School",
             completedAt: Date().addingTimeInterval(-Double.random(in: 3600...86400)),
             childName: childName

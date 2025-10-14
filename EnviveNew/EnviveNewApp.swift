@@ -14,10 +14,15 @@ struct EnviveNewApp: App {
     let persistenceController = PersistenceController.shared
     let authorizationCenter = AuthorizationCenter.shared
 
+    // Theme management
+    @StateObject private var themeViewModel = DependencyContainer.shared
+        .viewModelFactory.makeThemeSettingsViewModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .preferredColorScheme(themeViewModel.effectiveColorScheme)
                 .onOpenURL { url in
                     handleURLScheme(url)
                 }

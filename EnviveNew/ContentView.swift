@@ -4,8 +4,6 @@ import ManagedSettings
 import Combine
 @preconcurrency import AVFoundation
 import UIKit
-import CoreLocation
-import MapKit
 import UserNotifications
 import DeviceActivity
 
@@ -295,8 +293,6 @@ struct User: Identifiable {
     var pendingFriendRequests: [String]
     var isParentallyManaged: Bool
     var parentId: String?
-    var currentLocation: CLLocationCoordinate2D?
-    var isSharingLocation: Bool = false
 }
 
 struct TaskItem: Identifiable {
@@ -312,19 +308,8 @@ struct TaskItem: Identifiable {
     var isGroupTask: Bool
     var participants: [String]
     var verificationRequired: Bool
-    var location: String?
-    var locationCoordinate: CLLocationCoordinate2D?
-    var verificationPhoto: UIImage?
-    var trackingData: [LocationTrackingPoint] = []
-}
-
-struct LocationTrackingPoint: Identifiable {
-    let id = UUID()
-    let coordinate: CLLocationCoordinate2D
-    let timestamp: Date
-    let altitude: Double?
-    let speed: Double?
-    let distance: Double?
+    var verificationPhoto: UIImage? // Back camera image
+    var verificationPhotoFront: UIImage? // Front camera image
 }
 
 enum TaskCategory: String, CaseIterable, Codable {
@@ -345,161 +330,12 @@ struct FriendActivity: Identifiable {
     let activity: String
     let xpEarned: Int
     let timestamp: Date
-    let location: String?
-    let locationCoordinate: CLLocationCoordinate2D?
     let kudos: Int
     let hasVerificationPhoto: Bool
     let verificationPhoto: UIImage?
-    let trackingRoute: [CLLocationCoordinate2D]?
 }
 
 // MARK: - Location Manager
-class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-    private let locationManager = CLLocationManager()
-    
-    @Published var currentLocation: CLLocation?
-    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
-    @Published var isTracking = false
-    @Published var trackingPoints: [LocationTrackingPoint] = []
-    @Published var totalDistance: Double = 0
-    @Published var currentSpeed: Double = 0
-    @Published var averageSpeed: Double = 0
-    @Published var currentAltitude: Double = 0
-    @Published var trackingDuration: TimeInterval = 0
-    @Published var locationError: String?
-    @Published var friendLocations: [String: CLLocationCoordinate2D] = [:]
-    
-    private var trackingTimer: Timer?
-    private var startTime: Date?
-    private var lastLocation: CLLocation?
-    
-    override init() {
-        super.init()
-        locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.activityType = .fitness
-        // Comment out background updates - requires special capabilities
-        // locationManager.allowsBackgroundLocationUpdates = true
-        locationManager.pausesLocationUpdatesAutomatically = false
-        locationManager.distanceFilter = 5 // Update every 5 meters
-    }
-    
-    func requestPermission() {
-        locationManager.requestWhenInUseAuthorization()
-        // For background tracking during activities
-        locationManager.requestAlwaysAuthorization()
-    }
-    
-    func startTracking() {
-        guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else {
-            locationError = "Location permission not granted"
-            return
-        }
-        
-        isTracking = true
-        trackingPoints = []
-        totalDistance = 0
-        startTime = Date()
-        lastLocation = nil
-        
-        locationManager.startUpdatingLocation()
-        
-        // Update timer for duration
-        trackingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if let start = self.startTime {
-                self.trackingDuration = Date().timeIntervalSince(start)
-            }
-        }
-    }
-    
-    func stopTracking() -> [LocationTrackingPoint] {
-        isTracking = false
-        locationManager.stopUpdatingLocation()
-        trackingTimer?.invalidate()
-        trackingTimer = nil
-        
-        let finalPoints = trackingPoints
-        return finalPoints
-    }
-    
-    func startLocationSharing() {
-        locationManager.startUpdatingLocation()
-    }
-    
-    func stopLocationSharing() {
-        if !isTracking {
-            locationManager.stopUpdatingLocation()
-        }
-    }
-    
-    // MARK: - CLLocationManagerDelegate
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        currentLocation = location
-        
-        if isTracking {
-            // Calculate distance if we have a previous location
-            if let lastLoc = lastLocation {
-                let distance = location.distance(from: lastLoc)
-                totalDistance += distance
-            }
-            
-            // Update current metrics
-            currentSpeed = max(0, location.speed * 3.6) // Convert m/s to km/h
-            currentAltitude = location.altitude
-            
-            // Calculate average speed
-            if let start = startTime {
-                let duration = Date().timeIntervalSince(start)
-                if duration > 0 {
-                    averageSpeed = (totalDistance / 1000) / (duration / 3600) // km/h
-                }
-            }
-            
-            // Add tracking point
-            let point = LocationTrackingPoint(
-                coordinate: location.coordinate,
-                timestamp: Date(),
-                altitude: location.altitude,
-                speed: location.speed,
-                distance: totalDistance
-            )
-            trackingPoints.append(point)
-            
-            lastLocation = location
-        }
-    }
-    
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-    }
-    
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        locationError = "Location error: \(error.localizedDescription)"
-    }
-    
-    // MARK: - Helper Functions
-    func formatDistance(_ meters: Double) -> String {
-        if meters < 1000 {
-            return String(format: "%.0f m", meters)
-        } else {
-            return String(format: "%.2f km", meters / 1000)
-        }
-    }
-    
-    func formatDuration(_ seconds: TimeInterval) -> String {
-        let hours = Int(seconds) / 3600
-        let minutes = (Int(seconds) % 3600) / 60
-        let secs = Int(seconds) % 60
-        
-        if hours > 0 {
-            return String(format: "%02d:%02d:%02d", hours, minutes, secs)
-        } else {
-            return String(format: "%02d:%02d", minutes, secs)
-        }
-    }
-}
-
 // MARK: - Photo Storage Model
 struct SavedPhoto: Codable, Identifiable {
     let id = UUID()
@@ -584,7 +420,7 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     var backPhotoOutput: AVCapturePhotoOutput?
 
     // Capture synchronization
-    private var captureCompletionHandler: ((UIImage?) -> Void)?
+    private var captureCompletionHandler: ((UIImage?, UIImage?) -> Void)? // (backImage, frontImage)
     private var frontImageCaptured = false
     private var backImageCaptured = false
     private let captureQueue = DispatchQueue(label: "com.envive.camera.capture", qos: .userInitiated)
@@ -1336,7 +1172,7 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
 
     // MARK: - Enhanced Photo Capture
 
-    func capturePhoto(completion: @escaping (UIImage?) -> Void) {
+    func capturePhoto(completion: @escaping (UIImage?, UIImage?) -> Void) {
         print("📸 Starting dual camera capture...")
 
         DispatchQueue.main.async {
@@ -1412,18 +1248,23 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     }
 
     private func processCapturedImages() {
-        // Create composite image from both cameras
-        if let compositeImage = combineEnhancedDualImages() {
+        // Store both back and front camera images separately
+        // This prevents duplicate overlays in social view
+        let backImage = backCameraImage
+        let frontImage = frontCameraImage
+
+        if backImage != nil || frontImage != nil {
             DispatchQueue.main.async {
-                self.capturedImage = compositeImage
+                // Use back camera for display if available, otherwise front
+                self.capturedImage = backImage ?? frontImage
                 self.isCapturing = false
                 self.cameraStatus = .ready
 
-                // Call completion handler
-                self.captureCompletionHandler?(compositeImage)
+                // Call completion handler with both images
+                self.captureCompletionHandler?(backImage, frontImage)
                 self.captureCompletionHandler = nil
 
-                print("✅ Photo capture completed successfully")
+                print("✅ Photo capture completed successfully - back: \(backImage != nil), front: \(frontImage != nil)")
             }
         } else {
             DispatchQueue.main.async {
@@ -1431,7 +1272,7 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
                 self.cameraStatus = .ready
                 self.cameraError = "Failed to process captured images"
 
-                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler?(nil, nil)
                 self.captureCompletionHandler = nil
 
                 print("❌ Photo capture failed - could not process images")
@@ -1519,7 +1360,7 @@ extension CameraManager {
                     self.cameraError = "Photo capture failed: \(errorDescription)"
                     self.isCapturing = false
                     self.cameraStatus = .ready
-                    self.captureCompletionHandler?(nil)
+                    self.captureCompletionHandler?(nil, nil)
                     self.captureCompletionHandler = nil
                 }
             }
@@ -1533,7 +1374,7 @@ extension CameraManager {
                 self.cameraError = "Failed to process photo data"
                 self.isCapturing = false
                 self.cameraStatus = .ready
-                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler?(nil, nil)
                 self.captureCompletionHandler = nil
             }
             return
@@ -1602,7 +1443,7 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
 
     // Social Features
-    @Published var currentUser: User = User(username: "You", xpBalance: 0, totalXPEarned: 0, credibilityScore: 100.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false, currentLocation: nil, isSharingLocation: false)
+    @Published var currentUser: User = User(username: "You", xpBalance: 0, totalXPEarned: 0, credibilityScore: 100.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false)
     @Published var friends: [User] = []
     @Published var recentTasks: [TaskItem] = []
     @Published var friendActivities: [FriendActivity] = []
@@ -1621,9 +1462,6 @@ class EnhancedScreenTimeModel: ObservableObject {
     
     // Camera
     @Published var cameraManager = CameraManager()
-    
-    // Location
-    @Published var locationManager = LocationManager()
 
     // Notifications
     @Published var notificationManager = NotificationManager()
@@ -1641,7 +1479,6 @@ class EnhancedScreenTimeModel: ObservableObject {
         checkAuthorizationStatus()
         loadMockData()
         setupMockUserDatabase()
-        setupLocationTracking()
         loadMockSocialPosts()
 
         // Request notification permission on init
@@ -1738,53 +1575,18 @@ class EnhancedScreenTimeModel: ObservableObject {
         }
     }
 
-    // MARK: - Location Methods
-    func setupLocationTracking() {
-        // Request location permission on init
-        locationManager.requestPermission()
-    }
-    
-    func startLocationSharing() {
-        currentUser.isSharingLocation = true
-        locationManager.startLocationSharing()
-        
-        // Update current location
-        if let location = locationManager.currentLocation {
-            currentUser.currentLocation = location.coordinate
-        }
-    }
-    
-    func stopLocationSharing() {
-        currentUser.isSharingLocation = false
-        locationManager.stopLocationSharing()
-    }
-    
-    func startTrackingForTask(_ task: TaskItem) {
-        locationManager.startTracking()
-    }
-    
-    func stopTrackingForTask(_ task: TaskItem) -> [LocationTrackingPoint] {
-        return locationManager.stopTracking()
-    }
-    
     // MARK: - Friend Management
     func setupMockUserDatabase() {
-        // Adding location coordinates for mock users (around Salt Lake City area)
+        // Mock user database
         allUsers = [
-            User(username: "Oliver", xpBalance: 120, totalXPEarned: 580, credibilityScore: 95.0, friends: [], pendingFriendRequests: [], isParentallyManaged: true, 
-                 currentLocation: CLLocationCoordinate2D(latitude: 40.7608, longitude: -111.8910), isSharingLocation: true),
-            User(username: "Emma", xpBalance: 85, totalXPEarned: 420, credibilityScore: 88.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false,
-                 currentLocation: CLLocationCoordinate2D(latitude: 40.7500, longitude: -111.8833), isSharingLocation: false),
-            User(username: "Jake", xpBalance: 200, totalXPEarned: 750, credibilityScore: 92.0, friends: [], pendingFriendRequests: [], isParentallyManaged: true,
-                 currentLocation: CLLocationCoordinate2D(latitude: 40.7780, longitude: -111.8882), isSharingLocation: true),
-            User(username: "Sophia", xpBalance: 150, totalXPEarned: 650, credibilityScore: 90.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false,
-                 currentLocation: CLLocationCoordinate2D(latitude: 40.7400, longitude: -111.8700), isSharingLocation: true),
+            User(username: "Oliver", xpBalance: 120, totalXPEarned: 580, credibilityScore: 95.0, friends: [], pendingFriendRequests: [], isParentallyManaged: true),
+            User(username: "Emma", xpBalance: 85, totalXPEarned: 420, credibilityScore: 88.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false),
+            User(username: "Jake", xpBalance: 200, totalXPEarned: 750, credibilityScore: 92.0, friends: [], pendingFriendRequests: [], isParentallyManaged: true),
+            User(username: "Sophia", xpBalance: 150, totalXPEarned: 650, credibilityScore: 90.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false),
             User(username: "Alex", xpBalance: 75, totalXPEarned: 300, credibilityScore: 85.0, friends: [], pendingFriendRequests: [], isParentallyManaged: true),
-            User(username: "Maya", xpBalance: 180, totalXPEarned: 820, credibilityScore: 97.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false,
-                 currentLocation: CLLocationCoordinate2D(latitude: 40.7550, longitude: -111.8900), isSharingLocation: true),
+            User(username: "Maya", xpBalance: 180, totalXPEarned: 820, credibilityScore: 97.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false),
             User(username: "Noah", xpBalance: 95, totalXPEarned: 480, credibilityScore: 87.0, friends: [], pendingFriendRequests: [], isParentallyManaged: true),
-            User(username: "Zoe", xpBalance: 220, totalXPEarned: 900, credibilityScore: 94.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false,
-                 currentLocation: CLLocationCoordinate2D(latitude: 40.7650, longitude: -111.8850), isSharingLocation: true)
+            User(username: "Zoe", xpBalance: 220, totalXPEarned: 900, credibilityScore: 94.0, friends: [], pendingFriendRequests: [], isParentallyManaged: false)
         ]
     }
     
@@ -1891,10 +1693,11 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     
     // MARK: - Task Completion with Photo
-    func completeTaskWithPhoto(_ task: TaskItem, photo: UIImage?) {
+    func completeTaskWithPhoto(_ task: TaskItem, backPhoto: UIImage?, frontPhoto: UIImage?) {
         print("🔄 ========== TASK COMPLETION START ==========")
         print("🔄 Task: \(task.title)")
-        print("🔄 Has Photo: \(photo != nil)")
+        print("🔄 Has Back Photo: \(backPhoto != nil)")
+        print("🔄 Has Front Photo: \(frontPhoto != nil)")
         print("🔄 Current Streak Before: \(currentStreak)")
         print("🔄 Has Completed Today Before: \(hasCompletedTaskToday)")
         print("🔄 Last Completion: \(lastTaskCompletionDate?.description ?? "Never")")
@@ -1909,7 +1712,8 @@ class EnhancedScreenTimeModel: ObservableObject {
         if let index = recentTasks.firstIndex(where: { $0.id == task.id }) {
             print("✅ Found task at index \(index), marking as completed")
             DispatchQueue.main.async {
-                self.recentTasks[index].verificationPhoto = photo
+                self.recentTasks[index].verificationPhoto = backPhoto
+                self.recentTasks[index].verificationPhotoFront = frontPhoto
                 self.recentTasks[index].completed = true
                 self.recentTasks[index].completedAt = Date()
                 print("✅ Task marked completed: \(self.recentTasks[index].completed)")
@@ -1925,20 +1729,17 @@ class EnhancedScreenTimeModel: ObservableObject {
             activity: "Completed: \(task.title)",
             xpEarned: earnedXP,
             timestamp: Date(),
-            location: task.location,
-            locationCoordinate: task.locationCoordinate,
             kudos: 0,
-            hasVerificationPhoto: photo != nil,
-            verificationPhoto: photo,
-            trackingRoute: nil
+            hasVerificationPhoto: backPhoto != nil,
+            verificationPhoto: backPhoto
         )
-        
+
         friendActivities.insert(activity, at: 0)
 
         // Create social post for all completed tasks (with or without photo)
         print("📱 Creating social post for completed task...")
         DispatchQueue.main.async {
-            self.createSocialPostFromTask(task: task, photo: photo, xpEarned: earnedXP)
+            self.createSocialPostFromTask(task: task, photo: backPhoto, xpEarned: earnedXP)
         }
 
         print("Completed task: \(task.title) for \(earnedXP) XP with photo verification")
@@ -1960,7 +1761,7 @@ class EnhancedScreenTimeModel: ObservableObject {
             friendName: currentUser.username,
             taskTitle: task.title,
             xpEarned: earnedXP,
-            hasPhoto: photo != nil
+            hasPhoto: backPhoto != nil
         )
     }
 
@@ -2071,15 +1872,15 @@ class EnhancedScreenTimeModel: ObservableObject {
     // MARK: - Original Methods
     func loadMockData() {
         recentTasks = [
-            TaskItem(title: "Morning run", category: .exercise, xpReward: 30, estimatedMinutes: 30, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: []),
-            TaskItem(title: "Clean room", category: .chores, xpReward: 20, estimatedMinutes: 20, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: []),
-            TaskItem(title: "Study math", category: .study, xpReward: 45, estimatedMinutes: 45, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: false, location: nil, locationCoordinate: nil, verificationPhoto: nil, trackingData: [])
+            TaskItem(title: "Morning run", category: .exercise, xpReward: 30, estimatedMinutes: 30, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, verificationPhoto: nil, verificationPhotoFront: nil),
+            TaskItem(title: "Clean room", category: .chores, xpReward: 20, estimatedMinutes: 20, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, verificationPhoto: nil, verificationPhotoFront: nil),
+            TaskItem(title: "Study math", category: .study, xpReward: 45, estimatedMinutes: 45, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: false, verificationPhoto: nil, verificationPhotoFront: nil)
         ]
-        
+
         friendActivities = [
-            FriendActivity(userId: "1", username: "Oliver", activity: "Completed a 5-mile hike", xpEarned: 90, timestamp: Date().addingTimeInterval(-3600), location: "Little Cottonwood Canyon", locationCoordinate: CLLocationCoordinate2D(latitude: 40.5734, longitude: -111.7551), kudos: 3, hasVerificationPhoto: true, verificationPhoto: nil, trackingRoute: nil),
-            FriendActivity(userId: "2", username: "Emma", activity: "Finished homework", xpEarned: 30, timestamp: Date().addingTimeInterval(-7200), location: nil, locationCoordinate: nil, kudos: 1, hasVerificationPhoto: false, verificationPhoto: nil, trackingRoute: nil),
-            FriendActivity(userId: "3", username: "Jake", activity: "Helped with dishes", xpEarned: 15, timestamp: Date().addingTimeInterval(-10800), location: nil, locationCoordinate: nil, kudos: 2, hasVerificationPhoto: true, verificationPhoto: nil, trackingRoute: nil)
+            FriendActivity(userId: "1", username: "Oliver", activity: "Completed a 5-mile hike", xpEarned: 90, timestamp: Date().addingTimeInterval(-3600), kudos: 3, hasVerificationPhoto: true, verificationPhoto: nil),
+            FriendActivity(userId: "2", username: "Emma", activity: "Finished homework", xpEarned: 30, timestamp: Date().addingTimeInterval(-7200), kudos: 1, hasVerificationPhoto: false, verificationPhoto: nil),
+            FriendActivity(userId: "3", username: "Jake", activity: "Helped with dishes", xpEarned: 15, timestamp: Date().addingTimeInterval(-10800), kudos: 2, hasVerificationPhoto: true, verificationPhoto: nil)
         ]
     }
     
@@ -2196,12 +1997,9 @@ class EnhancedScreenTimeModel: ObservableObject {
             activity: "Completed: \(task.title)",
             xpEarned: earnedXP,
             timestamp: Date(),
-            location: task.location,
-            locationCoordinate: task.locationCoordinate,
             kudos: 0,
             hasVerificationPhoto: task.verificationRequired,
-            verificationPhoto: nil,
-            trackingRoute: nil
+            verificationPhoto: nil
         )
 
         friendActivities.insert(activity, at: 0)
@@ -2228,10 +2026,8 @@ class EnhancedScreenTimeModel: ObservableObject {
             isGroupTask: false,
             participants: [],
             verificationRequired: category == .exercise || category == .chores,
-            location: nil,
-            locationCoordinate: nil,
             verificationPhoto: nil,
-            trackingData: []
+            verificationPhotoFront: nil
         )
         
         recentTasks.insert(newTask, at: 0)
@@ -2490,12 +2286,9 @@ class EnhancedScreenTimeModel: ObservableObject {
             activity: activity,
             xpEarned: xpEarned,
             timestamp: Date(),
-            location: nil,
-            locationCoordinate: nil,
             kudos: 0,
             hasVerificationPhoto: Bool.random(),
-            verificationPhoto: nil,
-            trackingRoute: nil
+            verificationPhoto: nil
         )
 
         friendActivities.insert(friendActivity, at: 0)
@@ -2503,7 +2296,7 @@ class EnhancedScreenTimeModel: ObservableObject {
 
     // MARK: - Social Feed Integration
 
-    func createSocialPost(with image: UIImage, taskTitle: String, xpEarned: Int, location: String? = nil) {
+    func createSocialPost(with image: UIImage, taskTitle: String, xpEarned: Int) {
         print("📱 Creating social post for task: \(taskTitle)")
 
         // Create activity for current user
@@ -2513,12 +2306,9 @@ class EnhancedScreenTimeModel: ObservableObject {
             activity: taskTitle,
             xpEarned: xpEarned,
             timestamp: Date(),
-            location: location,
-            locationCoordinate: locationManager.currentLocation?.coordinate,
             kudos: 0,
             hasVerificationPhoto: true,
-            verificationPhoto: image,
-            trackingRoute: nil
+            verificationPhoto: image
         )
 
         // Add to the top of friend activities (social feed)
@@ -2550,12 +2340,9 @@ class EnhancedScreenTimeModel: ObservableObject {
                     activity: activity.activity,
                     xpEarned: activity.xpEarned,
                     timestamp: activity.timestamp,
-                    location: activity.location,
-                    locationCoordinate: activity.locationCoordinate,
                     kudos: activity.kudos + newKudos,
                     hasVerificationPhoto: activity.hasVerificationPhoto,
-                    verificationPhoto: activity.verificationPhoto,
-                    trackingRoute: activity.trackingRoute
+                    verificationPhoto: activity.verificationPhoto
                 )
 
                 self.friendActivities[index] = updatedActivity
@@ -2675,380 +2462,13 @@ class EnhancedScreenTimeModel: ObservableObject {
 }
 
 // MARK: - Location Tracking View
-struct LocationTrackingView: View {
-    @ObservedObject var locationManager: LocationManager
-    @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 40.7608, longitude: -111.8910),
-        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-    )
-    @State private var showingShareOptions = false
-    let taskTitle: String
-    let onStop: ([LocationTrackingPoint]) -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Map View
-            Map(coordinateRegion: $region, 
-                showsUserLocation: true,
-                annotationItems: locationManager.trackingPoints) { point in
-                MapPin(coordinate: point.coordinate, tint: .blue)
-            }
-            .frame(height: 300)
-            .overlay(
-                VStack {
-                    HStack {
-                        Label(taskTitle, systemImage: "location.fill")
-                            .padding(8)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(8)
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .padding()
-            )
-            
-            // Stats Dashboard
-            VStack(spacing: 16) {
-                HStack(spacing: 20) {
-                    StatBox(
-                        title: "Distance",
-                        value: locationManager.formatDistance(locationManager.totalDistance),
-                        icon: "ruler",
-                        color: .blue
-                    )
-                    
-                    StatBox(
-                        title: "Duration",
-                        value: locationManager.formatDuration(locationManager.trackingDuration),
-                        icon: "clock",
-                        color: .green
-                    )
-                }
-                
-                HStack(spacing: 20) {
-                    StatBox(
-                        title: "Speed",
-                        value: String(format: "%.1f km/h", locationManager.currentSpeed),
-                        icon: "speedometer",
-                        color: .orange
-                    )
-                    
-                    StatBox(
-                        title: "Altitude",
-                        value: String(format: "%.0f m", locationManager.currentAltitude),
-                        icon: "mountain.2",
-                        color: .purple
-                    )
-                }
-                
-                HStack(spacing: 20) {
-                    StatBox(
-                        title: "Avg Speed",
-                        value: String(format: "%.1f km/h", locationManager.averageSpeed),
-                        icon: "gauge",
-                        color: .teal
-                    )
-                    
-                    StatBox(
-                        title: "Points",
-                        value: "\(locationManager.trackingPoints.count)",
-                        icon: "mappin.circle",
-                        color: .indigo
-                    )
-                }
-                
-                // Control Buttons
-                HStack(spacing: 16) {
-                    Button(action: {
-                        showingShareOptions = true
-                    }) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Button(action: {
-                        let points = locationManager.stopTracking()
-                        onStop(points)
-                    }) {
-                        Label("Stop Tracking", systemImage: "stop.circle.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                }
-                .padding(.top)
-            }
-            .padding()
-            
-            Spacer()
-        }
-        .onAppear {
-            if let location = locationManager.currentLocation {
-                region.center = location.coordinate
-            }
-        }
-        .onReceive(locationManager.$currentLocation) { location in
-            if let loc = location {
-                withAnimation {
-                    region.center = loc.coordinate
-                }
-            }
-        }
-        .sheet(isPresented: $showingShareOptions) {
-            ShareLocationView(trackingPoints: locationManager.trackingPoints)
-        }
-    }
-}
-
-struct StatBox: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(color)
-            Text(value)
-                .font(.system(size: 16, weight: .bold))
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(color.opacity(0.1))
-        .cornerRadius(10)
-    }
-}
-
-struct ShareLocationView: View {
-    let trackingPoints: [LocationTrackingPoint]
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            List {
-                Section {
-                    Button(action: {
-                        // Share to friends
-                    }) {
-                        Label("Share with Friends", systemImage: "person.2")
-                    }
-                    
-                    Button(action: {
-                        // Export GPX
-                    }) {
-                        Label("Export as GPX", systemImage: "doc.text")
-                    }
-                    
-                    Button(action: {
-                        // Share screenshot
-                    }) {
-                        Label("Share Screenshot", systemImage: "camera")
-                    }
-                }
-            }
-            .navigationTitle("Share Activity")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Friend Map View (Updated for iOS 17)
-struct FriendMapView: View {
-    @EnvironmentObject var model: EnhancedScreenTimeModel
-    @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 40.7608, longitude: -111.8910),
-        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-    )
-    @State private var selectedFriend: User?
-    
-    var sharingFriends: [User] {
-        model.friends.filter { $0.isSharingLocation && $0.currentLocation != nil }
-    }
-    
-    var body: some View {
-        NavigationView {
-            VStack {
-                // Simple Map without annotations for iOS 17
-                Map(coordinateRegion: $region, showsUserLocation: true)
-                    .overlay(
-                        VStack {
-                            HStack {
-                                if model.currentUser.isSharingLocation {
-                                    Label("Sharing Location", systemImage: "location.fill")
-                                        .padding(8)
-                                        .background(Color.green)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                } else {
-                                    Label("Location Off", systemImage: "location.slash")
-                                        .padding(8)
-                                        .background(Color.red)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                }
-                                Spacer()
-                            }
-                            Spacer()
-                        }
-                        .padding()
-                    )
-                
-                // Friend List with Location
-                List {
-                    Section("Friends Sharing Location") {
-                        ForEach(sharingFriends) { friend in
-                            HStack {
-                                Circle()
-                                    .fill(Color.blue.opacity(0.3))
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Text(String(friend.username.prefix(1)))
-                                            .fontWeight(.semibold)
-                                    )
-                                
-                                VStack(alignment: .leading) {
-                                    Text(friend.username)
-                                        .fontWeight(.medium)
-                                    if let location = friend.currentLocation {
-                                        Text("Lat: \(location.latitude, specifier: "%.4f"), Lon: \(location.longitude, specifier: "%.4f")")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                Button(action: {
-                                    if let location = friend.currentLocation {
-                                        withAnimation {
-                                            region.center = location
-                                            region.span = MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                                        }
-                                    }
-                                }) {
-                                    Image(systemName: "location.circle")
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                            .onTapGesture {
-                                selectedFriend = friend
-                            }
-                        }
-                    }
-                    
-                    Section {
-                        Toggle("Share My Location", isOn: Binding(
-                            get: { model.currentUser.isSharingLocation },
-                            set: { newValue in
-                                if newValue {
-                                    model.startLocationSharing()
-                                } else {
-                                    model.stopLocationSharing()
-                                }
-                            }
-                        ))
-                    }
-                }
-                .frame(height: 250)
-            }
-            .navigationTitle("Friend Locations")
-            .sheet(item: $selectedFriend) { friend in
-                FriendDetailView(friend: friend)
-            }
-        }
-    }
-}
-
-struct FriendDetailView: View {
-    let friend: User
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            List {
-                Section {
-                    HStack {
-                        Circle()
-                            .fill(Color.blue.opacity(0.3))
-                            .frame(width: 60, height: 60)
-                            .overlay(
-                                Text(String(friend.username.prefix(1)))
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                            )
-                        
-                        VStack(alignment: .leading) {
-                            Text(friend.username)
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Text("\(friend.totalXPEarned) Total XP")
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.vertical, 8)
-                }
-                
-                Section("Stats") {
-                    HStack {
-                        Text("Current XP")
-                        Spacer()
-                        Text("\(friend.xpBalance)")
-                            .fontWeight(.semibold)
-                    }
-                    
-                    HStack {
-                        Text("Credibility")
-                        Spacer()
-                        Text("\(Int(friend.credibilityScore))%")
-                            .fontWeight(.semibold)
-                    }
-                    
-                    if friend.isSharingLocation {
-                        HStack {
-                            Text("Location")
-                            Spacer()
-                            Image(systemName: "location.fill")
-                                .foregroundColor(.green)
-                            Text("Sharing")
-                                .foregroundColor(.green)
-                        }
-                    }
-                }
-            }
-            .navigationTitle(friend.username)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
+// MARK: - Friend Map View (Removed - Location tracking disabled)
 struct CameraView: UIViewControllerRepresentable {
     @ObservedObject var cameraManager: CameraManager
     @Binding var isPresented: Bool
     let taskTitle: String
     let taskId: UUID?
-    let onPhotoTaken: (UIImage) -> Void
+    let onPhotoTaken: (UIImage, UIImage?) -> Void // (backImage, frontImage)
     
     func makeUIViewController(context: Context) -> CameraViewController {
         let controller = CameraViewController()
@@ -3069,7 +2489,7 @@ class CameraViewController: UIViewController {
     var cameraManager: CameraManager?
     var taskTitle: String = ""
     var taskId: UUID?
-    var onPhotoTaken: ((UIImage) -> Void)?
+    var onPhotoTaken: ((UIImage, UIImage?) -> Void)? // (backImage, frontImage)
     var onDismiss: (() -> Void)?
 
     private var cameraPreviewLayer: AVCaptureVideoPreviewLayer?
@@ -3087,7 +2507,7 @@ class CameraViewController: UIViewController {
     private var capturedFrontImage: UIImage?
     private var isShowingPreview = false
     private var imageObserver: AnyCancellable?
-    private var captureCompletionHandler: ((UIImage?) -> Void)?
+    private var captureCompletionHandler: ((UIImage?, UIImage?) -> Void)? // (backImage, frontImage)
 
     // Video recording properties
     enum CaptureMode {
@@ -3625,7 +3045,10 @@ class CameraViewController: UIViewController {
         print("🔍 Photo output can capture: \(output.isHighResolutionCaptureEnabled)")
 
         // Store completion handler BEFORE capture
-        self.captureCompletionHandler = completion
+        // Wrap single-image completion in a closure that ignores second parameter
+        self.captureCompletionHandler = { image, _ in
+            completion(image)
+        }
         print("🔍 Completion handler stored, delegate is: \(type(of: self))")
 
         // Capture the photo with additional error checking
@@ -4303,7 +3726,7 @@ class CameraViewController: UIViewController {
     }
 
     @objc private func usePhotoButtonTapped() {
-        print("✅ Use photo button tapped - Creating BeReal-style combined image")
+        print("✅ Use photo button tapped - Passing back and front images separately")
 
         guard let rearImage = capturedRearImage,
               let frontImage = capturedFrontImage else {
@@ -4311,14 +3734,11 @@ class CameraViewController: UIViewController {
             return
         }
 
-        // Create BeReal-style combined image
-        let combinedImage = createBeRealStyleImage(rearImage: rearImage, frontImage: frontImage)
+        // Add timestamp watermark to rear (back) image only
+        let watermarkedBackImage = cameraManager?.addTimestampWatermark(to: rearImage, taskTitle: taskTitle) ?? rearImage
 
-        // Add timestamp watermark
-        let watermarkedImage = cameraManager?.addTimestampWatermark(to: combinedImage, taskTitle: taskTitle) ?? combinedImage
-
-        print("🔥🔥🔥 CameraViewController: Calling onPhotoTaken with BeReal-style combined image")
-        onPhotoTaken?(watermarkedImage)
+        print("🔥🔥🔥 CameraViewController: Calling onPhotoTaken with separate back and front images")
+        onPhotoTaken?(watermarkedBackImage, frontImage)
     }
 
     private func createBeRealStyleImage(rearImage: UIImage, frontImage: UIImage) -> UIImage {
@@ -4374,7 +3794,7 @@ extension CameraViewController: AVCapturePhotoCaptureDelegate {
         if let error = error {
             print("❌ Photo capture error: \(error.localizedDescription)")
             DispatchQueue.main.async {
-                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler?(nil, nil)
                 self.captureCompletionHandler = nil
             }
             return
@@ -4384,7 +3804,7 @@ extension CameraViewController: AVCapturePhotoCaptureDelegate {
               let image = UIImage(data: imageData) else {
             print("❌ Failed to process photo data")
             DispatchQueue.main.async {
-                self.captureCompletionHandler?(nil)
+                self.captureCompletionHandler?(nil, nil)
                 self.captureCompletionHandler = nil
             }
             return
@@ -4393,8 +3813,9 @@ extension CameraViewController: AVCapturePhotoCaptureDelegate {
         print("✅ Photo captured successfully - Size: \(image.size)")
 
         // Call the completion handler with the captured image on main thread
+        // This is single camera, so second parameter is nil
         DispatchQueue.main.async {
-            self.captureCompletionHandler?(image)
+            self.captureCompletionHandler?(image, nil)
             self.captureCompletionHandler = nil
         }
     }
@@ -4669,12 +4090,11 @@ struct SocialPostView: View {
     private func loadSocialPhoto() -> (backImage: UIImage, frontImage: UIImage)? {
         // Try to load from actual task photos first
         if let task = model.recentTasks.first(where: { $0.id == post.taskId }),
-           let verificationPhoto = task.verificationPhoto {
-            // The verificationPhoto is a composite image with:
-            // - Full-size back camera image as the main image
-            // - Front camera image overlaid at 25% size in the top-right corner
-            // We need to split these into separate images for proper toggling
-            return splitCompositeImage(verificationPhoto)
+           let backPhoto = task.verificationPhoto {
+            // Now we store back and front images separately
+            // Return them directly for UI overlay display
+            let frontPhoto = task.verificationPhotoFront ?? createMockFrontCamera()
+            return (backPhoto, frontPhoto)
         }
 
         // Only show fallback mock images if this post indicates it should have a photo
@@ -4720,29 +4140,59 @@ struct SocialPostView: View {
             }
         }
 
-        // Determine whether to hide the embedded overlay or show full composite
+        // For the back image: Use Core Image blur to reconstruct the area under the overlay
         let backImage: UIImage
-
         if hideEmbeddedOverlay {
-            // For feed view: hide the embedded overlay to avoid duplicate windows
-            // Account for the white border (4px stroke on each side, inset by -2 = ~6px total margin)
             let borderMargin: CGFloat = 6
             let overlayWithBorder = overlayRect.insetBy(dx: -borderMargin, dy: -borderMargin)
 
-            let backRenderer = UIGraphicsImageRenderer(size: imageSize)
-            backImage = backRenderer.image { context in
-                // Draw the full composite
-                compositeImage.draw(at: .zero)
+            // Create a mask for the overlay region
+            let maskRenderer = UIGraphicsImageRenderer(size: imageSize)
+            let maskImage = maskRenderer.image { context in
+                // Fill everything with white (keep these areas)
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: imageSize))
 
-                let cgContext = context.cgContext
+                // Fill overlay area with black (remove these areas)
+                UIColor.black.setFill()
+                context.fill(overlayWithBorder)
+            }
 
-                // Black out the embedded overlay area (including border)
-                cgContext.setBlendMode(.normal)
-                cgContext.setFillColor(UIColor.black.cgColor)
-                cgContext.fill(overlayWithBorder)
+            // Use Core Image to blur the entire image, then composite back
+            // This creates a natural "filled in" effect
+            if let ciImage = CIImage(image: compositeImage),
+               let blurFilter = CIFilter(name: "CIGaussianBlur") {
+                blurFilter.setValue(ciImage, forKey: kCIInputImageKey)
+                blurFilter.setValue(50, forKey: kCIInputRadiusKey) // Heavy blur
+
+                if let blurred = blurFilter.outputImage {
+                    let context = CIContext()
+
+                    // Render blurred image
+                    let backRenderer = UIGraphicsImageRenderer(size: imageSize)
+                    backImage = backRenderer.image { rendererContext in
+                        // Draw original image
+                        compositeImage.draw(at: .zero)
+
+                        // Draw blurred version only in overlay area
+                        let cgContext = rendererContext.cgContext
+                        cgContext.saveGState()
+                        cgContext.clip(to: overlayWithBorder)
+
+                        if let cgBlurred = context.createCGImage(blurred, from: CGRect(origin: .zero, size: imageSize)) {
+                            let blurredUIImage = UIImage(cgImage: cgBlurred)
+                            blurredUIImage.draw(at: .zero)
+                        }
+
+                        cgContext.restoreGState()
+                    }
+                } else {
+                    backImage = compositeImage
+                }
+            } else {
+                backImage = compositeImage
             }
         } else {
-            // For full-screen view: show the full composite with embedded overlay
             backImage = compositeImage
         }
 
@@ -5084,29 +4534,59 @@ struct FullImageView: View {
             }
         }
 
-        // Determine whether to hide the embedded overlay or show full composite
+        // For the back image: Use Core Image blur to reconstruct the area under the overlay
         let backImage: UIImage
-
         if hideEmbeddedOverlay {
-            // For feed view: hide the embedded overlay to avoid duplicate windows
-            // Account for the white border (4px stroke on each side, inset by -2 = ~6px total margin)
             let borderMargin: CGFloat = 6
             let overlayWithBorder = overlayRect.insetBy(dx: -borderMargin, dy: -borderMargin)
 
-            let backRenderer = UIGraphicsImageRenderer(size: imageSize)
-            backImage = backRenderer.image { context in
-                // Draw the full composite
-                compositeImage.draw(at: .zero)
+            // Create a mask for the overlay region
+            let maskRenderer = UIGraphicsImageRenderer(size: imageSize)
+            let maskImage = maskRenderer.image { context in
+                // Fill everything with white (keep these areas)
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: imageSize))
 
-                let cgContext = context.cgContext
+                // Fill overlay area with black (remove these areas)
+                UIColor.black.setFill()
+                context.fill(overlayWithBorder)
+            }
 
-                // Black out the embedded overlay area (including border)
-                cgContext.setBlendMode(.normal)
-                cgContext.setFillColor(UIColor.black.cgColor)
-                cgContext.fill(overlayWithBorder)
+            // Use Core Image to blur the entire image, then composite back
+            // This creates a natural "filled in" effect
+            if let ciImage = CIImage(image: compositeImage),
+               let blurFilter = CIFilter(name: "CIGaussianBlur") {
+                blurFilter.setValue(ciImage, forKey: kCIInputImageKey)
+                blurFilter.setValue(50, forKey: kCIInputRadiusKey) // Heavy blur
+
+                if let blurred = blurFilter.outputImage {
+                    let context = CIContext()
+
+                    // Render blurred image
+                    let backRenderer = UIGraphicsImageRenderer(size: imageSize)
+                    backImage = backRenderer.image { rendererContext in
+                        // Draw original image
+                        compositeImage.draw(at: .zero)
+
+                        // Draw blurred version only in overlay area
+                        let cgContext = rendererContext.cgContext
+                        cgContext.saveGState()
+                        cgContext.clip(to: overlayWithBorder)
+
+                        if let cgBlurred = context.createCGImage(blurred, from: CGRect(origin: .zero, size: imageSize)) {
+                            let blurredUIImage = UIImage(cgImage: cgBlurred)
+                            blurredUIImage.draw(at: .zero)
+                        }
+
+                        cgContext.restoreGState()
+                    }
+                } else {
+                    backImage = compositeImage
+                }
+            } else {
+                backImage = compositeImage
             }
         } else {
-            // For full-screen view: show the full composite with embedded overlay
             backImage = compositeImage
         }
 
@@ -5375,24 +4855,6 @@ struct ProfileView: View {
                                     .foregroundColor(.green)
                             }
                         }
-                    }
-
-                    HStack {
-                        Image(systemName: "location")
-                            .foregroundColor(.blue)
-                        Text("Location Sharing")
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { model.currentUser.isSharingLocation },
-                            set: { newValue in
-                                if newValue {
-                                    model.startLocationSharing()
-                                } else {
-                                    model.stopLocationSharing()
-                                }
-                            }
-                        ))
-                        .labelsHidden()
                     }
                 }
 
@@ -5663,14 +5125,19 @@ struct ContentView: View {
                 }
                 .tag(2)
             
-            FriendMapView()
-                .environmentObject(model)
+            ParentDashboardView(
+                viewModel: ParentDashboardViewModel(
+                    taskService: DependencyContainer.shared.taskService,
+                    credibilityService: DependencyContainer.shared.credibilityService,
+                    parentId: UUID() // TODO: Replace with actual parent ID from user session
+                )
+            )
                 .tabItem {
-                    Image(systemName: "map.fill")
-                    Text("Map")
+                    Image(systemName: "checkmark.seal.fill")
+                    Text("Task Approvals")
                 }
                 .tag(3)
-            
+
             ParentControlView(appSelectionStore: model.appSelectionStore)
                 .tabItem {
                     Image(systemName: "person.2.badge.gearshape")
@@ -5704,7 +5171,6 @@ struct ContentView: View {
         }
         .onAppear {
             // Request permissions
-            model.locationManager.requestPermission()
             model.notificationManager.requestPermission()
 
             // Clear badge when app opens
@@ -5836,7 +5302,7 @@ struct SimpleCameraView: UIViewControllerRepresentable {
 struct EnhancedTaskRow: View {
     let taskId: UUID
     let onComplete: () -> Void
-    let onCompleteWithPhoto: (UIImage) -> Void
+    let onCompleteWithPhoto: (UIImage, UIImage?) -> Void // (backCamera, frontCamera)
 
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @State private var showingCamera = false
@@ -5850,8 +5316,7 @@ struct EnhancedTaskRow: View {
         let foundTask = model.recentTasks.first(where: { $0.id == taskId }) ?? TaskItem(
             title: "Unknown", category: .custom, xpReward: 0, estimatedMinutes: 0,
             isCustom: false, completed: false, createdBy: "", isGroupTask: false,
-            participants: [], verificationRequired: false, location: nil,
-            locationCoordinate: nil, verificationPhoto: nil
+            participants: [], verificationRequired: false, verificationPhoto: nil, verificationPhotoFront: nil
         )
 
         return foundTask
@@ -5896,9 +5361,6 @@ struct EnhancedTaskRow: View {
                 if !task.completed {
                     if task.verificationRequired {
                         showingCamera = true
-                    } else if needsLocationTracking {
-                        model.startTrackingForTask(task)
-                        showingLocationTracking = true
                     } else {
                         onComplete()
                     }
@@ -5965,34 +5427,12 @@ struct EnhancedTaskRow: View {
                         .frame(height: 100)
                         .cornerRadius(8)
                 }
-                
-                if task.completed && !task.trackingData.isEmpty {
-                    HStack {
-                        Image(systemName: "map")
-                            .font(.caption)
-                        Text("\(task.trackingData.count) location points tracked")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                    }
-                }
             }
-            
+
             Spacer()
-            
+
             if !task.completed {
                 VStack(spacing: 8) {
-                    if needsLocationTracking {
-                        Button(action: {
-                            model.startTrackingForTask(task)
-                            showingLocationTracking = true
-                        }) {
-                            Label("Track", systemImage: "location.circle")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(.blue)
-                    }
-
                     if task.verificationRequired {
                         if hasVerificationPhoto {
                             Button("✅ Complete") {
@@ -6013,7 +5453,7 @@ struct EnhancedTaskRow: View {
                         }
                     }
 
-                    if !needsLocationTracking && !task.verificationRequired {
+                    if !task.verificationRequired {
                         Button("Complete") {
                             onComplete()
                         }
@@ -6063,14 +5503,16 @@ struct EnhancedTaskRow: View {
                 isPresented: $showingCamera,
                 taskTitle: task.title,
                 taskId: task.id,
-                onPhotoTaken: { photo in
-                    print("🔥 BEREAL CAMERA: Photo captured for task: \(task.title)")
+                onPhotoTaken: { backPhoto, frontPhoto in
+                    print("🔥 BEREAL CAMERA: Photos captured for task: \(task.title)")
+                    print("🔥 Back photo: \(backPhoto.size), Front photo: \(frontPhoto?.size.debugDescription ?? "none")")
 
-                    // Set both local and model photo
-                    localVerificationPhoto = photo
+                    // Set both local and model photos
+                    localVerificationPhoto = backPhoto
 
                     if let index = model.recentTasks.firstIndex(where: { $0.id == taskId }) {
-                        model.recentTasks[index].verificationPhoto = photo
+                        model.recentTasks[index].verificationPhoto = backPhoto
+                        model.recentTasks[index].verificationPhotoFront = frontPhoto
                         model.objectWillChange.send()
                     }
 
@@ -6083,52 +5525,6 @@ struct EnhancedTaskRow: View {
             .onDisappear {
                 // Clean up when camera closes
                 showingCamera = false
-            }
-        }
-        .fullScreenCover(isPresented: $showingLocationTracking) {
-            LocationTrackingView(
-                locationManager: model.locationManager,
-                taskTitle: task.title
-            ) { trackingPoints in
-                // Save tracking data and complete task
-                if let index = model.recentTasks.firstIndex(where: { $0.id == task.id }) {
-                    model.recentTasks[index].trackingData = trackingPoints
-                    model.recentTasks[index].completed = true
-                    model.recentTasks[index].completedAt = Date()
-                    
-                    // Award XP with bonus for distance
-                    let distance = model.locationManager.totalDistance
-                    let bonusXP = Int(distance / 100) // 1 XP per 100 meters
-                    let totalXP = task.xpReward + bonusXP
-                    
-                    model.xpBalance += totalXP
-                    model.currentUser.xpBalance += totalXP
-                    model.currentUser.totalXPEarned += totalXP
-                    
-                    // Add to activity feed
-                    let activity = FriendActivity(
-                        userId: model.currentUser.id.uuidString,
-                        username: model.currentUser.username,
-                        activity: "Completed: \(task.title) (\(model.locationManager.formatDistance(distance)))",
-                        xpEarned: totalXP,
-                        timestamp: Date(),
-                        location: task.location,
-                        locationCoordinate: trackingPoints.last?.coordinate,
-                        kudos: 0,
-                        hasVerificationPhoto: false,
-                        verificationPhoto: nil,
-                        trackingRoute: trackingPoints.map { $0.coordinate }
-                    )
-                    
-                    model.friendActivities.insert(activity, at: 0)
-
-                    // Create social post for location-tracked task completion
-                    print("📱 Creating social post for location-tracked task...")
-                    DispatchQueue.main.async {
-                        model.createSocialPostFromTask(task: task, photo: nil, xpEarned: totalXP)
-                    }
-                }
-                showingLocationTracking = false
             }
         }
     }
@@ -6161,21 +5557,21 @@ struct EnhancedTasksView: View {
                                     model.completeTask(model.recentTasks[originalIndex])
                                     model.recentTasks[originalIndex].completed = true
                                 },
-                                onCompleteWithPhoto: { photo in
+                                onCompleteWithPhoto: { backPhoto, frontPhoto in
                                     print("🚨 onCompleteWithPhoto CALLED for task: \(model.recentTasks[originalIndex].title) with ID: \(model.recentTasks[originalIndex].id)")
-                                    print("🚨 Photo size: \(photo.size), originalIndex: \(originalIndex)")
+                                    print("🚨 Back photo size: \(backPhoto.size), Front photo: \(frontPhoto?.size.debugDescription ?? "none"), originalIndex: \(originalIndex)")
 
-                                    // Save photo to persistent storage with task ID
-                                    let saveSuccess = model.cameraManager.savePhoto(photo, taskTitle: model.recentTasks[originalIndex].title, taskId: model.recentTasks[originalIndex].id)
+                                    // Save back photo to persistent storage with task ID
+                                    let saveSuccess = model.cameraManager.savePhoto(backPhoto, taskTitle: model.recentTasks[originalIndex].title, taskId: model.recentTasks[originalIndex].id)
                                     if saveSuccess {
                                         print("✅ Photo saved to persistent storage with task ID: \(model.recentTasks[originalIndex].id)")
                                     } else {
                                         print("❌ Failed to save photo to persistent storage")
                                     }
 
-                                    // Complete task with photo - this handles XP, social posts, AND streak tracking
-                                    print("🎯 COMPLETING TASK WITH PHOTO: \(model.recentTasks[originalIndex].title)")
-                                    model.completeTaskWithPhoto(model.recentTasks[originalIndex], photo: photo)
+                                    // Complete task with photos - this handles XP, social posts, AND streak tracking
+                                    print("🎯 COMPLETING TASK WITH PHOTOS: \(model.recentTasks[originalIndex].title)")
+                                    model.completeTaskWithPhoto(model.recentTasks[originalIndex], backPhoto: backPhoto, frontPhoto: frontPhoto)
 
                                     // Force UI refresh
                                     model.objectWillChange.send()
@@ -6194,7 +5590,7 @@ struct EnhancedTasksView: View {
                             EnhancedTaskRow(
                                 taskId: task.id,
                                 onComplete: {},
-                                onCompleteWithPhoto: { _ in }
+                                onCompleteWithPhoto: { _, _ in }
                             )
                         }
                     }
@@ -6681,13 +6077,6 @@ struct FriendActivityRow: View {
                     .multilineTextAlignment(.leading)
 
                 HStack {
-                    if let location = activity.location {
-                        Label(location, systemImage: "location.fill")
-                            .font(.caption2)
-                            .foregroundColor(.blue)
-                            .lineLimit(1)
-                    }
-
                     Spacer()
 
                     HStack(spacing: 4) {
@@ -7433,13 +6822,13 @@ struct EnhancedCameraView: View {
                     isPresented: $isPresented,
                     taskTitle: taskTitle,
                     taskId: taskId,
-                    onPhotoTaken: { image in
-                        print("🔥🔥🔥 EnhancedCameraView: onPhotoTaken called with image")
-                        self.capturedImage = image
+                    onPhotoTaken: { backImage, frontImage in
+                        print("🔥🔥🔥 EnhancedCameraView: onPhotoTaken called with images")
+                        self.capturedImage = backImage
 
                         // DIRECT CALLBACK: Skip the preview/post flow and call callback directly
                         print("🔥🔥🔥 EnhancedCameraView: Calling onPhotoPosted directly")
-                        let watermarkedImage = model.cameraManager.addTimestampWatermark(to: image, taskTitle: taskTitle)
+                        let watermarkedImage = model.cameraManager.addTimestampWatermark(to: backImage, taskTitle: taskTitle)
                         self.onPhotoPosted(watermarkedImage)
 
                         // Dismiss camera after short delay
@@ -7506,12 +6895,12 @@ struct EnhancedCameraView: View {
     private func handlePhotoCapture() {
         isProcessing = true
 
-        model.cameraManager.capturePhoto { [self] image in
+        model.cameraManager.capturePhoto { [self] backImage, frontImage in
             DispatchQueue.main.async {
                 self.isProcessing = false
 
-                if let image = image {
-                    self.capturedImage = image
+                if let backImage = backImage {
+                    self.capturedImage = backImage
                     withAnimation(.easeInOut(duration: 0.3)) {
                         self.currentPhase = .preview
                     }

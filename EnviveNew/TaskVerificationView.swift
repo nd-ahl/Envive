@@ -4,6 +4,16 @@ import Combine
 
 // MARK: - Task Verification Models
 
+struct TaskApprovalResult {
+    let taskTitle: String
+    let timeSpent: Int
+    let baseXP: Int
+    let earnedXP: Int
+    let credibilityScore: Int
+    let credibilityTier: String
+    let earningRate: Int
+}
+
 struct TaskVerification: Identifiable, Codable {
     let id: UUID
     let taskId: UUID
@@ -22,6 +32,7 @@ struct TaskVerification: Identifiable, Codable {
     let taskDescription: String?
     let taskCategory: String
     let taskXPReward: Int
+    let taskTimeMinutes: Int  // Time spent on task
     let photoURL: String?
     let locationName: String?
     let completedAt: Date
@@ -43,6 +54,7 @@ struct TaskVerification: Identifiable, Codable {
         taskDescription: String? = nil,
         taskCategory: String,
         taskXPReward: Int,
+        taskTimeMinutes: Int,
         photoURL: String? = nil,
         locationName: String? = nil,
         completedAt: Date,
@@ -63,6 +75,7 @@ struct TaskVerification: Identifiable, Codable {
         self.taskDescription = taskDescription
         self.taskCategory = taskCategory
         self.taskXPReward = taskXPReward
+        self.taskTimeMinutes = taskTimeMinutes
         self.photoURL = photoURL
         self.locationName = locationName
         self.completedAt = completedAt
@@ -109,10 +122,19 @@ enum VerificationStatus: String, Codable, CaseIterable {
 class TaskVerificationManager: ObservableObject {
     @Published var verifications: [TaskVerification] = []
     @Published var selectedChild: UUID?
+    @Published var lastApprovedTaskResult: TaskApprovalResult?
 
     private let credibilityManager = CredibilityManager()
+    private let xpService: XPService
+    private let credibilityService: CredibilityService
 
-    init() {
+    init(
+        xpService: XPService? = nil,
+        credibilityService: CredibilityService? = nil
+    ) {
+        // Use injected services or fall back to container
+        self.xpService = xpService ?? DependencyContainer.shared.xpService
+        self.credibilityService = credibilityService ?? DependencyContainer.shared.credibilityService
         loadMockData()
     }
 
@@ -123,6 +145,9 @@ class TaskVerificationManager: ObservableObject {
             verifications[index].reviewedAt = Date()
             verifications[index].updatedAt = Date()
 
+            // Get current credibility score
+            let currentCredibility = credibilityService.credibilityScore
+
             // Update credibility
             credibilityManager.processApprovedTask(
                 taskId: verification.taskId,
@@ -130,7 +155,26 @@ class TaskVerificationManager: ObservableObject {
                 notes: notes
             )
 
-            print("✅ Approved task: \(verification.taskTitle)")
+            // Award XP based on time spent and credibility
+            let earnedXP = xpService.awardXP(
+                userId: verification.userId,
+                timeMinutes: verification.taskTimeMinutes,
+                taskId: verification.taskId,
+                credibilityScore: currentCredibility
+            )
+
+            // Store result for UI feedback
+            lastApprovedTaskResult = TaskApprovalResult(
+                taskTitle: verification.taskTitle,
+                timeSpent: verification.taskTimeMinutes,
+                baseXP: verification.taskTimeMinutes,
+                earnedXP: earnedXP,
+                credibilityScore: currentCredibility,
+                credibilityTier: xpService.credibilityTierName(score: currentCredibility),
+                earningRate: xpService.earningRatePercentage(score: currentCredibility)
+            )
+
+            print("✅ Approved task: \(verification.taskTitle) - Earned \(earnedXP) XP")
         }
     }
 
@@ -186,6 +230,7 @@ class TaskVerificationManager: ObservableObject {
                 taskDescription: "3 mile run around the neighborhood",
                 taskCategory: "Exercise",
                 taskXPReward: 150,
+                taskTimeMinutes: 30,
                 locationName: "Neighborhood Park",
                 completedAt: Date().addingTimeInterval(-3600),
                 childName: "Alex"
@@ -198,6 +243,7 @@ class TaskVerificationManager: ObservableObject {
                 taskDescription: "Complete Chapter 5 exercises",
                 taskCategory: "Study",
                 taskXPReward: 100,
+                taskTimeMinutes: 45,
                 completedAt: Date().addingTimeInterval(-7200),
                 childName: "Alex"
             ),
@@ -211,6 +257,7 @@ class TaskVerificationManager: ObservableObject {
                 taskDescription: "Organize and vacuum bedroom",
                 taskCategory: "Chores",
                 taskXPReward: 80,
+                taskTimeMinutes: 20,
                 completedAt: Date().addingTimeInterval(-86400),
                 childName: "Jordan"
             )
@@ -225,6 +272,7 @@ struct TaskVerificationView: View {
     @State private var selectedFilter: VerificationStatus = .pending
     @State private var showingBulkApprove = false
     @State private var selectedTasks: Set<UUID> = []
+    @State private var showingApprovalResult = false
 
     var filteredVerifications: [TaskVerification] {
         verifications.filter { $0.status == selectedFilter }
@@ -262,6 +310,7 @@ struct TaskVerificationView: View {
                                     },
                                     onApprove: { notes in
                                         verificationManager.approveTask(verification, notes: notes)
+                                        showingApprovalResult = true
                                     },
                                     onReject: { notes in
                                         verificationManager.rejectTask(verification, notes: notes)
@@ -304,6 +353,14 @@ struct TaskVerificationView: View {
                 }
             } message: {
                 Text("Approve all \(filteredVerifications.count) pending tasks?")
+            }
+            .sheet(isPresented: $showingApprovalResult) {
+                if let result = verificationManager.lastApprovedTaskResult {
+                    TaskCompletionResultView(result: result) {
+                        showingApprovalResult = false
+                        verificationManager.lastApprovedTaskResult = nil
+                    }
+                }
             }
         }
     }

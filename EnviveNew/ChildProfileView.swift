@@ -6,6 +6,8 @@ import Charts
 struct ChildProfileView: View {
     @StateObject private var credibilityManager = CredibilityManager()
     @StateObject private var rewardManager = ScreenTimeRewardManager()
+    @StateObject private var themeViewModel = DependencyContainer.shared
+        .viewModelFactory.makeThemeSettingsViewModel()
     @State private var showingHistory = false
     @State private var showingXPRedemption = false
     @State private var selectedHistoryFilter: HistoryFilter = .all
@@ -23,6 +25,9 @@ struct ChildProfileView: View {
                 VStack(spacing: 24) {
                     // Profile Header
                     profileHeader
+
+                    // Theme Settings
+                    ThemePickerView(viewModel: themeViewModel)
 
                     // Credibility Score Card
                     credibilityScoreCard
