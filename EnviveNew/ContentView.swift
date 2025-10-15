@@ -1874,7 +1874,7 @@ class EnhancedScreenTimeModel: ObservableObject {
         recentTasks = [
             TaskItem(title: "Morning run", category: .exercise, xpReward: 30, estimatedMinutes: 30, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, verificationPhoto: nil, verificationPhotoFront: nil),
             TaskItem(title: "Clean room", category: .chores, xpReward: 20, estimatedMinutes: 20, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, verificationPhoto: nil, verificationPhotoFront: nil),
-            TaskItem(title: "Study math", category: .study, xpReward: 45, estimatedMinutes: 45, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: false, verificationPhoto: nil, verificationPhotoFront: nil)
+            TaskItem(title: "Study math", category: .study, xpReward: 45, estimatedMinutes: 45, isCustom: false, completed: false, createdBy: currentUser.id.uuidString, isGroupTask: false, participants: [], verificationRequired: true, verificationPhoto: nil, verificationPhotoFront: nil)  // Fixed: ALL tasks require photo
         ]
 
         friendActivities = [
@@ -2025,7 +2025,7 @@ class EnhancedScreenTimeModel: ObservableObject {
             createdBy: currentUser.id.uuidString,
             isGroupTask: false,
             participants: [],
-            verificationRequired: category == .exercise || category == .chores,
+            verificationRequired: true,  // ALL tasks require photo verification
             verificationPhoto: nil,
             verificationPhotoFront: nil
         )
@@ -5130,7 +5130,8 @@ struct ContentView: View {
                     taskService: DependencyContainer.shared.taskService,
                     credibilityService: DependencyContainer.shared.credibilityService,
                     parentId: UUID() // TODO: Replace with actual parent ID from user session
-                )
+                ),
+                appSelectionStore: model.appSelectionStore
             )
                 .tabItem {
                     Image(systemName: "checkmark.seal.fill")
@@ -5316,7 +5317,7 @@ struct EnhancedTaskRow: View {
         let foundTask = model.recentTasks.first(where: { $0.id == taskId }) ?? TaskItem(
             title: "Unknown", category: .custom, xpReward: 0, estimatedMinutes: 0,
             isCustom: false, completed: false, createdBy: "", isGroupTask: false,
-            participants: [], verificationRequired: false, verificationPhoto: nil, verificationPhotoFront: nil
+            participants: [], verificationRequired: true, verificationPhoto: nil, verificationPhotoFront: nil  // ALL tasks require photo
         )
 
         return foundTask

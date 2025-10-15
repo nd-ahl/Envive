@@ -5,9 +5,16 @@ import Combine
 
 struct ParentDashboardView: View {
     @StateObject private var viewModel: ParentDashboardViewModel
+    @ObservedObject var appSelectionStore: AppSelectionStore
 
-    init(viewModel: ParentDashboardViewModel) {
+    @State private var showingAppManagement = false
+    @State private var showingChildSelector = false
+    @State private var showingAssignTask = false
+    @State private var selectedChildrenForAssignment: [ChildSummary] = []
+
+    init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.appSelectionStore = appSelectionStore
     }
 
     var body: some View {
@@ -30,11 +37,43 @@ struct ParentDashboardView: View {
                 .padding()
             }
             .navigationTitle("Parent Dashboard")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingAppManagement = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gearshape.fill")
+                            Text("Apps")
+                        }
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    }
+                }
+            }
             .onAppear {
                 viewModel.loadData()
             }
             .refreshable {
                 viewModel.loadData()
+            }
+            .sheet(isPresented: $showingAppManagement) {
+                AppManagementView(appSelectionStore: appSelectionStore)
+            }
+            .sheet(isPresented: $showingChildSelector) {
+                ChildSelectorView(children: viewModel.children) { selectedChildren in
+                    selectedChildrenForAssignment = selectedChildren
+                    showingAssignTask = true
+                }
+            }
+            .sheet(isPresented: $showingAssignTask) {
+                if !selectedChildrenForAssignment.isEmpty {
+                    AssignTaskView(
+                        taskService: viewModel.taskService,
+                        parentId: viewModel.parentId,
+                        selectedChildren: selectedChildrenForAssignment
+                    )
+                }
             }
         }
     }
@@ -109,14 +148,14 @@ struct ParentDashboardView: View {
                 .font(.headline)
 
             HStack(spacing: 12) {
-                NavigationLink(destination: Text("Assign Task View")) {
-                    QuickActionButton(
-                        title: "Assign Task",
-                        icon: "plus.circle.fill",
-                        color: .blue,
-                        action: {}
-                    )
-                }
+                QuickActionButton(
+                    title: "Assign Task",
+                    icon: "plus.circle.fill",
+                    color: .blue,
+                    action: {
+                        showingChildSelector = true
+                    }
+                )
 
                 NavigationLink(destination: Text("Emergency Grant View")) {
                     QuickActionButton(
@@ -252,8 +291,8 @@ struct ChildOverviewCard: View {
                         .font(.caption)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
                         .cornerRadius(6)
                 }
             }

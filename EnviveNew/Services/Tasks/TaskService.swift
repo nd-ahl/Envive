@@ -91,6 +91,12 @@ class TaskServiceImpl: TaskService {
             return false
         }
 
+        // IMPORTANT: All tasks require photo proof - reject empty photoURL
+        guard !photoURL.isEmpty else {
+            print("❌ Task completion rejected: Photo proof is required")
+            return false
+        }
+
         assignment.status = .pendingReview
         assignment.completedAt = Date()
         assignment.photoURL = photoURL
