@@ -56,8 +56,18 @@
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES"
       launchAutomaticallySubstyle = "2">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <RemoteRunnable
+         runnableDebuggingMode = "2"
+         BundleIdentifier = "com.apple.springboard">
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "89FD686D2E8B7F0A00C1C642"
+            BuildableName = "EnviveNewWidgetsExtension.appex"
+            BlueprintName = "EnviveNewWidgetsExtension"
+            ReferencedContainer = "container:EnviveNew.xcodeproj">
+         </BuildableReference>
+      </RemoteRunnable>
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "89FD665E2E7E7F6600C1C642"
@@ -65,7 +75,7 @@
             BlueprintName = "EnviveNew"
             ReferencedContainer = "container:EnviveNew.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
       <EnvironmentVariables>
          <EnvironmentVariable
             key = "_XCWidgetKind"

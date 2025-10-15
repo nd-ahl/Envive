@@ -10,34 +10,56 @@ class SettingsManager: ObservableObject {
     @Published var isSafariBlocked = false
 
     func blockApps(_ selection: FamilyActivitySelection) {
-        if !selection.applicationTokens.isEmpty {
-            store.shield.applications = selection.applicationTokens
-        }
+        // PERFORMANCE FIX: Run asynchronously to prevent UI freeze
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
 
-        if !selection.categoryTokens.isEmpty {
-            store.shield.applicationCategories = .specific(selection.categoryTokens)
-        }
+            await MainActor.run {
+                if !selection.applicationTokens.isEmpty {
+                    self.store.shield.applications = selection.applicationTokens
+                }
 
-        if !selection.webDomainTokens.isEmpty {
-            store.shield.webDomains = selection.webDomainTokens
-        }
+                if !selection.categoryTokens.isEmpty {
+                    self.store.shield.applicationCategories = .specific(selection.categoryTokens)
+                }
 
-        isBlocking = true
-        print("Blocked \(selection.applicationTokens.count) apps and \(selection.categoryTokens.count) categories")
+                if !selection.webDomainTokens.isEmpty {
+                    self.store.shield.webDomains = selection.webDomainTokens
+                }
+
+                self.isBlocking = true
+                print("Blocked \(selection.applicationTokens.count) apps and \(selection.categoryTokens.count) categories")
+            }
+        }
     }
 
     func unblockApps() {
-        store.shield.applications = nil
-        store.shield.applicationCategories = nil
-        store.shield.webDomains = nil
-        isBlocking = false
-        print("Unblocked all apps")
+        // PERFORMANCE FIX: Run asynchronously to prevent UI freeze
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+
+            await MainActor.run {
+                self.store.shield.applications = nil
+                self.store.shield.applicationCategories = nil
+                self.store.shield.webDomains = nil
+                self.isBlocking = false
+                print("Unblocked all apps")
+            }
+        }
     }
 
     func clearAllSettings() {
-        store.clearAllSettings()
-        isBlocking = false
-        print("Cleared all managed settings")
+        // PERFORMANCE WARNING: clearAllSettings() is extremely slow (9-10 seconds)
+        // Only use when absolutely necessary. Prefer clearing specific settings.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+
+            await MainActor.run {
+                self.store.clearAllSettings()
+                self.isBlocking = false
+                print("Cleared all managed settings")
+            }
+        }
     }
 
     // MARK: - Safari-specific blocking for testing

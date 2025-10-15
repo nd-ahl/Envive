@@ -7,7 +7,6 @@ struct ParentDashboardView: View {
     @StateObject private var viewModel: ParentDashboardViewModel
     @ObservedObject var appSelectionStore: AppSelectionStore
 
-    @State private var showingAppManagement = false
     @State private var showingChildSelector = false
     @State private var showingAssignTask = false
     @State private var selectedChildrenForAssignment: [ChildSummary] = []
@@ -37,36 +36,31 @@ struct ParentDashboardView: View {
                 .padding()
             }
             .navigationTitle("Parent Dashboard")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showingAppManagement = true
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gearshape.fill")
-                            Text("Apps")
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    }
-                }
-            }
             .onAppear {
                 viewModel.loadData()
             }
             .refreshable {
                 viewModel.loadData()
             }
-            .sheet(isPresented: $showingAppManagement) {
-                AppManagementView(appSelectionStore: appSelectionStore)
-            }
             .sheet(isPresented: $showingChildSelector) {
                 ChildSelectorView(children: viewModel.children) { selectedChildren in
                     selectedChildrenForAssignment = selectedChildren
-                    showingAssignTask = true
+                    // Don't set showingAssignTask here - let onChange handle it
                 }
             }
-            .sheet(isPresented: $showingAssignTask) {
+            .onChange(of: showingChildSelector) { oldValue, newValue in
+                // When child selector dismisses with selected children, show assign task
+                if oldValue == true && newValue == false && !selectedChildrenForAssignment.isEmpty {
+                    // Delay to ensure first sheet is fully dismissed
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showingAssignTask = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAssignTask, onDismiss: {
+                // Clear selection after AssignTask sheet dismisses
+                selectedChildrenForAssignment = []
+            }) {
                 if !selectedChildrenForAssignment.isEmpty {
                     AssignTaskView(
                         taskService: viewModel.taskService,
@@ -316,7 +310,7 @@ struct ChildOverviewCard: View {
 
 // MARK: - Parent Dashboard View Model
 
-struct ChildSummary {
+struct ChildSummary: Identifiable, Equatable {
     let id: UUID
     let name: String
     let credibility: Int
@@ -332,32 +326,36 @@ class ParentDashboardViewModel: ObservableObject {
     let taskService: TaskService
     let credibilityService: CredibilityService
     let parentId: UUID
+    private let testChildId: UUID
 
-    init(taskService: TaskService, credibilityService: CredibilityService, parentId: UUID) {
+    init(taskService: TaskService, credibilityService: CredibilityService, parentId: UUID, testChildId: UUID) {
         self.taskService = taskService
         self.credibilityService = credibilityService
         self.parentId = parentId
+        self.testChildId = testChildId
     }
 
     func loadData() {
         // Load pending approvals
         pendingApprovals = taskService.getPendingApprovals()
 
-        // TODO: Load actual children data
-        // For now, mock data
+        // For single-device testing: create a test child profile using consistent ID
+        // This ensures tasks assigned by parent show up when switching to child mode
         children = [
             ChildSummary(
-                id: UUID(),
-                name: "Sarah",
+                id: testChildId,
+                name: "Test Child",
                 credibility: 95,
                 xpBalance: 45,
-                pendingCount: pendingApprovals.filter { $0.childId == UUID() }.count
+                pendingCount: pendingApprovals.filter { $0.childId == testChildId }.count
             )
         ]
+
+        print("📋 Parent dashboard loaded. Test child ID: \(testChildId)")
+        print("📋 Pending approvals: \(pendingApprovals.count)")
     }
 
     func getChildName(_ childId: UUID) -> String {
-        // TODO: Look up actual child name
         return children.first(where: { $0.id == childId })?.name ?? "Child"
     }
 }

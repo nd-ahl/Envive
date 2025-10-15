@@ -1933,24 +1933,41 @@ class EnhancedScreenTimeModel: ObservableObject {
         print("🛡️ Selected categories: \(selection.categoryTokens.count)")
         print("🛡️ Selected websites: \(selection.webDomainTokens.count)")
 
-        store.clearAllSettings()
+        // PERFORMANCE FIX: Run shield operations asynchronously on background thread
+        // to prevent UI freeze. clearAllSettings() is extremely expensive (9-10 seconds).
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
 
-        if !selection.applicationTokens.isEmpty {
-            store.shield.applications = selection.applicationTokens
-            print("🛡️ Applied shield to \(selection.applicationTokens.count) apps")
+            // Only clear shield settings, not ALL settings - much faster
+            await MainActor.run {
+                self.store.shield.applications = nil
+                self.store.shield.applicationCategories = nil
+                self.store.shield.webDomains = nil
+            }
+
+            // Small delay to ensure clear completes
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+
+            // Apply new shields
+            await MainActor.run {
+                if !selection.applicationTokens.isEmpty {
+                    self.store.shield.applications = selection.applicationTokens
+                    print("🛡️ Applied shield to \(selection.applicationTokens.count) apps")
+                }
+
+                if !selection.categoryTokens.isEmpty {
+                    self.store.shield.applicationCategories = ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
+                    print("🛡️ Applied shield to \(selection.categoryTokens.count) categories")
+                }
+
+                if !selection.webDomainTokens.isEmpty {
+                    self.store.shield.webDomains = selection.webDomainTokens
+                    print("🛡️ Applied shield to \(selection.webDomainTokens.count) websites")
+                }
+
+                print("✅ App restrictions started successfully")
+            }
         }
-
-        if !selection.categoryTokens.isEmpty {
-            store.shield.applicationCategories = ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
-            print("🛡️ Applied shield to \(selection.categoryTokens.count) categories")
-        }
-
-        if !selection.webDomainTokens.isEmpty {
-            store.shield.webDomains = selection.webDomainTokens
-            print("🛡️ Applied shield to \(selection.webDomainTokens.count) websites")
-        }
-
-        print("✅ App restrictions started successfully")
     }
     
     func removeAppRestrictions() {
@@ -1972,15 +1989,19 @@ class EnhancedScreenTimeModel: ObservableObject {
         print("🔓 Clearing shields for \(selection.categoryTokens.count) categories")
         print("🔓 Clearing shields for \(selection.webDomainTokens.count) websites")
 
-        // Clear all shield settings
-        store.shield.applications = nil
-        store.shield.applicationCategories = nil
-        store.shield.webDomains = nil
+        // PERFORMANCE FIX: Run asynchronously to prevent UI freeze
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
 
-        // Also clear all other settings as a fallback
-        store.clearAllSettings()
+            await MainActor.run {
+                // Only clear shield settings - much faster than clearAllSettings()
+                self.store.shield.applications = nil
+                self.store.shield.applicationCategories = nil
+                self.store.shield.webDomains = nil
 
-        print("✅ App restrictions removed successfully")
+                print("✅ App restrictions removed successfully")
+            }
+        }
     }
     
     func completeTask(_ task: TaskItem) {
@@ -3739,6 +3760,10 @@ class CameraViewController: UIViewController {
 
         print("🔥🔥🔥 CameraViewController: Calling onPhotoTaken with separate back and front images")
         onPhotoTaken?(watermarkedBackImage, frontImage)
+
+        // Automatically dismiss camera after photo is accepted
+        print("🚪 Auto-dismissing camera after Use Photo")
+        onDismiss?()
     }
 
     private func createBeRealStyleImage(rearImage: UIImage, frontImage: UIImage) -> UIImage {
@@ -4735,6 +4760,8 @@ struct CommentsView: View {
 // MARK: - Profile View
 struct ProfileView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
+    @StateObject private var themeViewModel = DependencyContainer.shared
+        .viewModelFactory.makeThemeSettingsViewModel()
     @State private var showingNotificationSettings = false
     @State private var showingEditName = false
     @State private var showingEditAge = false
@@ -4842,6 +4869,42 @@ struct ProfileView: View {
                 }
 
                 Section("Settings") {
+                    // Theme/Appearance Picker
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "paintbrush.fill")
+                                .foregroundColor(.blue)
+                            Text("Appearance")
+                                .foregroundColor(.primary)
+                        }
+
+                        Picker("Theme", selection: Binding(
+                            get: { themeViewModel.selectedTheme },
+                            set: { themeViewModel.selectTheme($0) }
+                        )) {
+                            ForEach(ThemeMode.allCases, id: \.self) { mode in
+                                HStack {
+                                    Image(systemName: mode.icon)
+                                    Text(mode.displayName)
+                                }
+                                .tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        // Current effective theme display
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Text("Current: \(themeViewModel.effectiveThemeDescription())")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 8)
+
                     Button(action: {
                         showingNotificationSettings = true
                     }) {
@@ -5129,7 +5192,8 @@ struct ContentView: View {
                 viewModel: ParentDashboardViewModel(
                     taskService: DependencyContainer.shared.taskService,
                     credibilityService: DependencyContainer.shared.credibilityService,
-                    parentId: UUID() // TODO: Replace with actual parent ID from user session
+                    parentId: UUID(), // TODO: Replace with actual parent ID from user session
+                    testChildId: DependencyContainer.shared.deviceModeManager.getTestChildId()
                 ),
                 appSelectionStore: model.appSelectionStore
             )
@@ -5138,13 +5202,6 @@ struct ContentView: View {
                     Text("Task Approvals")
                 }
                 .tag(3)
-
-            ParentControlView(appSelectionStore: model.appSelectionStore)
-                .tabItem {
-                    Image(systemName: "person.2.badge.gearshape")
-                    Text("Parental Controls")
-                }
-                .tag(4)
 
             PhotoGalleryView()
                 .environmentObject(model)

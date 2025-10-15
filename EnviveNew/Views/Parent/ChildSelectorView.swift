@@ -1,14 +1,28 @@
 import SwiftUI
 
+// MARK: - Child Selection Mode
+
+enum ChildSelectionMode {
+    case single
+    case multiple
+}
+
 // MARK: - Child Selector View
 
 /// Modal for selecting one or more children to assign tasks to
 struct ChildSelectorView: View {
     let children: [ChildSummary]
     let onConfirm: ([ChildSummary]) -> Void
+    let selectionMode: ChildSelectionMode
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedChildren: Set<UUID> = []
+
+    init(children: [ChildSummary], selectionMode: ChildSelectionMode = .multiple, onConfirm: @escaping ([ChildSummary]) -> Void) {
+        self.children = children
+        self.selectionMode = selectionMode
+        self.onConfirm = onConfirm
+    }
 
     var selectedChildrenList: [ChildSummary] {
         children.filter { selectedChildren.contains($0.id) }
@@ -19,7 +33,7 @@ struct ChildSelectorView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Header
@@ -67,11 +81,11 @@ struct ChildSelectorView: View {
                 .font(.system(size: 50))
                 .foregroundColor(.blue)
 
-            Text("Who should do this task?")
+            Text(selectionMode == .single ? "Who should do this?" : "Who should do this task?")
                 .font(.title3)
                 .fontWeight(.bold)
 
-            Text("Select one or more children to assign a task")
+            Text(selectionMode == .single ? "Select one child" : "Select one or more children to assign a task")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -92,11 +106,11 @@ struct ChildSelectorView: View {
                 .foregroundColor(.green)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Multi-Select Enabled")
+                Text(selectionMode == .single ? "Single Selection" : "Multi-Select Enabled")
                     .font(.subheadline)
                     .fontWeight(.semibold)
 
-                Text("Tap children to select or deselect. The same task will be assigned to all selected children.")
+                Text(selectionMode == .single ? "Tap a child to select them." : "Tap children to select or deselect. The same task will be assigned to all selected children.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -118,7 +132,7 @@ struct ChildSelectorView: View {
             if children.isEmpty {
                 emptyStateView
             } else {
-                ForEach(children, id: \.id) { child in
+                ForEach(children) { child in
                     ChildSelectionCard(
                         child: child,
                         isSelected: selectedChildren.contains(child.id),
@@ -170,7 +184,7 @@ struct ChildSelectorView: View {
             }
 
             VStack(spacing: 8) {
-                ForEach(selectedChildrenList, id: \.id) { child in
+                ForEach(selectedChildrenList) { child in
                     HStack {
                         Text(child.name)
                             .font(.subheadline)
@@ -201,10 +215,23 @@ struct ChildSelectorView: View {
     // MARK: - Actions
 
     private func toggleSelection(for childId: UUID) {
-        if selectedChildren.contains(childId) {
-            selectedChildren.remove(childId)
-        } else {
-            selectedChildren.insert(childId)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            if selectionMode == .single {
+                // Single select: replace selection
+                if selectedChildren.contains(childId) {
+                    selectedChildren.remove(childId)
+                } else {
+                    selectedChildren.removeAll()
+                    selectedChildren.insert(childId)
+                }
+            } else {
+                // Multi-select: toggle selection
+                if selectedChildren.contains(childId) {
+                    selectedChildren.remove(childId)
+                } else {
+                    selectedChildren.insert(childId)
+                }
+            }
         }
     }
 }
@@ -217,65 +244,66 @@ struct ChildSelectionCard: View {
     let onToggle: () -> Void
 
     var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 16) {
-                // Selection Indicator
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundColor(isSelected ? .blue : .secondary)
+        HStack(spacing: 16) {
+            // Selection Indicator
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .foregroundColor(isSelected ? .blue : .secondary)
 
-                // Child Info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(child.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+            // Child Info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(child.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
 
-                    HStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.caption)
+                        Text("\(child.credibility)%")
+                            .font(.caption)
+                    }
+                    .foregroundColor(credibilityColor(for: child.credibility))
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.caption)
+                        Text("\(child.xpBalance) XP")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.orange)
+
+                    if child.pendingCount > 0 {
                         HStack(spacing: 4) {
-                            Image(systemName: "chart.line.uptrend.xyaxis")
+                            Image(systemName: "clock.fill")
                                 .font(.caption)
-                            Text("\(child.credibility)%")
-                                .font(.caption)
-                        }
-                        .foregroundColor(credibilityColor(for: child.credibility))
-
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.caption)
-                            Text("\(child.xpBalance) XP")
+                            Text("\(child.pendingCount) pending")
                                 .font(.caption)
                         }
-                        .foregroundColor(.orange)
-
-                        if child.pendingCount > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.fill")
-                                    .font(.caption)
-                                Text("\(child.pendingCount) pending")
-                                    .font(.caption)
-                            }
-                            .foregroundColor(.yellow)
-                        }
+                        .foregroundColor(.yellow)
                     }
                 }
-
-                Spacer()
-
-                // Arrow indicator
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .opacity(isSelected ? 1 : 0.3)
             }
-            .padding()
-            .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
-            )
+
+            Spacer()
+
+            // Arrow indicator
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .opacity(isSelected ? 1 : 0.3)
         }
-        .buttonStyle(.plain)
+        .padding()
+        .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggle()
+        }
     }
 
     private func credibilityColor(for score: Int) -> Color {

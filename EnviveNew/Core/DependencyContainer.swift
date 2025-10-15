@@ -73,6 +73,12 @@ final class DependencyContainer {
         )
     }()
 
+    // MARK: - Device Mode Management
+
+    lazy var deviceModeManager: DeviceModeManager = {
+        LocalDeviceModeManager(storage: storage)
+    }()
+
     // MARK: - View Model Factory
 
     lazy var viewModelFactory: ViewModelFactory = {
@@ -84,6 +90,11 @@ final class DependencyContainer {
     // lazy var appRestrictionService: AppRestrictionService = { ... }()
     // lazy var activityScheduler: ActivitySchedulingService = { ... }()
     // lazy var rewardService: RewardService = { ... }()
+
+    // FUTURE: When migrating to Firebase, swap out LocalDeviceModeManager:
+    // lazy var deviceModeManager: DeviceModeManager = {
+    //     FirebaseDeviceModeManager(auth: firebaseAuth, db: firestore)
+    // }()
 
     private init() {}
 

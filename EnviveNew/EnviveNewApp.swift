@@ -20,7 +20,7 @@ struct EnviveNewApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootNavigationView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .preferredColorScheme(themeViewModel.effectiveColorScheme)
                 .onOpenURL { url in

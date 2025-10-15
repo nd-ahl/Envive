@@ -44,7 +44,7 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "89FD665E2E7E7F6600C1C643"
+               BlueprintIdentifier = "89FD66702E7E7F6B00C1C642"
                BuildableName = "EnviveNewTests.xctest"
                BlueprintName = "EnviveNewTests"
                ReferencedContainer = "container:EnviveNew.xcodeproj">

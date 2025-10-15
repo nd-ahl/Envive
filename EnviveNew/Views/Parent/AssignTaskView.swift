@@ -63,7 +63,7 @@ struct AssignTaskView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Header
@@ -259,7 +259,7 @@ struct AssignTaskView: View {
 
     private var templateListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Selection prompt
+            // Selection prompt (only when nothing selected)
             if selectedTemplate == nil {
                 HStack(spacing: 8) {
                     Image(systemName: "hand.tap.fill")
@@ -278,10 +278,10 @@ struct AssignTaskView: View {
                 emptySearchView
             } else {
                 ForEach(filteredTemplates.prefix(20)) { template in
-                    TemplateCard(
+                    TemplateSelectionCard(
                         template: template,
                         isSelected: selectedTemplate?.id == template.id,
-                        onSelect: {
+                        onTap: {
                             if selectedTemplate?.id == template.id {
                                 selectedTemplate = nil
                             } else {
@@ -515,13 +515,16 @@ struct AssignTaskView: View {
 
         // Create assignment for EACH selected child
         assignedTasks = selectedChildren.map { child in
-            taskService.assignTask(
+            print("📝 Assigning task '\(template.title)' to child: \(child.name) (ID: \(child.id))")
+            let assignment = taskService.assignTask(
                 template: template,
                 childId: child.id,
                 parentId: parentId,
                 level: selectedLevel,
                 dueDate: hasDueDate ? dueDate : nil
             )
+            print("✅ Task assigned with ID: \(assignment.id), status: \(assignment.status)")
+            return assignment
         }
 
         showingConfirmation = true
@@ -552,66 +555,6 @@ struct AssignTaskView: View {
 enum TaskCreationMode {
     case fromTemplate
     case custom
-}
-
-// MARK: - Template Card
-
-struct TemplateCard: View {
-    let template: TaskTemplate
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Category icon
-            Text(template.category.icon)
-                .font(.title2)
-
-            // Task info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(template.title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.leading)
-
-                Text(template.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                HStack(spacing: 8) {
-                    Text(template.category.rawValue)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.2))
-                        .foregroundColor(.blue)
-                        .cornerRadius(4)
-
-                    Text("Suggested: \(template.suggestedLevel.shortName)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Spacer()
-
-            // Simple selection indicator - only shows when selected
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-            }
-        }
-        .padding()
-        .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
-        .cornerRadius(12)
-        .onTapGesture {
-            onSelect()
-        }
-    }
 }
 
 // MARK: - Level Card
@@ -659,6 +602,83 @@ struct LevelCard: View {
     }
 }
 
+// MARK: - Template Selection Card
+
+struct TemplateSelectionCard: View {
+    let template: TaskTemplate
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Category icon
+            Text(template.category.icon)
+                .font(.title2)
+                .foregroundColor(isSelected ? .white : .primary)
+
+            // Task info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(template.title)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .bold : .semibold)
+                    .foregroundColor(isSelected ? .white : .primary)
+
+                Text(template.description)
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
+                    .lineLimit(2)
+
+                HStack(spacing: 8) {
+                    Text(template.category.rawValue)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(isSelected ? Color.white.opacity(0.2) : Color.blue.opacity(0.2))
+                        .foregroundColor(isSelected ? .white : .blue)
+                        .cornerRadius(4)
+
+                    Text("Suggested: \(template.suggestedLevel.shortName)")
+                        .font(.caption2)
+                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                }
+            }
+
+            Spacer()
+
+            // Selection indicator
+            ZStack {
+                if isSelected {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 32, height: 32)
+
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                } else {
+                    Circle()
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 2)
+                        .frame(width: 32, height: 32)
+                }
+            }
+        }
+        .padding()
+        .background(isSelected ? Color.blue : Color(.systemGray6))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 3)
+        )
+        .shadow(color: isSelected ? Color.blue.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
+        .scaleEffect(isSelected ? 1.02 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
+    }
+}
+
 // MARK: - Summary Row
 
 struct SummaryRow: View {
@@ -684,7 +704,7 @@ struct LevelInfoView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("How Task Levels Work")
