@@ -46,16 +46,20 @@ struct UserProfile: Codable, Identifiable {
     let mode: DeviceMode
     let createdAt: Date
 
+    /// User's age
+    var age: Int?
+
     /// For parent mode - track which children they manage (future: from Firebase)
     var managedChildrenIds: [UUID]
 
     /// For child mode - track their parent (future: from Firebase)
     var parentId: UUID?
 
-    init(id: UUID = UUID(), name: String, mode: DeviceMode, parentId: UUID? = nil) {
+    init(id: UUID = UUID(), name: String, mode: DeviceMode, age: Int? = nil, parentId: UUID? = nil) {
         self.id = id
         self.name = name
         self.mode = mode
+        self.age = age
         self.createdAt = Date()
         self.managedChildrenIds = []
         self.parentId = parentId

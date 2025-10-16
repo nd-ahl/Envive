@@ -339,10 +339,20 @@ struct FriendActivity: Identifiable {
 // MARK: - Photo Storage Model
 struct SavedPhoto: Codable, Identifiable {
     let id = UUID()
-    let fileName: String
+    let fileName: String  // Back camera image
+    let frontFileName: String?  // Front camera image (optional for backwards compatibility)
     let timestamp: Date
     let taskTitle: String
     let taskId: UUID? // Associated task ID for proper photo-task binding
+
+    // Initializer for backwards compatibility
+    init(fileName: String, frontFileName: String? = nil, timestamp: Date, taskTitle: String, taskId: UUID?) {
+        self.fileName = fileName
+        self.frontFileName = frontFileName
+        self.timestamp = timestamp
+        self.taskTitle = taskTitle
+        self.taskId = taskId
+    }
 }
 
 struct SocialPost: Identifiable, Codable {
@@ -459,23 +469,42 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         }
     }
 
-    func savePhoto(_ image: UIImage, taskTitle: String, taskId: UUID? = nil) -> Bool {
+    func savePhoto(_ image: UIImage, taskTitle: String, taskId: UUID? = nil, frontImage: UIImage? = nil) -> Bool {
         createPhotosDirectoryIfNeeded()
 
-        let fileName = "photo_\(Date().timeIntervalSince1970).jpg"
-        let fileURL = photosDirectory.appendingPathComponent(fileName)
+        let timestamp = Date().timeIntervalSince1970
+        let backFileName = "photo_back_\(timestamp).jpg"
+        let backFileURL = photosDirectory.appendingPathComponent(backFileName)
 
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-            print("❌ Failed to convert image to JPEG data")
+        guard let backImageData = image.jpegData(compressionQuality: 0.8) else {
+            print("❌ Failed to convert back image to JPEG data")
             return false
         }
 
         do {
-            try imageData.write(to: fileURL)
-            let savedPhoto = SavedPhoto(fileName: fileName, timestamp: Date(), taskTitle: taskTitle, taskId: taskId)
+            // Save back image
+            try backImageData.write(to: backFileURL)
+            print("✅ Back photo saved: \(backFileName)")
+
+            // Save front image if provided
+            var frontFileName: String? = nil
+            if let frontImage = frontImage {
+                frontFileName = "photo_front_\(timestamp).jpg"
+                let frontFileURL = photosDirectory.appendingPathComponent(frontFileName!)
+
+                if let frontImageData = frontImage.jpegData(compressionQuality: 0.8) {
+                    try frontImageData.write(to: frontFileURL)
+                    print("✅ Front photo saved: \(frontFileName!)")
+                } else {
+                    print("⚠️ Failed to convert front image to JPEG data, saving without front image")
+                    frontFileName = nil
+                }
+            }
+
+            let savedPhoto = SavedPhoto(fileName: backFileName, frontFileName: frontFileName, timestamp: Date(), taskTitle: taskTitle, taskId: taskId)
             savedPhotos.append(savedPhoto)
             saveSavedPhotosMetadata()
-            print("✅ Photo saved successfully: \(fileName) for task: \(taskId?.uuidString ?? "unknown")")
+            print("✅ Photo(s) saved successfully for task: \(taskId?.uuidString ?? "unknown")")
             return true
         } catch {
             print("❌ Failed to save photo: \(error.localizedDescription)")
@@ -502,9 +531,26 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
         return UIImage(contentsOfFile: fileURL.path)
     }
 
+    func loadFrontPhoto(savedPhoto: SavedPhoto) -> UIImage? {
+        guard let frontFileName = savedPhoto.frontFileName else {
+            print("⚠️ No front photo available for this saved photo")
+            return nil
+        }
+        let fileURL = photosDirectory.appendingPathComponent(frontFileName)
+        return UIImage(contentsOfFile: fileURL.path)
+    }
+
     func deletePhoto(_ savedPhoto: SavedPhoto) {
-        let fileURL = photosDirectory.appendingPathComponent(savedPhoto.fileName)
-        try? FileManager.default.removeItem(at: fileURL)
+        // Delete back image
+        let backFileURL = photosDirectory.appendingPathComponent(savedPhoto.fileName)
+        try? FileManager.default.removeItem(at: backFileURL)
+
+        // Delete front image if exists
+        if let frontFileName = savedPhoto.frontFileName {
+            let frontFileURL = photosDirectory.appendingPathComponent(frontFileName)
+            try? FileManager.default.removeItem(at: frontFileURL)
+        }
+
         savedPhotos.removeAll { $0.id == savedPhoto.id }
         saveSavedPhotosMetadata()
     }
@@ -5160,8 +5206,14 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            EnhancedHomeView()
-                .environmentObject(model)
+            ChildDashboardView(
+                viewModel: ChildDashboardViewModel(
+                    taskService: DependencyContainer.shared.taskService,
+                    xpService: DependencyContainer.shared.xpService,
+                    credibilityService: DependencyContainer.shared.credibilityService,
+                    childId: DependencyContainer.shared.deviceModeManager.getTestChildId()
+                )
+            )
                 .tabItem {
                     Image(systemName: "house.fill")
                     Text("Home")
@@ -5171,7 +5223,7 @@ struct ContentView: View {
                     // Show badge for recent activities (last hour)
                     Date().timeIntervalSince(activity.timestamp) < 3600
                 }.count)
-            
+
             EnhancedTasksView()
                 .environmentObject(model)
                 .tabItem {
@@ -6187,22 +6239,26 @@ struct EnhancedHomeView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @State private var selectedDuration = 30
     @State private var showingAddTask = false
-    @State private var previousLevel = 1
-    @State private var showingLevelUp = false
-    @State private var showingConfetti = false
-    @State private var newLevel = 1
+
+    // Real data from services
+    @State private var xpBalance: Int = 0
+    @State private var credibility: Int = 100
+    @State private var completedTasksCount: Int = 0
+    @State private var totalXPEarned: Int = 0
+    @State private var dayStreak: Int = 0
+    @State private var childId: UUID = UUID()
 
     // Access stored user name
     @AppStorage("userName") private var userName: String = "User"
 
-    // Streak animations
-    @State private var showingStreakFire = false
-    @State private var showingStreakLost = false
-    @State private var lostStreakValue = 0
-    @State private var hasCheckedStreakLoss = false
+    // Services
+    private let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+    private let xpService = DependencyContainer.shared.xpService
+    private let credibilityService = DependencyContainer.shared.credibilityService
+    private let taskService = DependencyContainer.shared.taskService
 
     private var currentUserLevel: UserLevel {
-        UserLevel(totalXP: model.currentUser.totalXPEarned)
+        UserLevel(totalXP: totalXPEarned)
     }
 
     var body: some View {
@@ -6238,10 +6294,10 @@ struct EnhancedHomeView: View {
                     LevelProgressBar(userLevel: currentUserLevel)
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
-                        StatCard(title: "XP Balance", value: "\(model.currentUser.xpBalance)", color: .blue, icon: "star.fill")
-                        StatCard(title: "Minutes Earned", value: "\(model.minutesEarned)", color: .green, icon: "clock.fill")
-                        StatCard(title: "Day Streak", value: "\(model.currentStreak)", color: .orange, icon: "flame.fill")
-                        StatCard(title: "Credibility", value: "\(model.credibilityManager.credibilityScore)", color: credibilityColor(score: model.credibilityManager.credibilityScore), icon: "checkmark.seal.fill")
+                        StatCard(title: "Screen Time", value: "\(xpBalance) min", color: .blue, icon: "clock.fill")
+                        StatCard(title: "Tasks Done", value: "\(completedTasksCount)", color: .green, icon: "checkmark.circle.fill")
+                        StatCard(title: "Day Streak", value: "\(dayStreak)", color: .orange, icon: "flame.fill")
+                        StatCard(title: "Credibility", value: "\(credibility)%", color: credibilityColor(score: credibility), icon: "checkmark.seal.fill")
                     }
                     
                     VStack(spacing: 12) {
@@ -6251,68 +6307,20 @@ struct EnhancedHomeView: View {
                             Spacer()
                         }
 
-                        HStack(spacing: 12) {
-                            Button(action: { showingAddTask = true }) {
-                                Label("Add Task", systemImage: "plus.circle.fill")
-                                    .frame(maxWidth: .infinity)
+                        NavigationLink(destination: Text("Task Browser - Coming Soon")) {
+                            HStack {
+                                Image(systemName: "list.bullet")
+                                Text("View All Tasks")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
-                            .buttonStyle(.borderedProminent)
-
-                            if model.xpBalance >= 5 {
-                                Button(action: { model.convertXPToMinutes() }) {
-                                    Label("Convert XP", systemImage: "arrow.triangle.2.circlepath")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.bordered)
-                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
                         }
                     }
-
-                    // DEBUG: Streak Testing (remove this later)
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("🔥 Streak Debug")
-                                .font(.headline)
-                                .foregroundColor(.orange)
-                            Spacer()
-                        }
-
-                        HStack(spacing: 8) {
-                            Button("Test Fire 🔥") {
-                                print("🧪 Manual fire trigger - Current streak: \(model.currentStreak)")
-                                showingStreakFire = true
-                            }
-                            .font(.caption)
-                            .buttonStyle(.bordered)
-                            .tint(.orange)
-
-                            Button("+1 Streak") {
-                                model.currentStreak += 1
-                                UserDefaults.standard.set(model.currentStreak, forKey: "currentStreak")
-                                model.shouldShowStreakFireAnimation = true
-                                print("🧪 Manually incremented streak to \(model.currentStreak)")
-                            }
-                            .font(.caption)
-                            .buttonStyle(.bordered)
-                            .tint(.green)
-
-                            Button("Reset") {
-                                model.resetStreak()
-                                print("🧪 Reset streak to 0")
-                            }
-                            .font(.caption)
-                            .buttonStyle(.bordered)
-                            .tint(.red)
-                        }
-
-                        Text("Streak: \(model.currentStreak) | Last: \(model.lastTaskCompletionDate?.description ?? "Never") | Today: \(model.hasCompletedTaskToday ? "✓" : "✗")")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding()
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(12)
                     
                     if model.isSessionActive {
                         VStack(spacing: 12) {
@@ -6364,12 +6372,12 @@ struct EnhancedHomeView: View {
                         .padding()
                         .background(Color.orange.opacity(0.1))
                         .cornerRadius(12)
-                    } else if model.minutesEarned > 0 {
+                    } else if xpBalance > 0 {
                         VStack(spacing: 12) {
                             Text("Start Spending Screen Time")
                                 .font(.headline)
-                            
-                            Text("You have \(model.minutesEarned) earned minutes available")
+
+                            Text("You have \(xpBalance) earned minutes available")
                                 .foregroundColor(.secondary)
                             
                             Picker("Duration", selection: $selectedDuration) {
@@ -6383,7 +6391,7 @@ struct EnhancedHomeView: View {
                                 model.startEarnedSession(duration: selectedDuration)
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(selectedDuration > model.minutesEarned)
+                            .disabled(selectedDuration > xpBalance)
                         }
                         .padding()
                         .background(Color.purple.opacity(0.1))
@@ -6563,70 +6571,45 @@ struct EnhancedHomeView: View {
                 AddTaskView()
                     .environmentObject(model)
             }
-            .onChange(of: model.currentUser.totalXPEarned) { oldValue, newValue in
-                // Detect level up
-                let oldLevel = UserLevel(totalXP: oldValue).currentLevel
-                let newLevelValue = currentUserLevel.currentLevel
-
-                if newLevelValue > oldLevel {
-                    // Level up detected!
-                    newLevel = newLevelValue
-                    withAnimation {
-                        showingConfetti = true
-                        showingLevelUp = true
-                    }
-
-                    // Auto-hide confetti after 3 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        withAnimation {
-                            showingConfetti = false
-                        }
-                    }
-                }
-                previousLevel = newLevelValue
-            }
             .onAppear {
-                // Check for streak loss on first appearance
-                if !hasCheckedStreakLoss && model.hasLostStreak() {
-                    lostStreakValue = model.currentStreak
-                    model.resetStreak()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        showingStreakLost = true
-                    }
-                    hasCheckedStreakLoss = true
-                }
+                loadRealData()
             }
-            .onChange(of: model.shouldShowStreakFireAnimation) { oldValue, newValue in
-                // Show fire animation when triggered by model
-                if newValue {
-                    showingStreakFire = true
-                    // Reset the trigger after a delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        model.shouldShowStreakFireAnimation = false
-                    }
-                }
+            .refreshable {
+                loadRealData()
             }
-            .overlay(
-                ZStack {
-                    // Confetti overlay for level-up
-                    if showingConfetti {
-                        ConfettiView()
-                            .transition(.opacity)
-                    }
-
-                    // Level-up popup overlay
-                    LevelUpPopup(level: newLevel, isShowing: $showingLevelUp)
-
-                    // Streak fire animation overlay
-                    StreakFireAnimation(streak: model.currentStreak, isShowing: $showingStreakFire)
-
-                    // Streak lost alert overlay
-                    StreakLostAlert(lostStreak: lostStreakValue, isShowing: $showingStreakLost)
-                }
-            )
         }
     }
-    
+
+    // MARK: - Load Real Data
+
+    private func loadRealData() {
+        // Get the test child ID (same ID used in ChildDashboardView)
+        childId = deviceModeManager.getTestChildId()
+
+        print("🏠 Home screen loading data for child ID: \(childId)")
+
+        // Load XP balance (screen time minutes)
+        if let balance = xpService.getBalance(userId: childId) {
+            xpBalance = balance.currentXP
+            totalXPEarned = balance.lifetimeEarned
+        } else {
+            xpBalance = 0
+            totalXPEarned = 0
+        }
+
+        // Load credibility
+        credibility = credibilityService.credibilityScore
+
+        // Count completed tasks
+        let allTasks = taskService.getChildTasks(childId: childId, status: nil)
+        completedTasksCount = allTasks.filter { $0.status == .approved }.count
+
+        // Calculate day streak based on consecutive approved tasks
+        dayStreak = credibilityService.consecutiveApprovedTasks
+
+        print("🏠 Loaded: \(xpBalance) min, \(completedTasksCount) tasks, \(credibility)% credibility, \(dayStreak) streak")
+    }
+
     private func credibilityColor(score: Int) -> Color {
         switch score {
         case 80...100:

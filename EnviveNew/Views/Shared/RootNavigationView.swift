@@ -31,15 +31,9 @@ struct RootNavigationView: View {
             .onAppear(perform: handleAppAppear)
             .onChange(of: scenePhase, handleScenePhaseChange)
 
-            // Floating mode switcher button (for testing)
-            VStack {
-                HStack {
-                    Spacer()
-                    ModeSwitcherButton(deviceModeManager: deviceModeManager)
-                        .padding()
-                }
-                Spacer()
-            }
+            // Floating mode switcher button (for testing) - draggable
+            ModeSwitcherButton(deviceModeManager: deviceModeManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 
@@ -236,6 +230,7 @@ struct ParentActivityView: View {
 
 struct ParentProfileView: View {
     @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+    @State private var showingResetAlert = false
 
     var body: some View {
         NavigationView {
@@ -287,8 +282,32 @@ struct ParentProfileView: View {
                 } header: {
                     Text("Info")
                 }
+
+                Section {
+                    Button(action: {
+                        showingResetAlert = true
+                    }) {
+                        Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
+                            .foregroundColor(.orange)
+                    }
+                } header: {
+                    Text("Debug & Testing")
+                } footer: {
+                    Text("Reset onboarding to see the welcome screen again")
+                        .font(.caption)
+                }
             }
             .navigationTitle("Settings")
+            .alert("Reset Onboarding?", isPresented: $showingResetAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Reset", role: .destructive) {
+                    OnboardingManager.shared.resetOnboarding()
+                    // Exit the app so user can reopen and see welcome screen
+                    exit(0)
+                }
+            } message: {
+                Text("This will reset the app and show the welcome screen again. The app will close.")
+            }
         }
     }
 }

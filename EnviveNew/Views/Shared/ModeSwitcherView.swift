@@ -273,9 +273,19 @@ struct ModeSwitcherButton: View {
     @ObservedObject var deviceModeManager: LocalDeviceModeManager
     @State private var showingModeSwitcher = false
 
+    // Position state - persisted between launches
+    @AppStorage("modeSwitcherButtonX") private var buttonX: Double = 20
+    @AppStorage("modeSwitcherButtonY") private var buttonY: Double = 100
+
+    // Drag state
+    @State private var dragOffset: CGSize = .zero
+    @State private var isDragging = false
+
     var body: some View {
         Button(action: {
-            showingModeSwitcher = true
+            if !isDragging {
+                showingModeSwitcher = true
+            }
         }) {
             HStack(spacing: 6) {
                 Image(systemName: deviceModeManager.currentMode.icon)
@@ -288,11 +298,37 @@ struct ModeSwitcherButton: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.blue)
+            .background(isDragging ? Color.blue.opacity(0.8) : Color.blue)
             .foregroundColor(.white)
             .cornerRadius(20)
             .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 2)
         }
+        .buttonStyle(.plain)
+        .position(x: buttonX + dragOffset.width, y: buttonY + dragOffset.height)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    isDragging = true
+                    dragOffset = value.translation
+                }
+                .onEnded { value in
+                    // Update final position
+                    buttonX += value.translation.width
+                    buttonY += value.translation.height
+
+                    // Clamp to screen bounds (with some padding)
+                    buttonX = max(60, min(buttonX, UIScreen.main.bounds.width - 60))
+                    buttonY = max(60, min(buttonY, UIScreen.main.bounds.height - 100))
+
+                    // Reset drag offset
+                    dragOffset = .zero
+
+                    // Small delay before allowing tap
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isDragging = false
+                    }
+                }
+        )
         .sheet(isPresented: $showingModeSwitcher) {
             ModeSwitcherView(deviceModeManager: deviceModeManager)
         }

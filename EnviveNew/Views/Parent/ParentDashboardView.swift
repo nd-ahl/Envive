@@ -151,13 +151,26 @@ struct ParentDashboardView: View {
                     }
                 )
 
-                NavigationLink(destination: Text("Emergency Grant View")) {
-                    QuickActionButton(
-                        title: "Emergency Grant",
-                        icon: "bolt.circle.fill",
-                        color: .orange,
-                        action: {}
-                    )
+                NavigationLink(destination: TaskHistoryView(
+                    taskService: viewModel.taskService,
+                    childId: nil,
+                    childName: nil
+                )) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.title2)
+                            .foregroundColor(.green)
+
+                        Text("Task History")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(12)
                 }
             }
         }

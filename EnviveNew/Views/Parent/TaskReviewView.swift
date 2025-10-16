@@ -5,6 +5,8 @@ import Combine
 
 struct TaskReviewView: View {
     @StateObject private var viewModel: TaskReviewViewModel
+    @StateObject private var model = EnhancedScreenTimeModel()
+    @State private var showMainAsBack = true
     @Environment(\.dismiss) var dismiss
 
     init(assignment: TaskAssignment, viewModel: TaskReviewViewModel) {
@@ -18,8 +20,11 @@ struct TaskReviewView: View {
                 taskHeaderSection
 
                 // Photo Evidence
-                if let photoURL = viewModel.assignment.photoURL {
-                    photoEvidenceSection(photoURL: photoURL)
+                photoEvidenceSection
+
+                // Time Tracking
+                if let timeSpent = viewModel.assignment.completionTimeMinutes, timeSpent > 0 {
+                    timeTrackingSection(minutes: timeSpent)
                 }
 
                 // Child Notes
@@ -102,29 +107,160 @@ struct TaskReviewView: View {
 
     // MARK: - Photo Evidence
 
-    private func photoEvidenceSection(photoURL: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var photoEvidenceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             Label("Photo Evidence", systemImage: "camera.fill")
                 .font(.headline)
 
-            // TODO: Load actual image from photoURL
-            Rectangle()
-                .fill(Color.gray.opacity(0.3))
-                .frame(height: 200)
-                .cornerRadius(8)
-                .overlay(
-                    Text("📸 Photo")
-                        .foregroundColor(.secondary)
-                )
+            // Load photos for this task - try to get both back and front if available
+            if let savedPhoto = model.cameraManager.getLatestPhotoForTask(viewModel.assignment.id),
+               let backImage = model.cameraManager.loadPhoto(savedPhoto: savedPhoto) {
 
-            Text("Tap to view full size")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                // Check if we have front image too (for interactive display like Social tab)
+                let frontImage = model.cameraManager.loadFrontPhoto(savedPhoto: savedPhoto) ?? backImage
+
+                // BeReal-style photo display with 4:5 ratio (matching Social tab EXACTLY)
+                GeometryReader { geometry in
+                    let width = geometry.size.width
+                    let height = width * 1.25 // 4:5 ratio
+
+                    ZStack {
+                        // Main photo (tappable to swap, just like Social tab)
+                        Image(uiImage: showMainAsBack ? backImage : frontImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: width, height: height)
+                            .clipped()
+                            .cornerRadius(20)
+
+                        // Small overlay photo in top-right (tappable to swap)
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Button(action: { showMainAsBack.toggle() }) {
+                                    Image(uiImage: showMainAsBack ? frontImage : backImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 80, height: 106) // 4:5 ratio for small image
+                                        .clipped()
+                                        .cornerRadius(12)
+                                        .shadow(color: .black.opacity(0.25), radius: 3, x: 0, y: 2)
+                                }
+                                .padding(.trailing, 15)
+                                .padding(.top, 15)
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+                .aspectRatio(4/5, contentMode: .fit)
+
+                Text("✅ Photo proof submitted by child")
+                    .font(.caption)
+                    .foregroundColor(.green)
+            } else {
+                // No photo found - show placeholder
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(height: 200)
+                    .cornerRadius(8)
+                    .overlay(
+                        VStack {
+                            Image(systemName: "photo")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("No photo submitted")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    )
+            }
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+    }
+
+    // MARK: - Time Tracking
+
+    private func timeTrackingSection(minutes: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Time Spent on Task", systemImage: "stopwatch.fill")
+                .font(.headline)
+
+            VStack(spacing: 12) {
+                // Main time display
+                HStack {
+                    Spacer()
+                    VStack(spacing: 4) {
+                        Text(formatTimeSpent(minutes))
+                            .font(.system(size: 48, weight: .bold, design: .rounded))
+                            .foregroundColor(.orange)
+                            .monospacedDigit()
+                        Text("Time Worked")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+
+                Divider()
+
+                // Guidance text
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Text("Consider adjusting the task level based on time spent:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("•")
+                            Text("Quick tasks (< 10 min) → Easy")
+                        }
+                        HStack {
+                            Text("•")
+                            Text("Medium tasks (10-30 min) → Medium")
+                        }
+                        HStack {
+                            Text("•")
+                            Text("Long tasks (> 30 min) → Hard")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 22)
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(8)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+    }
+
+    private func formatTimeSpent(_ minutes: Int) -> String {
+        let hours = minutes / 60
+        let mins = minutes % 60
+
+        if hours > 0 {
+            if mins > 0 {
+                return "\(hours)h \(mins)m"
+            } else {
+                return "\(hours)h"
+            }
+        } else {
+            return "\(mins) min"
+        }
     }
 
     // MARK: - Child Notes

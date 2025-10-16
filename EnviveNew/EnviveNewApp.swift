@@ -12,23 +12,60 @@ import FamilyControls
 @main
 struct EnviveNewApp: App {
     let persistenceController = PersistenceController.shared
-    let authorizationCenter = AuthorizationCenter.shared
 
     // Theme management
     @StateObject private var themeViewModel = DependencyContainer.shared
         .viewModelFactory.makeThemeSettingsViewModel()
 
+    // Onboarding management
+    @StateObject private var onboardingManager = OnboardingManager.shared
+
     var body: some Scene {
         WindowGroup {
-            RootNavigationView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                .preferredColorScheme(themeViewModel.effectiveColorScheme)
-                .onOpenURL { url in
-                    handleURLScheme(url)
+            Group {
+                if onboardingManager.shouldShowWelcome {
+                    WelcomeView(
+                        onGetStarted: {
+                            onboardingManager.completeWelcome()
+                        },
+                        onSignIn: {
+                            onboardingManager.completeWelcome()
+                            // TODO: Navigate to sign in
+                        }
+                    )
+                } else if onboardingManager.shouldShowQuestions {
+                    OnboardingQuestionView(
+                        onComplete: {
+                            onboardingManager.completeQuestions()
+                        }
+                    )
+                } else if onboardingManager.shouldShowAgeSelection {
+                    // Get user role from saved responses
+                    let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+                    let userRole = roleString == "child" ? UserRole.child : UserRole.parent
+
+                    AgeSelectionView(
+                        userRole: userRole,
+                        onComplete: { age in
+                            onboardingManager.completeAgeSelection(age: age)
+                        }
+                    )
+                } else if onboardingManager.shouldShowPermissions {
+                    PermissionsView(
+                        onComplete: {
+                            onboardingManager.completePermissions()
+                            onboardingManager.completeOnboarding()
+                        }
+                    )
+                } else {
+                    RootNavigationView()
                 }
-                .task {
-                    await requestScreenTimeAuthorization()
-                }
+            }
+            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            .preferredColorScheme(themeViewModel.effectiveColorScheme)
+            .onOpenURL { url in
+                handleURLScheme(url)
+            }
         }
     }
 
@@ -67,12 +104,4 @@ struct EnviveNewApp: App {
         }
     }
 
-    private func requestScreenTimeAuthorization() async {
-        do {
-            try await authorizationCenter.requestAuthorization(for: .individual)
-            print("Screen Time authorization granted")
-        } catch {
-            print("Screen Time authorization failed: \(error)")
-        }
-    }
 }

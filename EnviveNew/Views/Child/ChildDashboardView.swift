@@ -1,10 +1,156 @@
 import SwiftUI
 import Combine
 
+// MARK: - Task Timer Manager (Persistent Storage)
+
+class TaskTimerManager {
+    static let shared = TaskTimerManager()
+
+    private let userDefaults = UserDefaults.standard
+    private let startTimesKey = "taskStartTimes"
+    private let pausedTimesKey = "taskPausedTimes"
+    private let pauseStartTimesKey = "taskPauseStartTimes"
+
+    private init() {}
+
+    // Save start time for a task
+    func setStartTime(_ date: Date, for taskId: UUID) {
+        var startTimes = getStartTimes()
+        startTimes[taskId.uuidString] = date.timeIntervalSince1970
+        saveStartTimes(startTimes)
+
+        // Reset paused time for new task
+        var pausedTimes = getPausedTimes()
+        pausedTimes[taskId.uuidString] = 0
+        savePausedTimes(pausedTimes)
+
+        print("⏱️ Saved start time for task \(taskId): \(date)")
+    }
+
+    // Get start time for a task
+    func getStartTime(for taskId: UUID) -> Date? {
+        let startTimes = getStartTimes()
+        guard let timestamp = startTimes[taskId.uuidString] else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+
+    // Remove start time for a task (when completed or cancelled)
+    func removeStartTime(for taskId: UUID) {
+        var startTimes = getStartTimes()
+        startTimes.removeValue(forKey: taskId.uuidString)
+        saveStartTimes(startTimes)
+
+        var pausedTimes = getPausedTimes()
+        pausedTimes.removeValue(forKey: taskId.uuidString)
+        savePausedTimes(pausedTimes)
+
+        var pauseStartTimes = getPauseStartTimes()
+        pauseStartTimes.removeValue(forKey: taskId.uuidString)
+        savePauseStartTimes(pauseStartTimes)
+
+        print("⏱️ Removed start time for task \(taskId)")
+    }
+
+    // Pause timer (e.g., when taking photo)
+    func pauseTimer(for taskId: UUID) {
+        var pauseStartTimes = getPauseStartTimes()
+        pauseStartTimes[taskId.uuidString] = Date().timeIntervalSince1970
+        savePauseStartTimes(pauseStartTimes)
+        print("⏸️ Timer paused for task \(taskId)")
+    }
+
+    // Resume timer (e.g., after taking photo)
+    func resumeTimer(for taskId: UUID) {
+        guard let pauseStartTime = getPauseStartTime(for: taskId) else {
+            print("⚠️ No pause start time found for task \(taskId)")
+            return
+        }
+
+        let pauseDuration = Date().timeIntervalSince1970 - pauseStartTime
+
+        var pausedTimes = getPausedTimes()
+        let currentPausedTime = pausedTimes[taskId.uuidString] ?? 0
+        pausedTimes[taskId.uuidString] = currentPausedTime + pauseDuration
+        savePausedTimes(pausedTimes)
+
+        // Remove pause start time
+        var pauseStartTimes = getPauseStartTimes()
+        pauseStartTimes.removeValue(forKey: taskId.uuidString)
+        savePauseStartTimes(pauseStartTimes)
+
+        print("▶️ Timer resumed for task \(taskId) (paused for \(Int(pauseDuration))s)")
+    }
+
+    // Check if timer is currently paused
+    func isPaused(for taskId: UUID) -> Bool {
+        return getPauseStartTime(for: taskId) != nil
+    }
+
+    // Get elapsed time for a task (excluding paused time)
+    func getElapsedTime(for taskId: UUID) -> TimeInterval {
+        guard let startTime = getStartTime(for: taskId) else {
+            return 0
+        }
+
+        let totalTime = Date().timeIntervalSince(startTime)
+        let pausedTime = getPausedTime(for: taskId)
+
+        // If currently paused, add the current pause duration
+        var currentPauseDuration: TimeInterval = 0
+        if let pauseStartTime = getPauseStartTime(for: taskId) {
+            currentPauseDuration = Date().timeIntervalSince1970 - pauseStartTime
+        }
+
+        return max(0, totalTime - pausedTime - currentPauseDuration)
+    }
+
+    // Private helpers
+    private func getStartTimes() -> [String: TimeInterval] {
+        return userDefaults.dictionary(forKey: startTimesKey) as? [String: TimeInterval] ?? [:]
+    }
+
+    private func saveStartTimes(_ times: [String: TimeInterval]) {
+        userDefaults.set(times, forKey: startTimesKey)
+    }
+
+    private func getPausedTimes() -> [String: TimeInterval] {
+        return userDefaults.dictionary(forKey: pausedTimesKey) as? [String: TimeInterval] ?? [:]
+    }
+
+    private func savePausedTimes(_ times: [String: TimeInterval]) {
+        userDefaults.set(times, forKey: pausedTimesKey)
+    }
+
+    private func getPausedTime(for taskId: UUID) -> TimeInterval {
+        let pausedTimes = getPausedTimes()
+        return pausedTimes[taskId.uuidString] ?? 0
+    }
+
+    private func getPauseStartTimes() -> [String: TimeInterval] {
+        return userDefaults.dictionary(forKey: pauseStartTimesKey) as? [String: TimeInterval] ?? [:]
+    }
+
+    private func savePauseStartTimes(_ times: [String: TimeInterval]) {
+        userDefaults.set(times, forKey: pauseStartTimesKey)
+    }
+
+    private func getPauseStartTime(for taskId: UUID) -> TimeInterval? {
+        let pauseStartTimes = getPauseStartTimes()
+        return pauseStartTimes[taskId.uuidString]
+    }
+}
+
 // MARK: - Child Dashboard View
 
 struct ChildDashboardView: View {
     @StateObject private var viewModel: ChildDashboardViewModel
+    @State private var showTaskCreation = false
+    @State private var showDeclineNotification = false
+    @State private var currentDeclinedTask: TaskAssignment?
+    @State private var declineCredibilityLost: Int = 0
+    @Environment(\.scenePhase) private var scenePhase
 
     init(viewModel: ChildDashboardViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -14,8 +160,11 @@ struct ChildDashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // XP Balance Card
-                    xpBalanceCard
+                    // Stats Overview Card
+                    statsOverviewCard
+
+                    // Browse Tasks Button
+                    browseTasksButton
 
                     // Assigned Tasks Section
                     if !viewModel.assignedTasks.isEmpty {
@@ -32,77 +181,171 @@ struct ChildDashboardView: View {
                         pendingReviewSection
                     }
 
-                    // Browse More Tasks
-                    browseTasksSection
+                    // Empty State
+                    if viewModel.assignedTasks.isEmpty && viewModel.inProgressTasks.isEmpty && viewModel.pendingReviewTasks.isEmpty {
+                        emptyStateView
+                    }
                 }
                 .padding()
             }
             .navigationTitle("My Tasks")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink(destination: TaskHistoryView(
+                        taskService: viewModel.taskService,
+                        childId: viewModel.childId,
+                        childName: nil
+                    )) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundColor(.blue)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     credibilityBadge
                 }
             }
             .onAppear {
                 viewModel.loadData()
+                checkForDeclines()
             }
             .refreshable {
                 viewModel.loadData()
+                checkForDeclines()
+            }
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // Check for declines when app becomes active
+                if newPhase == .active {
+                    print("🔔 App became active - checking for declines")
+                    checkForDeclines()
+                }
+            }
+            .sheet(isPresented: $showTaskCreation) {
+                ChildTaskCreationView(
+                    childId: viewModel.childId,
+                    taskService: viewModel.taskService
+                )
+            }
+            .overlay {
+                if showDeclineNotification, let task = currentDeclinedTask {
+                    DeclineNotificationView(
+                        assignment: task,
+                        credibilityLost: declineCredibilityLost,
+                        onDismiss: {
+                            // Mark as viewed
+                            _ = viewModel.taskService.markDeclineAsViewed(assignmentId: task.id)
+                            showDeclineNotification = false
+                            currentDeclinedTask = nil
+
+                            // Check if there are more declines to show
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                checkForDeclines()
+                            }
+                        }
+                    )
+                }
             }
         }
     }
 
-    // MARK: - XP Balance Card
+    // MARK: - Decline Checking
 
-    private var xpBalanceCard: some View {
-        VStack(spacing: 12) {
+    private func checkForDeclines() {
+        // Get all child's tasks
+        let allTasks = viewModel.taskService.getChildTasks(childId: viewModel.childId, status: nil)
+
+        // Find first unseen decline
+        if let declinedTask = allTasks.first(where: { $0.isUnseenDecline }) {
+            currentDeclinedTask = declinedTask
+
+            // Calculate credibility lost (usually -10 or -15)
+            // We'll use -10 as default, but could enhance this to calculate actual amount
+            declineCredibilityLost = -10
+
+            // Show the notification
+            showDeclineNotification = true
+
+            print("🚨 Showing decline notification for: \(declinedTask.title)")
+        }
+    }
+
+    // MARK: - Browse Tasks Button
+
+    private var browseTasksButton: some View {
+        Button(action: {
+            showTaskCreation = true
+        }) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Screen Time Balance")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text("\(viewModel.xpBalance) minutes")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                }
-
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                Text("Browse Task Library")
+                    .font(.headline)
                 Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .foregroundColor(.white)
+            .background(
+                LinearGradient(
+                    colors: [Color.blue, Color.blue.opacity(0.8)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .cornerRadius(12)
+            .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
+        }
+    }
 
-                Image(systemName: "clock.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.blue.opacity(0.3))
+    // MARK: - Stats Overview Card
+
+    private var statsOverviewCard: some View {
+        VStack(spacing: 16) {
+            // Main stat: Screen Time Balance
+            VStack(spacing: 8) {
+                Text("Screen Time Balance")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(viewModel.xpBalance)")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundColor(.blue)
+                    Text("min")
+                        .font(.title3)
+                        .foregroundColor(.blue.opacity(0.7))
+                }
             }
 
             Divider()
 
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Total XP Earned")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text("\(viewModel.totalXP) XP")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                }
+            // Secondary stats
+            HStack(spacing: 0) {
+                StatColumn(
+                    label: "Credibility",
+                    value: "\(viewModel.credibility)%",
+                    color: credibilityColor(for: viewModel.credibility)
+                )
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("Tasks Completed")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text("\(viewModel.completedTasksCount)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                }
+                Divider()
+                    .frame(height: 40)
+
+                Spacer()
+
+                StatColumn(
+                    label: "Tasks Done",
+                    value: "\(viewModel.completedTasksCount)",
+                    color: .green
+                )
             }
         }
         .padding()
-        .background(Color.blue.opacity(0.1))
+        .background(Color(.systemBackground))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Credibility Badge
@@ -206,28 +449,28 @@ struct ChildDashboardView: View {
         }
     }
 
-    // MARK: - Browse Tasks Section
+    // MARK: - Empty State
 
-    private var browseTasksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Browse More Tasks")
-                .font(.headline)
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "list.bullet.circle.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.blue)
 
-            NavigationLink(destination: Text("Task Browser - Coming Soon")) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .font(.title3)
-                    Text("Find tasks to claim")
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-            }
+            Text("No Tasks Yet")
+                .font(.title2)
+                .fontWeight(.bold)
+
+            Text("Tap \"Browse Task Library\" above to find tasks you can do!")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
+        .padding(40)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Helpers
@@ -243,11 +486,35 @@ struct ChildDashboardView: View {
     }
 }
 
+// MARK: - Stat Column Component
+
+private struct StatColumn: View {
+    let label: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 // MARK: - Child Task Card
 
 struct ChildTaskCard: View {
     let assignment: TaskAssignment
     let showStatus: Bool
+
+    @State private var elapsedTime: TimeInterval = 0
+    @State private var timer: Timer?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -271,7 +538,7 @@ struct ChildTaskCard: View {
                         .foregroundColor(.blue)
                         .cornerRadius(4)
 
-                    Text("\(assignment.assignedLevel.baseXP) XP")
+                    Text("\(assignment.assignedLevel.baseXP) min")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
@@ -280,6 +547,21 @@ struct ChildTaskCard: View {
                             .font(.caption)
                             .foregroundColor(statusColor(assignment.status))
                     }
+                }
+
+                // Show stopwatch for in-progress tasks
+                if assignment.status == .inProgress {
+                    HStack(spacing: 4) {
+                        Image(systemName: "stopwatch.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        Text(formatElapsedTime(elapsedTime))
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.orange)
+                            .monospacedDigit()
+                    }
+                    .padding(.top, 2)
                 }
             }
 
@@ -298,6 +580,14 @@ struct ChildTaskCard: View {
         .background(backgroundColor(for: assignment.status))
         .cornerRadius(10)
         .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+        .onAppear {
+            if assignment.status == .inProgress {
+                startTimer()
+            }
+        }
+        .onDisappear {
+            stopTimer()
+        }
     }
 
     private func statusDisplayName(_ status: TaskAssignmentStatus) -> String {
@@ -332,6 +622,38 @@ struct ChildTaskCard: View {
         case .expired: return Color.gray.opacity(0.05)
         }
     }
+
+    // MARK: - Timer Functions
+
+    private func startTimer() {
+        // Get start time from persistent storage
+        if let startTime = TaskTimerManager.shared.getStartTime(for: assignment.id) {
+            // Calculate elapsed time
+            elapsedTime = Date().timeIntervalSince(startTime)
+
+            // Start timer to update display
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                elapsedTime = Date().timeIntervalSince(startTime)
+            }
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func formatElapsedTime(_ timeInterval: TimeInterval) -> String {
+        let hours = Int(timeInterval) / 3600
+        let minutes = Int(timeInterval) / 60 % 60
+        let seconds = Int(timeInterval) % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%d:%02d", minutes, seconds)
+        }
+    }
 }
 
 // MARK: - Child Dashboard View Model
@@ -342,7 +664,6 @@ class ChildDashboardViewModel: ObservableObject {
     @Published var inProgressTasks: [TaskAssignment] = []
     @Published var pendingReviewTasks: [TaskAssignment] = []
     @Published var xpBalance: Int = 0
-    @Published var totalXP: Int = 0
     @Published var credibility: Int = 100
     @Published var completedTasksCount: Int = 0
 
@@ -376,16 +697,17 @@ class ChildDashboardViewModel: ObservableObject {
 
         print("👶 Assigned: \(assignedTasks.count), In Progress: \(inProgressTasks.count), Pending Review: \(pendingReviewTasks.count)")
 
-        // Load XP and credibility
+        // Load XP balance (screen time minutes)
         if let balance = xpService.getBalance(userId: childId) {
             xpBalance = balance.currentXP
-            totalXP = balance.lifetimeEarned
         } else {
             xpBalance = 0
-            totalXP = 0
         }
 
+        // Load credibility
         credibility = credibilityService.credibilityScore
+
+        // Count completed tasks
         completedTasksCount = allTasks.filter {
             $0.status == .approved
         }.count
@@ -405,6 +727,8 @@ struct ChildTaskDetailView: View {
     @State private var capturedFrontPhoto: UIImage?
     @State private var showMainAsBack = true
     @State private var showingCompleteConfirmation = false
+    @State private var elapsedTime: TimeInterval = 0
+    @State private var timer: Timer?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -434,6 +758,25 @@ struct ChildTaskDetailView: View {
         }
         .navigationTitle("Task Details")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Start timer if task is in progress
+            if assignment.status == .inProgress {
+                startTimer()
+            }
+        }
+        .onDisappear {
+            stopTimer()
+        }
+        .onChange(of: showingCamera) { isShowing in
+            // Pause timer when camera opens, resume when it closes
+            if isShowing {
+                TaskTimerManager.shared.pauseTimer(for: assignment.id)
+                print("⏸️ Timer paused - opening camera")
+            } else if assignment.status == .inProgress {
+                TaskTimerManager.shared.resumeTimer(for: assignment.id)
+                print("▶️ Timer resumed - camera closed")
+            }
+        }
         .fullScreenCover(isPresented: $showingCamera) {
             CameraView(
                 cameraManager: model.cameraManager,
@@ -448,9 +791,9 @@ struct ChildTaskDetailView: View {
                     capturedFrontPhoto = frontImage
                     photoTaken = true
 
-                    // Save both photos
-                    _ = model.cameraManager.savePhoto(backImage, taskTitle: assignment.title, taskId: assignment.id)
-                    print("📸 Photos saved for task \(assignment.id)")
+                    // Save both photos (back and front separately)
+                    _ = model.cameraManager.savePhoto(backImage, taskTitle: assignment.title, taskId: assignment.id, frontImage: frontImage)
+                    print("📸 Photos saved for task \(assignment.id) (back and front)")
 
                     // Camera dismisses automatically via CameraViewController
                 }
@@ -462,7 +805,8 @@ struct ChildTaskDetailView: View {
                 dismiss()
             }
         } message: {
-            Text("Your task has been submitted for review. You'll receive \(assignment.assignedLevel.baseXP) XP once approved!")
+            let timeSpent = formatElapsedTime(elapsedTime)
+            Text("Your task has been submitted for review.\n\nTime spent: \(timeSpent)\nYou'll receive \(assignment.assignedLevel.baseXP) minutes once approved!")
         }
     }
 
@@ -507,15 +851,16 @@ struct ChildTaskDetailView: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Description Section
 
     private var descriptionSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Description")
+            Label("Description", systemImage: "doc.text")
                 .font(.headline)
 
             Text(assignment.description)
@@ -526,7 +871,7 @@ struct ChildTaskDetailView: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - XP Reward Card
@@ -534,37 +879,27 @@ struct ChildTaskDetailView: View {
     private var xpRewardCard: some View {
         VStack(spacing: 16) {
             HStack {
-                Image(systemName: "star.fill")
+                Image(systemName: "clock.fill")
                     .font(.title)
-                    .foregroundColor(.yellow)
+                    .foregroundColor(.blue)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("You'll Earn")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Text("\(assignment.assignedLevel.baseXP) XP")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(assignment.assignedLevel.baseXP)")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                        Text("minutes")
+                            .font(.subheadline)
+                            .foregroundColor(.blue.opacity(0.7))
+                    }
                 }
 
                 Spacer()
-
-                Image(systemName: "clock.fill")
-                    .font(.title)
-                    .foregroundColor(.blue)
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("Screen Time")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text("\(assignment.assignedLevel.baseXP) min")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                }
             }
 
             Divider()
@@ -577,14 +912,14 @@ struct ChildTaskDetailView: View {
         .padding()
         .background(
             LinearGradient(
-                colors: [Color.blue.opacity(0.1), Color.yellow.opacity(0.1)],
+                colors: [Color.blue.opacity(0.1), Color.blue.opacity(0.05)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
-        .cornerRadius(16)
+        .cornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.blue.opacity(0.3), lineWidth: 2)
         )
     }
@@ -593,7 +928,7 @@ struct ChildTaskDetailView: View {
 
     private var statusSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Status")
+            Label("Status", systemImage: "info.circle")
                 .font(.headline)
 
             HStack {
@@ -606,6 +941,42 @@ struct ChildTaskDetailView: View {
                     .foregroundColor(.primary)
 
                 Spacer()
+            }
+
+            // Stopwatch display (only show for in-progress tasks)
+            if assignment.status == .inProgress {
+                Divider()
+
+                let isPaused = TaskTimerManager.shared.isPaused(for: assignment.id)
+
+                HStack {
+                    Image(systemName: isPaused ? "pause.circle.fill" : "stopwatch.fill")
+                        .foregroundColor(isPaused ? .gray : .orange)
+                    Text(isPaused ? "Time Paused:" : "Time Spent:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(formatElapsedTime(elapsedTime))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(isPaused ? .gray : .orange)
+                        .monospacedDigit()
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background((isPaused ? Color.gray : Color.orange).opacity(0.1))
+                .cornerRadius(8)
+
+                if isPaused {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera.fill")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                        Text("Timer paused while taking photo")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
 
             if photoTaken {
@@ -621,17 +992,17 @@ struct ChildTaskDetailView: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Photo Section
 
     private func photoSection(backPhoto: UIImage, frontPhoto: UIImage) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Photo Proof")
+            Label("Photo Proof", systemImage: "camera.fill")
                 .font(.headline)
 
-            // BeReal-style photo display with 4:5 ratio (like Social tab)
+            // BeReal-style photo display with 4:5 ratio
             GeometryReader { geometry in
                 let width = geometry.size.width
                 let height = width * 1.25 // 4:5 ratio
@@ -670,7 +1041,7 @@ struct ChildTaskDetailView: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Action Buttons
@@ -750,6 +1121,10 @@ struct ChildTaskDetailView: View {
         let success = taskService.startTask(assignmentId: assignment.id)
         if success {
             print("✅ Task started successfully")
+            // Save start time to persistent storage
+            TaskTimerManager.shared.setStartTime(Date(), for: assignment.id)
+            // Start the stopwatch
+            startTimer()
             // Refresh view by dismissing and reloading
             dismiss()
         }
@@ -761,11 +1136,12 @@ struct ChildTaskDetailView: View {
             return
         }
 
-        // Create combined BeReal-style image for submission
-        let combinedImage = createBeRealStyleImage(mainImage: backPhoto, overlayImage: frontPhoto)
+        // Stop the timer and calculate final time
+        stopTimer()
+        let timeSpentMinutes = Int(ceil(elapsedTime / 60.0)) // Round up to nearest minute
 
-        // Save the combined image for parent review
-        _ = model.cameraManager.savePhoto(combinedImage, taskTitle: assignment.title + " (Combined)", taskId: assignment.id)
+        // Photos already saved when captured (back and front separately)
+        // Parent will load and display them the same way we do
 
         // Save photo URL (in production, upload to server)
         let photoURL = "photo_\(assignment.id)_\(Date().timeIntervalSince1970)"
@@ -774,11 +1150,13 @@ struct ChildTaskDetailView: View {
             assignmentId: assignment.id,
             photoURL: photoURL,
             notes: nil,
-            timeMinutes: nil
+            timeMinutes: timeSpentMinutes
         )
 
         if success {
-            print("✅ Task completed and submitted for review")
+            print("✅ Task completed and submitted for review (Time spent: \(timeSpentMinutes) minutes)")
+            // Remove start time from persistent storage
+            TaskTimerManager.shared.removeStartTime(for: assignment.id)
             showingCompleteConfirmation = true
         } else {
             print("❌ Failed to complete task")
@@ -815,43 +1193,41 @@ struct ChildTaskDetailView: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
-    // MARK: - BeReal-Style Image Combination
+    // MARK: - Timer Management
 
-    private func createBeRealStyleImage(mainImage: UIImage, overlayImage: UIImage) -> UIImage {
-        let renderer = UIGraphicsImageRenderer(size: mainImage.size)
+    private func startTimer() {
+        // Get start time from persistent storage (or current time if not set)
+        let startTime = TaskTimerManager.shared.getStartTime(for: assignment.id) ?? Date()
 
-        return renderer.image { context in
-            // Draw the main image (back camera with watermark)
-            mainImage.draw(at: .zero)
+        // Calculate current elapsed time
+        elapsedTime = Date().timeIntervalSince(startTime)
 
-            // Calculate overlay size (20% of main image width, maintaining aspect ratio)
-            let overlayWidth = mainImage.size.width * 0.2
-            let overlayHeight = overlayWidth * (overlayImage.size.height / overlayImage.size.width)
-            let overlaySize = CGSize(width: overlayWidth, height: overlayHeight)
+        // Stop existing timer if any
+        stopTimer()
 
-            // Position overlay in top-RIGHT corner with padding (matching Social tab)
-            let padding: CGFloat = 16
-            let overlayRect = CGRect(
-                x: mainImage.size.width - overlaySize.width - padding,
-                y: padding,
-                width: overlaySize.width,
-                height: overlaySize.height
-            )
+        // Start new timer that updates every second
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            elapsedTime = TaskTimerManager.shared.getElapsedTime(for: assignment.id)
+        }
 
-            // Draw white border/shadow for overlay
-            let borderRect = overlayRect.insetBy(dx: -3, dy: -3)
-            context.cgContext.setFillColor(UIColor.white.cgColor)
-            let borderPath = UIBezierPath(roundedRect: borderRect, cornerRadius: 12)
-            context.cgContext.addPath(borderPath.cgPath)
-            context.cgContext.fillPath()
+        print("⏱️ Stopwatch started for task \(assignment.id)")
+    }
 
-            // Clip to rounded rectangle for overlay
-            let clipPath = UIBezierPath(roundedRect: overlayRect, cornerRadius: 10)
-            context.cgContext.addPath(clipPath.cgPath)
-            context.cgContext.clip()
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+        print("⏱️ Stopwatch stopped at \(formatElapsedTime(elapsedTime))")
+    }
 
-            // Draw the overlay image (front camera)
-            overlayImage.draw(in: overlayRect)
+    private func formatElapsedTime(_ timeInterval: TimeInterval) -> String {
+        let hours = Int(timeInterval) / 3600
+        let minutes = Int(timeInterval) / 60 % 60
+        let seconds = Int(timeInterval) % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%d:%02d", minutes, seconds)
         }
     }
 }

@@ -709,7 +709,6 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = EnviveNew/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = envive;
 				INFOPLIST_KEY_NSCameraUsageDescription = "EnviveNew needs camera access to verify task completion with photos.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "EnviveNew needs location access to track outdoor activities and verify task locations.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EnviveNew needs location access to track outdoor activities and verify task locations.";
@@ -748,7 +747,6 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = EnviveNew/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = envive;
 				INFOPLIST_KEY_NSCameraUsageDescription = "EnviveNew needs camera access to verify task completion with photos.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "EnviveNew needs location access to track outdoor activities and verify task locations.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EnviveNew needs location access to track outdoor activities and verify task locations.";

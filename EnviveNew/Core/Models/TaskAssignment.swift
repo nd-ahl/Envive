@@ -37,6 +37,9 @@ struct TaskAssignment: Identifiable, Codable {
     // Due date (optional)
     var dueDate: Date?
 
+    // Decline notification tracking
+    var declineViewedByChild: Bool?
+
     init(
         id: UUID = UUID(),
         templateId: UUID,
@@ -146,6 +149,11 @@ extension TaskAssignment {
 
         let days = hours / 24
         return "\(days) day\(days == 1 ? "" : "s") ago"
+    }
+
+    /// Check if this is a new decline that hasn't been seen by the child
+    var isUnseenDecline: Bool {
+        return status == .declined && declineViewedByChild != true
     }
 }
 

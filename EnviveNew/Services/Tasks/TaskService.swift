@@ -3,6 +3,10 @@ import Foundation
 // MARK: - Task Service Protocol
 
 protocol TaskService {
+    // Template operations
+    func getAllTemplates() -> [TaskTemplate]
+    func saveTemplate(_ template: TaskTemplate)
+
     // Child operations
     func searchTasks(query: String) -> [TaskTemplate]
     func getTasksByCategory(_ category: TaskTemplateCategory) -> [TaskTemplate]
@@ -21,6 +25,9 @@ protocol TaskService {
     // Queries
     func getChildTasks(childId: UUID, status: TaskAssignmentStatus?) -> [TaskAssignment]
     func getTask(id: UUID) -> TaskAssignment?
+
+    // Notification tracking
+    func markDeclineAsViewed(assignmentId: UUID) -> Bool
 }
 
 // MARK: - Task Service Approval Result
@@ -53,6 +60,17 @@ class TaskServiceImpl: TaskService {
         self.repository = repository
         self.xpService = xpService
         self.credibilityService = credibilityService
+    }
+
+    // MARK: - Template Operations
+
+    func getAllTemplates() -> [TaskTemplate] {
+        return repository.getAllTemplates()
+    }
+
+    func saveTemplate(_ template: TaskTemplate) {
+        repository.saveTemplate(template)
+        print("✅ Saved custom template: \(template.title)")
     }
 
     // MARK: - Child Operations
@@ -311,5 +329,18 @@ class TaskServiceImpl: TaskService {
 
     func getTask(id: UUID) -> TaskAssignment? {
         return repository.getAssignment(id: id)
+    }
+
+    // MARK: - Notification Tracking
+
+    func markDeclineAsViewed(assignmentId: UUID) -> Bool {
+        guard var assignment = repository.getAssignment(id: assignmentId) else {
+            return false
+        }
+
+        assignment.declineViewedByChild = true
+        repository.saveAssignment(assignment)
+        print("✅ Marked decline as viewed for task: \(assignment.title)")
+        return true
     }
 }
