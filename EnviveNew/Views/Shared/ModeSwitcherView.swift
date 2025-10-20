@@ -271,7 +271,9 @@ struct ModeSelectionCard: View {
 /// A floating button that can be added to any view to access the mode switcher
 struct ModeSwitcherButton: View {
     @ObservedObject var deviceModeManager: LocalDeviceModeManager
+    @ObservedObject private var deviceModeService = DeviceModeService.shared
     @State private var showingModeSwitcher = false
+    @State private var showingLockedAlert = false
 
     // Position state - persisted between launches
     @AppStorage("modeSwitcherButtonX") private var buttonX: Double = 20
@@ -284,7 +286,11 @@ struct ModeSwitcherButton: View {
     var body: some View {
         Button(action: {
             if !isDragging {
-                showingModeSwitcher = true
+                if deviceModeService.isRoleLocked {
+                    showingLockedAlert = true
+                } else {
+                    showingModeSwitcher = true
+                }
             }
         }) {
             HStack(spacing: 6) {
@@ -293,12 +299,12 @@ struct ModeSwitcherButton: View {
                 Text(deviceModeManager.currentMode.displayName)
                     .font(.caption)
                     .fontWeight(.semibold)
-                Image(systemName: "arrow.triangle.2.circlepath")
+                Image(systemName: deviceModeService.isRoleLocked ? "lock.fill" : "arrow.triangle.2.circlepath")
                     .font(.caption2)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isDragging ? Color.blue.opacity(0.8) : Color.blue)
+            .background(isDragging ? Color.blue.opacity(0.8) : (deviceModeService.isRoleLocked ? Color.gray : Color.blue))
             .foregroundColor(.white)
             .cornerRadius(20)
             .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 2)
@@ -331,6 +337,11 @@ struct ModeSwitcherButton: View {
         )
         .sheet(isPresented: $showingModeSwitcher) {
             ModeSwitcherView(deviceModeManager: deviceModeManager)
+        }
+        .alert("Device Role Locked", isPresented: $showingLockedAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("This device's role has been locked to \(deviceModeService.deviceMode.displayName) mode. To change roles, reset onboarding from Settings.")
         }
     }
 }

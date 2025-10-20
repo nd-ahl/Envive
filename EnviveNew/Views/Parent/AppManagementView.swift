@@ -13,8 +13,12 @@ struct AppManagementView: View {
     @State private var tempSelection: FamilyActivitySelection
     @State private var showingSaveConfirmation = false
     @State private var showingClearConfirmation = false
+    @State private var showingPermissionAlert = false
+    @State private var isRequestingPermission = false
 
     @Environment(\.dismiss) private var dismiss
+
+    private let authorizationCenter = AuthorizationCenter.shared
 
     init(appSelectionStore: AppSelectionStore) {
         self.appSelectionStore = appSelectionStore
@@ -85,6 +89,14 @@ struct AppManagementView: View {
                 }
             } message: {
                 Text("This will remove all app and website restrictions. Children will have unrestricted access until you configure new restrictions.")
+            }
+            .alert("Screen Time Permission Required", isPresented: $showingPermissionAlert) {
+                Button("Grant Permission", role: .none) {
+                    requestScreenTimePermission()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Envive needs Screen Time access to manage blocked apps. Tap 'Grant Permission' to enable this feature.")
             }
         }
     }
@@ -189,13 +201,20 @@ struct AppManagementView: View {
     private var actionButtonsSection: some View {
         VStack(spacing: 12) {
             Button(action: {
-                isPresentingPicker = true
+                checkPermissionAndShowPicker()
             }) {
                 HStack {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                    Text("Choose Apps to Block")
-                        .fontWeight(.semibold)
+                    if isRequestingPermission {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        Text("Requesting Permission...")
+                            .fontWeight(.semibold)
+                    } else {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                        Text("Choose Apps to Block")
+                            .fontWeight(.semibold)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -203,6 +222,7 @@ struct AppManagementView: View {
                 .foregroundColor(.white)
                 .cornerRadius(12)
             }
+            .disabled(isRequestingPermission)
 
             if appSelectionStore.hasSelectedApps {
                 Button(action: {
@@ -263,6 +283,51 @@ struct AppManagementView: View {
     }
 
     // MARK: - Actions
+
+    private func checkPermissionAndShowPicker() {
+        let status = authorizationCenter.authorizationStatus
+
+        switch status {
+        case .approved:
+            // Permission granted, show picker
+            isPresentingPicker = true
+            print("✅ Screen Time permission approved - showing app picker")
+        case .notDetermined, .denied:
+            // Permission not granted, show alert
+            showingPermissionAlert = true
+            print("❌ Screen Time permission not granted - status: \(status)")
+        @unknown default:
+            showingPermissionAlert = true
+            print("⚠️ Unknown Screen Time permission status")
+        }
+    }
+
+    private func requestScreenTimePermission() {
+        isRequestingPermission = true
+
+        Task {
+            do {
+                try await authorizationCenter.requestAuthorization(for: .individual)
+
+                await MainActor.run {
+                    isRequestingPermission = false
+
+                    // Check status again and show picker if approved
+                    if authorizationCenter.authorizationStatus == .approved {
+                        isPresentingPicker = true
+                        print("✅ Screen Time permission granted - showing app picker")
+                    } else {
+                        print("❌ Screen Time permission denied after request")
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isRequestingPermission = false
+                    print("❌ Screen Time permission request failed: \(error)")
+                }
+            }
+        }
+    }
 
     private func saveChanges() {
         appSelectionStore.familyActivitySelection = tempSelection

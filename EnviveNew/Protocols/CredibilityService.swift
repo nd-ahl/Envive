@@ -7,10 +7,13 @@ protocol CredibilityService {
     var consecutiveApprovedTasks: Int { get }
     var hasRedemptionBonus: Bool { get }
     var redemptionBonusExpiry: Date? { get }
+    var lastTaskUploadDate: Date? { get }
+    var dailyStreak: Int { get }
 
     func processDownvote(taskId: UUID, reviewerId: UUID, notes: String?)
     func undoDownvote(taskId: UUID, reviewerId: UUID)
     func processApprovedTask(taskId: UUID, reviewerId: UUID, notes: String?)
+    func processTaskUpload(taskId: UUID, userId: UUID)
     func calculateXPToMinutes(xpAmount: Int) -> Int
     func getConversionRate() -> Double
     func getCurrentTier() -> CredibilityTier

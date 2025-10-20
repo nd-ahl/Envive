@@ -286,21 +286,34 @@ struct TaskReviewView: View {
     // MARK: - Child Stats
 
     private var childStatsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Child's Stats", systemImage: "person.fill")
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Trust Level", systemImage: "star.fill")
                 .font(.headline)
 
             HStack {
-                StatRow(label: "Current Credibility", value: "\(viewModel.currentCredibility)%")
-                Spacer()
-                StatRow(label: "Recent Approvals", value: "\(viewModel.consecutiveApprovals)")
-            }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(viewModel.trustLevel.starRating)
+                        .font(.title)
+                    Text(viewModel.trustLevel.name)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(viewModel.trustLevel.swiftUIColor)
+                }
 
-            HStack {
-                StatRow(label: "Recent Declines", value: "\(viewModel.recentDeclines)")
                 Spacer()
-                StatRow(label: "Earning Rate", value: "\(viewModel.currentCredibility)%")
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Recent History")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(viewModel.consecutiveApprovals) approved")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                }
             }
+            .padding()
+            .background(viewModel.trustLevel.swiftUIColor.opacity(0.1))
+            .cornerRadius(8)
         }
         .padding()
         .background(Color(.systemBackground))
@@ -308,52 +321,38 @@ struct TaskReviewView: View {
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
-    // MARK: - XP Calculation
+    // MARK: - Reward Preview
 
     private var xpCalculationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("XP Calculation", systemImage: "number.circle.fill")
+            Label("Reward", systemImage: "gift.fill")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Base XP:")
-                    Spacer()
-                    Text("\(viewModel.assignment.assignedLevel.baseXP) XP")
-                        .fontWeight(.medium)
-                }
-
-                HStack {
-                    Text("× Credibility:")
-                    Spacer()
-                    Text("\(viewModel.currentCredibility)%")
-                        .fontWeight(.medium)
-                }
-
-                Divider()
-
-                HStack {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Child will earn:")
-                        .fontWeight(.semibold)
-                    Spacer()
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                     Text("\(viewModel.calculatedXP) XP")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundColor(.green)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Trust impact:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(viewModel.trustImpactDisplay)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.green)
                 }
             }
             .padding()
             .background(Color.green.opacity(0.1))
             .cornerRadius(8)
-
-            HStack {
-                Text("Credibility change:")
-                Spacer()
-                Text("\(viewModel.currentCredibility)% → \(viewModel.newCredibilityAfterApproval)%")
-                    .foregroundColor(.green)
-                    .fontWeight(.medium)
-            }
-            .font(.subheadline)
         }
         .padding()
         .background(Color(.systemBackground))
@@ -412,7 +411,7 @@ struct TaskReviewView: View {
                     Text("DECLINE")
                         .fontWeight(.semibold)
                     Spacer()
-                    Text("⚠️ Credibility -20")
+                    Text("⚠️ Lowers Trust")
                         .font(.caption)
                         .fontWeight(.bold)
                 }
@@ -528,32 +527,26 @@ struct DeclineTaskSheet: View {
     var body: some View {
         NavigationView {
             Form {
-                Section {
-                    Text("This will:")
-                        .font(.subheadline)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Give 0 XP to child", systemImage: "xmark.circle")
-                        Label("Reduce credibility by 20 points", systemImage: "arrow.down.circle")
+                Section("Declining Will") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Give child 0 XP", systemImage: "xmark.circle")
                             .foregroundColor(.red)
-                        Label("Reset consecutive approval streak", systemImage: "flame.slash")
+
+                        Label {
+                            Text("Lower trust rating (\(viewModel.declineTrustImpactDisplay))")
+                        } icon: {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        .foregroundColor(.orange)
+
+                        Label {
+                            Text("Child needs \(viewModel.tasksToRecover) approved tasks to rebuild trust")
+                        } icon: {
+                            Image(systemName: "arrow.uturn.up")
+                        }
+                        .foregroundColor(.blue)
                     }
                     .padding(.vertical, 4)
-                }
-
-                Section("Credibility Impact") {
-                    HStack {
-                        Text("Current:")
-                        Spacer()
-                        Text("\(viewModel.currentCredibility)%")
-                            .fontWeight(.medium)
-                    }
-                    HStack {
-                        Text("After decline:")
-                        Spacer()
-                        Text("\(viewModel.newCredibilityAfterDecline)%")
-                            .fontWeight(.bold)
-                            .foregroundColor(.red)
-                    }
                 }
 
                 Section("Reason (Required)") {
@@ -575,12 +568,6 @@ struct DeclineTaskSheet: View {
 
                     TextField("Or write custom reason", text: $viewModel.declineReason, axis: .vertical)
                         .lineLimit(2...4)
-                }
-
-                Section("Recovery Path") {
-                    Text("Child will need \(viewModel.tasksToRecover) approved tasks to regain 20 credibility points")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
                 }
             }
             .navigationTitle("Decline Task")
@@ -654,6 +641,41 @@ class TaskReviewViewModel: ObservableObject {
         self.editedTitle = assignment.title
         self.editedDescription = assignment.description
         self.editedLevel = assignment.assignedLevel
+    }
+
+    // MARK: - Trust Level Helpers
+
+    var trustLevel: CredibilityTier {
+        return credibilityService.getCurrentTier()
+    }
+
+    var trustImpactDisplay: String {
+        let newTier = getTierForScore(newCredibilityAfterApproval)
+        if newTier.name != trustLevel.name {
+            return "\(trustLevel.starRating) → \(newTier.starRating)"
+        } else {
+            return "Stays \(trustLevel.name)"
+        }
+    }
+
+    var declineTrustImpactDisplay: String {
+        let newTier = getTierForScore(newCredibilityAfterDecline)
+        if newTier.name != trustLevel.name {
+            return "\(trustLevel.starRating) \(trustLevel.name) → \(newTier.starRating) \(newTier.name)"
+        } else {
+            return "Stays \(trustLevel.name)"
+        }
+    }
+
+    private func getTierForScore(_ score: Int) -> CredibilityTier {
+        let tiers = [
+            CredibilityTier(name: "Excellent", range: 90...100, multiplier: 1.2, color: "green", description: ""),
+            CredibilityTier(name: "Good", range: 75...89, multiplier: 1.0, color: "green", description: ""),
+            CredibilityTier(name: "Fair", range: 60...74, multiplier: 0.8, color: "yellow", description: ""),
+            CredibilityTier(name: "Poor", range: 40...59, multiplier: 0.5, color: "red", description: ""),
+            CredibilityTier(name: "Very Poor", range: 0...39, multiplier: 0.3, color: "red", description: "")
+        ]
+        return tiers.first { $0.range.contains(score) } ?? tiers.last!
     }
 
     var calculatedXP: Int {

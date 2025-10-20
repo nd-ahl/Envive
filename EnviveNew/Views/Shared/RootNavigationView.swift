@@ -1,4 +1,5 @@
 import SwiftUI
+import LocalAuthentication
 
 // MARK: - Root Navigation View
 
@@ -6,6 +7,7 @@ import SwiftUI
 /// This is the central routing point that respects the DeviceModeManager state
 struct RootNavigationView: View {
     @ObservedObject private var deviceModeManager: LocalDeviceModeManager
+    @ObservedObject private var deviceModeService = DeviceModeService.shared
     @StateObject private var model = EnhancedScreenTimeModel()
     @State private var selectedTab = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -19,21 +21,34 @@ struct RootNavigationView: View {
     var body: some View {
         ZStack {
             // Main content based on mode
+            // When role is locked, use DeviceModeService as source of truth
+            // Otherwise use LocalDeviceModeManager for testing flexibility
             Group {
-                if deviceModeManager.currentMode == .parent {
+                if currentEffectiveMode == .parent {
                     parentView
                 } else {
                     childView
                 }
             }
             .transition(.opacity)
-            .animation(.easeInOut(duration: 0.3), value: deviceModeManager.currentMode)
+            .animation(.easeInOut(duration: 0.3), value: currentEffectiveMode)
             .onAppear(perform: handleAppAppear)
             .onChange(of: scenePhase, handleScenePhaseChange)
 
             // Floating mode switcher button (for testing) - draggable
             ModeSwitcherButton(deviceModeManager: deviceModeManager)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+    }
+
+    // MARK: - Computed Properties
+
+    /// The effective device mode - uses DeviceModeService when locked, LocalDeviceModeManager otherwise
+    private var currentEffectiveMode: DeviceMode {
+        if deviceModeService.isRoleLocked {
+            return deviceModeService.deviceMode
+        } else {
+            return deviceModeManager.currentMode
         }
     }
 
@@ -140,8 +155,7 @@ struct RootNavigationView: View {
         }
     }
 
-    // MARK: - Computed Properties
-
+    /// Recent activity count for badge
     private var recentActivityCount: Int {
         model.friendActivities.filter { activity in
             Date().timeIntervalSince(activity.timestamp) < 3600
@@ -230,7 +244,8 @@ struct ParentActivityView: View {
 
 struct ParentProfileView: View {
     @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
-    @State private var showingResetAlert = false
+    @ObservedObject private var deviceModeService = DeviceModeService.shared
+    @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
 
     var body: some View {
         NavigationView {
@@ -285,7 +300,7 @@ struct ParentProfileView: View {
 
                 Section {
                     Button(action: {
-                        showingResetAlert = true
+                        resetHelper.initiateReset()
                     }) {
                         Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
                             .foregroundColor(.orange)
@@ -298,12 +313,10 @@ struct ParentProfileView: View {
                 }
             }
             .navigationTitle("Settings")
-            .alert("Reset Onboarding?", isPresented: $showingResetAlert) {
+            .alert("Reset Onboarding?", isPresented: $resetHelper.showingResetAlert) {
                 Button("Cancel", role: .cancel) {}
                 Button("Reset", role: .destructive) {
-                    OnboardingManager.shared.resetOnboarding()
-                    // Exit the app so user can reopen and see welcome screen
-                    exit(0)
+                    resetHelper.performReset()
                 }
             } message: {
                 Text("This will reset the app and show the welcome screen again. The app will close.")

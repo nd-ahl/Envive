@@ -317,7 +317,7 @@ struct CredibilityStatusSummary: View {
                 StatItem(label: "Score", value: "\(status.score)", color: CredibilityColors.color(for: status.tier.color))
                 StatItem(label: "Tier", value: status.tier.name, color: .primary)
                 StatItem(label: "Rate", value: String(format: "%.1fx", status.conversionRate), color: .blue)
-                StatItem(label: "Streak", value: "\(status.consecutiveApprovedTasks)", color: .orange)
+                StatItem(label: "Streak", value: "\(status.dailyStreak) days", color: .orange)
             }
             .frame(maxWidth: .infinity)
             .padding()
@@ -325,8 +325,8 @@ struct CredibilityStatusSummary: View {
             .cornerRadius(12)
             .padding(.horizontal)
 
-            if status.consecutiveApprovedTasks > 0 {
-                StreakIndicator(consecutiveTasks: status.consecutiveApprovedTasks)
+            if status.dailyStreak > 0 {
+                StreakIndicator(consecutiveTasks: status.dailyStreak)
                     .padding(.horizontal)
             }
 
@@ -424,6 +424,7 @@ struct CredibilityComponents_Previews: PreviewProvider {
             score: 95,
             tier: sampleTier,
             consecutiveApprovedTasks: 15,
+            dailyStreak: 12,
             hasRedemptionBonus: true,
             redemptionBonusExpiry: Date().addingTimeInterval(86400 * 3),
             history: [],

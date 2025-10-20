@@ -37,18 +37,34 @@ class OnboardingManager: ObservableObject {
         }
     }
 
+    @Published var hasCompletedRoleConfirmation: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedRoleConfirmation, forKey: roleConfirmationKey)
+        }
+    }
+
+    @Published var hasCompletedBenefits: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedBenefits, forKey: benefitsKey)
+        }
+    }
+
     private let onboardingKey = "hasCompletedOnboarding"
     private let welcomeKey = "hasCompletedWelcome"
     private let questionsKey = "hasCompletedQuestions"
+    private let roleConfirmationKey = "hasCompletedRoleConfirmation"
     private let ageSelectionKey = "hasCompletedAgeSelection"
     private let permissionsKey = "hasCompletedPermissions"
+    private let benefitsKey = "hasCompletedBenefits"
 
     private init() {
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingKey)
         self.hasCompletedWelcome = UserDefaults.standard.bool(forKey: welcomeKey)
         self.hasCompletedQuestions = UserDefaults.standard.bool(forKey: questionsKey)
+        self.hasCompletedRoleConfirmation = UserDefaults.standard.bool(forKey: roleConfirmationKey)
         self.hasCompletedAgeSelection = UserDefaults.standard.bool(forKey: ageSelectionKey)
         self.hasCompletedPermissions = UserDefaults.standard.bool(forKey: permissionsKey)
+        self.hasCompletedBenefits = UserDefaults.standard.bool(forKey: benefitsKey)
     }
 
     // MARK: - Public Methods
@@ -65,6 +81,15 @@ class OnboardingManager: ObservableObject {
         print("✅ Onboarding questions completed")
     }
 
+    /// Mark role confirmation as completed (role locking disabled for development)
+    func completeRoleConfirmation(role: UserRole) {
+        let mode = DeviceModeService.deviceModeFromUserRole(role)
+        _ = DeviceModeService.shared.setDeviceMode(mode)
+        // DeviceModeService.shared.lockDeviceRole() // Disabled for development - can switch freely
+        hasCompletedRoleConfirmation = true
+        print("✅ Role confirmation completed: \(mode.displayName) (unlocked for testing)")
+    }
+
     /// Mark age selection as completed and save age
     func completeAgeSelection(age: Int) {
         UserDefaults.standard.set(age, forKey: "userAge")
@@ -78,24 +103,39 @@ class OnboardingManager: ObservableObject {
         print("✅ Permissions screen completed")
     }
 
+    /// Mark benefits screen as completed
+    func completeBenefits() {
+        hasCompletedBenefits = true
+        print("✅ Benefits screen completed")
+    }
+
     /// Mark entire onboarding flow as completed
     func completeOnboarding() {
         hasCompletedOnboarding = true
         hasCompletedWelcome = true
         hasCompletedQuestions = true
+        hasCompletedRoleConfirmation = true
         hasCompletedAgeSelection = true
         hasCompletedPermissions = true
+        hasCompletedBenefits = true
         print("✅ Onboarding flow completed")
     }
 
-    /// Reset onboarding (for testing)
+    /// Reset onboarding (for testing - requires authentication)
     func resetOnboarding() {
         hasCompletedOnboarding = false
         hasCompletedWelcome = false
         hasCompletedQuestions = false
+        hasCompletedRoleConfirmation = false
         hasCompletedAgeSelection = false
         hasCompletedPermissions = false
+        hasCompletedBenefits = false
         UserDefaults.standard.removeObject(forKey: "userAge")
+        UserDefaults.standard.removeObject(forKey: "userRole")
+
+        // Unlock and reset device role
+        DeviceModeService.shared.resetDeviceRole()
+
         print("🔄 Onboarding reset")
     }
 
@@ -114,14 +154,24 @@ class OnboardingManager: ObservableObject {
         return hasCompletedWelcome && !hasCompletedQuestions
     }
 
+    /// Check if user should see role confirmation
+    var shouldShowRoleConfirmation: Bool {
+        return hasCompletedQuestions && !hasCompletedRoleConfirmation
+    }
+
     /// Check if user should see age selection
     var shouldShowAgeSelection: Bool {
-        return hasCompletedQuestions && !hasCompletedAgeSelection
+        return hasCompletedRoleConfirmation && !hasCompletedAgeSelection
     }
 
     /// Check if user should see permissions screen
     var shouldShowPermissions: Bool {
         return hasCompletedAgeSelection && !hasCompletedPermissions
+    }
+
+    /// Check if user should see benefits screen
+    var shouldShowBenefits: Bool {
+        return hasCompletedPermissions && !hasCompletedBenefits
     }
 
     /// Get saved user age

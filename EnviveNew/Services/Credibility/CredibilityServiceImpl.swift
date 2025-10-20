@@ -7,6 +7,8 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
     @Published private(set) var consecutiveApprovedTasks: Int
     @Published private(set) var hasRedemptionBonus: Bool
     @Published private(set) var redemptionBonusExpiry: Date?
+    @Published private(set) var lastTaskUploadDate: Date?
+    @Published private(set) var dailyStreak: Int
 
     private let repository: CredibilityRepository
     private let calculator: CredibilityCalculator
@@ -30,12 +32,15 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         self.credibilityScore = repository.loadScore()
         self.credibilityHistory = repository.loadHistory()
         self.consecutiveApprovedTasks = repository.loadConsecutiveTasks()
+        self.lastTaskUploadDate = repository.loadLastUploadDate()
+        self.dailyStreak = repository.loadDailyStreak()
 
         let bonus = repository.loadRedemptionBonus()
         self.hasRedemptionBonus = bonus.active
         self.redemptionBonusExpiry = bonus.expiry
 
         checkRedemptionBonusExpiry()
+        validateDailyStreak()
     }
 
     func processDownvote(taskId: UUID, reviewerId: UUID, notes: String? = nil) {
@@ -49,6 +54,7 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
 
         credibilityScore = calculator.clampScore(credibilityScore + penalty)
         consecutiveApprovedTasks = 0
+        // NOTE: Daily streak is NOT reset on downvote - only resets after 24 hours without upload
 
         let event = CredibilityHistoryEvent(
             event: .downvote,
@@ -150,6 +156,7 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
             score: credibilityScore,
             tier: tier,
             consecutiveApprovedTasks: consecutiveApprovedTasks,
+            dailyStreak: dailyStreak,
             hasRedemptionBonus: hasRedemptionBonus,
             redemptionBonusExpiry: redemptionBonusExpiry,
             history: credibilityHistory,
@@ -252,5 +259,73 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         repository.saveHistory(credibilityHistory)
         repository.saveConsecutiveTasks(consecutiveApprovedTasks)
         repository.saveRedemptionBonus(active: hasRedemptionBonus, expiry: redemptionBonusExpiry)
+        repository.saveLastUploadDate(lastTaskUploadDate)
+        repository.saveDailyStreak(dailyStreak)
+    }
+
+    // MARK: - Daily Streak Management
+
+    func processTaskUpload(taskId: UUID, userId: UUID) {
+        let now = Date()
+        let calendar = Calendar.current
+
+        // Check if this is the first upload today
+        if let lastUpload = lastTaskUploadDate {
+            if calendar.isDateInToday(lastUpload) {
+                // Already uploaded today - no streak change
+                print("📤 Task uploaded (already counted today). Streak: \(dailyStreak)")
+                return
+            }
+
+            // Check if this is the next day (consecutive)
+            if calendar.isDateInYesterday(lastUpload) {
+                // Consecutive day! Increment streak
+                dailyStreak += 1
+                print("🔥 Daily streak increased! \(dailyStreak) days")
+
+                // Check for streak bonus every 10 days
+                if dailyStreak % 10 == 0 {
+                    applyStreakBonus()
+                }
+            } else {
+                // More than 24 hours passed - reset streak
+                dailyStreak = 1
+                print("💔 Streak broken. Starting fresh at 1 day")
+            }
+        } else {
+            // First ever upload
+            dailyStreak = 1
+            print("🎉 First daily task! Streak: 1 day")
+        }
+
+        lastTaskUploadDate = now
+        persistState()
+    }
+
+    private func validateDailyStreak() {
+        guard let lastUpload = lastTaskUploadDate else {
+            // No previous uploads, keep streak at 0
+            if dailyStreak > 0 {
+                dailyStreak = 0
+                persistState()
+            }
+            return
+        }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        // If last upload was today or yesterday, streak is still valid
+        if calendar.isDateInToday(lastUpload) || calendar.isDateInYesterday(lastUpload) {
+            print("✅ Daily streak still valid: \(dailyStreak) days")
+            return
+        }
+
+        // More than 24 hours since last upload - reset streak
+        if dailyStreak > 0 {
+            print("💔 24+ hours without upload. Streak reset from \(dailyStreak) to 0")
+            dailyStreak = 0
+            persistState()
+        }
     }
 }

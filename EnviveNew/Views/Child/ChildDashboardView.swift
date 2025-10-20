@@ -697,15 +697,22 @@ class ChildDashboardViewModel: ObservableObject {
 
         print("👶 Assigned: \(assignedTasks.count), In Progress: \(inProgressTasks.count), Pending Review: \(pendingReviewTasks.count)")
 
-        // Load XP balance (screen time minutes)
+        // Load XP balance and convert to screen time minutes
+        let rawXP: Int
         if let balance = xpService.getBalance(userId: childId) {
-            xpBalance = balance.currentXP
+            rawXP = balance.currentXP
         } else {
-            xpBalance = 0
+            rawXP = 0
         }
 
         // Load credibility
         credibility = credibilityService.credibilityScore
+
+        // Convert XP to minutes using credibility multiplier
+        // This ensures consistency with home screen and session system
+        xpBalance = credibilityService.calculateXPToMinutes(xpAmount: rawXP)
+
+        print("👶 XP: \(rawXP) → Minutes: \(xpBalance) (credibility: \(credibility)%)")
 
         // Count completed tasks
         completedTasksCount = allTasks.filter {

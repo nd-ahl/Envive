@@ -38,9 +38,6 @@ struct ChildProfileView: View {
                     // Streak & Stats
                     streakStatsCard
 
-                    // Quick Actions
-                    quickActionsCard
-
                     // Recent Activity
                     recentActivityCard
                 }
@@ -415,76 +412,6 @@ struct ChildProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-    }
-
-    // MARK: - Quick Actions Card
-
-    private var quickActionsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Actions")
-                .font(.headline)
-
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
-                quickActionButton(
-                    title: "View History",
-                    icon: "clock.arrow.circlepath",
-                    color: .blue
-                ) {
-                    showingHistory = true
-                }
-
-                quickActionButton(
-                    title: "Redeem XP",
-                    icon: "gift.fill",
-                    color: .purple
-                ) {
-                    showingXPRedemption = true
-                }
-
-                quickActionButton(
-                    title: "Complete Task",
-                    icon: "checkmark.circle.fill",
-                    color: .green
-                ) {
-                    // Navigate to tasks
-                }
-
-                quickActionButton(
-                    title: "Leaderboard",
-                    icon: "chart.bar.fill",
-                    color: .orange
-                ) {
-                    // Navigate to leaderboard
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-    }
-
-    private func quickActionButton(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(color)
-
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(color.opacity(0.1))
-            .cornerRadius(12)
-        }
     }
 
     // MARK: - Recent Activity Card

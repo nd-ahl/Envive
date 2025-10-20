@@ -39,6 +39,21 @@ struct EnviveNewApp: App {
                             onboardingManager.completeQuestions()
                         }
                     )
+                } else if onboardingManager.shouldShowRoleConfirmation {
+                    // Get user role from saved responses
+                    let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+                    let userRole = roleString == "child" ? UserRole.child : UserRole.parent
+
+                    RoleConfirmationView(
+                        userRole: userRole,
+                        onConfirm: {
+                            onboardingManager.completeRoleConfirmation(role: userRole)
+                        },
+                        onGoBack: {
+                            // Allow user to go back to questions to change their role
+                            onboardingManager.hasCompletedQuestions = false
+                        }
+                    )
                 } else if onboardingManager.shouldShowAgeSelection {
                     // Get user role from saved responses
                     let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
@@ -54,6 +69,17 @@ struct EnviveNewApp: App {
                     PermissionsView(
                         onComplete: {
                             onboardingManager.completePermissions()
+                        }
+                    )
+                } else if onboardingManager.shouldShowBenefits {
+                    // Get user role from saved responses
+                    let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+                    let userRole = roleString == "child" ? UserRole.child : UserRole.parent
+
+                    BenefitsView(
+                        userRole: userRole,
+                        onComplete: {
+                            onboardingManager.completeBenefits()
                             onboardingManager.completeOnboarding()
                         }
                     )

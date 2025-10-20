@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 // MARK: - Credibility Data Models
 
@@ -60,12 +61,46 @@ struct CredibilityTier: Identifiable {
     let multiplier: Double
     let color: String
     let description: String
+
+    // MARK: - Simple UI Helpers
+
+    /// Star rating display (1-5 stars)
+    var starRating: String {
+        switch name {
+        case "Excellent":
+            return "⭐⭐⭐⭐⭐"
+        case "Good":
+            return "⭐⭐⭐⭐"
+        case "Fair":
+            return "⭐⭐⭐"
+        case "Poor":
+            return "⭐⭐"
+        default: // "Very Poor"
+            return "⭐"
+        }
+    }
+
+    /// Simple display text (without percentages)
+    var simpleDisplay: String {
+        return "\(starRating) \(name)"
+    }
+
+    /// Color for SwiftUI
+    var swiftUIColor: Color {
+        switch color {
+        case "green": return .green
+        case "yellow": return .yellow
+        case "red": return .red
+        default: return .blue
+        }
+    }
 }
 
 struct CredibilityStatus {
     let score: Int
     let tier: CredibilityTier
     let consecutiveApprovedTasks: Int
+    let dailyStreak: Int
     let hasRedemptionBonus: Bool
     let redemptionBonusExpiry: Date?
     let history: [CredibilityHistoryEvent]
@@ -306,6 +341,7 @@ class CredibilityManager: ObservableObject {
             score: credibilityScore,
             tier: tier,
             consecutiveApprovedTasks: consecutiveApprovedTasks,
+            dailyStreak: 0, // CredibilityManager is deprecated in favor of CredibilityService
             hasRedemptionBonus: hasRedemptionBonus,
             redemptionBonusExpiry: redemptionBonusExpiry,
             history: credibilityHistory,

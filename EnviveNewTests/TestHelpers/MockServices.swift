@@ -8,11 +8,14 @@ final class MockCredibilityService: CredibilityService {
     var credibilityScore: Int = 100
     var credibilityHistory: [CredibilityHistoryEvent] = []
     var consecutiveApprovedTasks: Int = 0
+    var lastTaskUploadDate: Date?
+    var dailyStreak: Int = 0
     var hasRedemptionBonus: Bool = false
     var redemptionBonusExpiry: Date?
 
     var processDownvoteCalled = false
     var processApprovedTaskCalled = false
+    var processTaskUploadCalled = false
     var undoDownvoteCalled = false
     var applyTimeBasedDecayCalled = false
 
@@ -50,6 +53,17 @@ final class MockCredibilityService: CredibilityService {
         credibilityHistory.append(event)
     }
 
+    func processTaskUpload(taskId: UUID, userId: UUID) {
+        processTaskUploadCalled = true
+        let now = Date()
+        if let last = lastTaskUploadDate, Calendar.current.isDateInYesterday(last) {
+            dailyStreak += 1
+        } else if lastTaskUploadDate == nil || !Calendar.current.isDateInToday(lastTaskUploadDate!) {
+            dailyStreak = 1
+        }
+        lastTaskUploadDate = now
+    }
+
     func calculateXPToMinutes(xpAmount: Int) -> Int {
         return xpAmount
     }
@@ -73,6 +87,7 @@ final class MockCredibilityService: CredibilityService {
             score: credibilityScore,
             tier: getCurrentTier(),
             consecutiveApprovedTasks: consecutiveApprovedTasks,
+            dailyStreak: dailyStreak,
             hasRedemptionBonus: hasRedemptionBonus,
             redemptionBonusExpiry: redemptionBonusExpiry,
             history: credibilityHistory,

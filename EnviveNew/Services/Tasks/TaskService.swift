@@ -123,6 +123,9 @@ class TaskServiceImpl: TaskService {
 
         repository.saveAssignment(assignment)
 
+        // Process daily streak when task is uploaded
+        credibilityService.processTaskUpload(taskId: assignment.id, userId: assignment.childId)
+
         // TODO: Send notification to parent
 
         return true

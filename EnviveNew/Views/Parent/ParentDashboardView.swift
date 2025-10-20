@@ -142,38 +142,47 @@ struct ParentDashboardView: View {
                 .font(.headline)
 
             HStack(spacing: 12) {
-                QuickActionButton(
-                    title: "Assign Task",
-                    icon: "plus.circle.fill",
-                    color: .blue,
-                    action: {
-                        showingChildSelector = true
+                // Assign Task Button
+                Button(action: {
+                    showingChildSelector = true
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                        Text("Assign Task")
+                            .fontWeight(.medium)
                     }
-                )
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
 
+                // Task History Navigation
                 NavigationLink(destination: TaskHistoryView(
                     taskService: viewModel.taskService,
                     childId: nil,
                     childName: nil
                 )) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.title2)
-                            .foregroundColor(.green)
-
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .font(.title3)
                         Text("Task History")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.center)
+                            .fontWeight(.medium)
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(12)
+                    .background(Color.purple.opacity(0.1))
+                    .foregroundColor(.purple)
+                    .cornerRadius(10)
                 }
             }
         }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Children Overview

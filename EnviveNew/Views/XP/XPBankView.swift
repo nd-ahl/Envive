@@ -87,36 +87,30 @@ struct XPBankView: View {
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
-    // MARK: - Credibility Card
+    // MARK: - Trust Card (Simplified Credibility)
 
     private var credibilityCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             HStack {
-                Image(systemName: "medal.fill")
+                Image(systemName: "star.fill")
                     .font(.title3)
-                    .foregroundColor(credibilityColor)
-                Text("Credibility: \(viewModel.credibilityDisplay)")
+                    .foregroundColor(viewModel.trustLevel.swiftUIColor)
+                Text("Your Trust Level")
                     .font(.headline)
                 Spacer()
             }
 
             HStack {
-                Text(viewModel.earningRateDisplay)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(viewModel.trustDisplay)
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .foregroundColor(viewModel.trustLevel.swiftUIColor)
 
-            if viewModel.credibilityScore < 95 {
-                HStack {
-                    Image(systemName: "lightbulb.fill")
-                        .foregroundColor(.yellow)
-                    Text("Keep completing tasks honestly to reach 95+ credibility and earn full XP!")
-                        .font(.caption)
+                    Text(viewModel.trustMessage)
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Spacer()
                 }
-                .padding(.top, 4)
+                Spacer()
             }
         }
         .padding()
@@ -235,15 +229,10 @@ struct XPBankView: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
 
-                if let credibility = transaction.credibilityAtTime {
-                    Text("\(transaction.amount) XP (\(credibility)% rate)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("\(transaction.amount) XP")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                // Simplified: Just show XP amount, no percentage rate
+                Text("\(transaction.amount) XP")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Spacer()
@@ -255,17 +244,6 @@ struct XPBankView: View {
         .padding(.vertical, 8)
     }
 
-    // MARK: - Helpers
-
-    private var credibilityColor: Color {
-        switch viewModel.credibilityScore {
-        case 95...100: return .green
-        case 80...94:  return .blue
-        case 60...79:  return .yellow
-        case 40...59:  return .orange
-        default:       return .red
-        }
-    }
 }
 
 // MARK: - Preview
@@ -309,11 +287,14 @@ private class MockCredibilityService: CredibilityService {
     var credibilityScore: Int { 95 }
     var credibilityHistory: [CredibilityHistoryEvent] { [] }
     var consecutiveApprovedTasks: Int { 5 }
+    var lastTaskUploadDate: Date? { nil }
+    var dailyStreak: Int { 7 }
     var hasRedemptionBonus: Bool { false }
     var redemptionBonusExpiry: Date? { nil }
     func processDownvote(taskId: UUID, reviewerId: UUID, notes: String?) {}
     func undoDownvote(taskId: UUID, reviewerId: UUID) {}
     func processApprovedTask(taskId: UUID, reviewerId: UUID, notes: String?) {}
+    func processTaskUpload(taskId: UUID, userId: UUID) {}
     func calculateXPToMinutes(xpAmount: Int) -> Int { xpAmount }
     func getConversionRate() -> Double { 1.0 }
     func getCurrentTier() -> CredibilityTier {
@@ -330,6 +311,7 @@ private class MockCredibilityService: CredibilityService {
             score: 95,
             tier: getCurrentTier(),
             consecutiveApprovedTasks: 5,
+            dailyStreak: 7,
             hasRedemptionBonus: false,
             redemptionBonusExpiry: nil,
             history: [],

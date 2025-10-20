@@ -110,12 +110,27 @@ final class XPBankViewModel: ObservableObject {
         return "\(currentBalance) XP"
     }
 
-    var credibilityDisplay: String {
-        return "\(credibilityScore) (\(credibilityTier))"
+    /// Get the trust level tier with star rating
+    var trustLevel: CredibilityTier {
+        return credibilityService.getCurrentTier()
     }
 
-    var earningRateDisplay: String {
-        return "You're earning \(earningRatePercentage)% XP per task"
+    /// Simple trust display for child (no percentages)
+    var trustDisplay: String {
+        return trustLevel.simpleDisplay
+    }
+
+    /// Encouragement message for child
+    var trustMessage: String {
+        if credibilityScore >= 90 {
+            return "Excellent work! Keep it up!"
+        } else if credibilityScore >= 75 {
+            return "Keep completing honest tasks to maintain your trust level!"
+        } else if credibilityScore >= 50 {
+            return "Complete more honest tasks to rebuild trust."
+        } else {
+            return "Focus on honest task completion to improve your trust."
+        }
     }
 
     var redemptionMinutes: Int {

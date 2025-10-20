@@ -3,24 +3,23 @@ import FamilyControls
 
 // MARK: - Permissions View
 
-/// Guides users through granting Screen Time access to Envive
+/// Guides users through granting Screen Time access with instructional alert mock
 struct PermissionsView: View {
     let onComplete: () -> Void
 
     @State private var showContent = false
     @State private var isRequestingPermission = false
     @State private var permissionGranted = false
-    @State private var showPermissionDialog = false
 
     private let authorizationCenter = AuthorizationCenter.shared
 
     var body: some View {
         ZStack {
-            // Gradient background
+            // Gradient background (consistent with other onboarding screens)
             LinearGradient(
                 colors: [
-                    Color.green.opacity(0.6),
-                    Color.blue.opacity(0.7)
+                    Color.blue.opacity(0.7),
+                    Color.purple.opacity(0.6)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -31,27 +30,24 @@ struct PermissionsView: View {
                 Spacer()
 
                 // Content
-                VStack(spacing: 40) {
+                VStack(spacing: 32) {
                     // Header
                     headerSection
 
-                    // Permission guide
-                    permissionGuideSection
-
-                    // Security note
-                    securityNote
+                    // Instructional alert mock with arrow
+                    instructionalAlertMock
                 }
+                .padding(.horizontal, 32)
 
                 Spacer()
 
-                // Continue button
-                continueButton
-                    .padding(.bottom, 40)
+                // Bottom security text and learn more
+                bottomSecuritySection
+                    .padding(.bottom, 50)
             }
-            .padding(.horizontal, 32)
         }
         .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            withAnimation(.easeOut(duration: 0.5)) {
                 showContent = true
             }
         }
@@ -75,8 +71,8 @@ struct PermissionsView: View {
             .opacity(showContent ? 1.0 : 0)
 
             VStack(spacing: 12) {
-                Text("Connect to Screen Time")
-                    .font(.system(size: 32, weight: .bold))
+                Text("Connect Envive to Screen Time")
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .opacity(showContent ? 1.0 : 0)
@@ -85,140 +81,135 @@ struct PermissionsView: View {
                     .font(.system(size: 17, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .opacity(showContent ? 1.0 : 0)
             }
         }
     }
 
-    // MARK: - Permission Guide Section
+    // MARK: - Instructional Alert Mock (Non-Functional)
 
-    private var permissionGuideSection: some View {
-        VStack(spacing: 20) {
-            // Visual guide box
-            VStack(spacing: 16) {
-                Text("When you tap Continue, you'll see:")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
+    private var instructionalAlertMock: some View {
+        VStack(spacing: 0) {
+            // Title + Body
+            VStack(spacing: 12) {
+                Text("\u{201C}Envive\u{201D} Would Like to Access Screen Time")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.black)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 20)
 
-                // Mock permission dialog
-                VStack(spacing: 0) {
-                    // Dialog header
-                    VStack(spacing: 12) {
-                        Image(systemName: "hourglass")
-                            .font(.system(size: 40))
-                            .foregroundColor(.blue)
+                Text("Providing \u{201C}Envive\u{201D} access to Screen Time may allow it to see your activity data, restrict content, and limit the usage of apps and websites.")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.45)) // #6D6D72
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(1) // ~1.07 line height
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+            }
 
-                        Text("\"Envive\" Would Like to Access Screen Time")
-                            .font(.system(size: 15, weight: .semibold))
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-                            .padding(.horizontal, 20)
-                    }
-                    .padding(.vertical, 24)
+            // Top hairline divider
+            Divider()
+                .background(Color(red: 0.78, green: 0.78, blue: 0.78)) // #C6C6C8
 
-                    Divider()
+            // Buttons row (FUNCTIONAL - tapping Continue will request permission)
+            HStack(spacing: 0) {
+                // Continue button (left) - FUNCTIONAL with visual feedback
+                Button(action: {
+                    requestPermission()
+                }) {
+                    ZStack(alignment: .leading) {
+                        HStack(spacing: 8) {
+                            if isRequestingPermission {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.0, green: 0.48, blue: 1.0)))
+                                    .scaleEffect(0.8)
+                                Text("Requesting...")
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0))
+                            } else if permissionGranted {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 17))
+                                    .foregroundColor(.green)
+                                Text("Granted")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("Continue")
+                                    .font(.system(size: 17, weight: .regular))
+                                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0)) // #007AFF
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
 
-                    // Buttons
-                    HStack(spacing: 0) {
-                        Text("Don't Allow")
-                            .font(.system(size: 17))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-
-                        Divider()
-                            .frame(height: 44)
-
-                        ZStack {
-                            Text("Continue")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.blue)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-
-                            // Arrow pointing to Continue
-                            Image(systemName: "arrow.left")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(.yellow)
-                                .offset(x: 80, y: 0)
-                                .shadow(color: .black.opacity(0.3), radius: 2)
+                        // Green arrow pointing to Continue (only show when idle)
+                        if !isRequestingPermission && !permissionGranted {
+                            VStack(spacing: 4) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundColor(.green)
+                                Text("Tap to continue")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.green)
+                            }
+                            .offset(y: 60)
                         }
                     }
                 }
-                .background(Color(.systemBackground))
-                .cornerRadius(14)
-                .shadow(color: Color.black.opacity(0.2), radius: 20)
+                .disabled(isRequestingPermission || permissionGranted)
 
-                // Instruction
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.tap.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.yellow)
+                // Vertical divider
+                Rectangle()
+                    .fill(Color(red: 0.78, green: 0.78, blue: 0.78)) // #C6C6C8
+                    .frame(width: 1 / UIScreen.main.scale, height: 44)
 
-                    Text("Tap \"Continue\" when the dialog appears")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                }
+                // Don't Allow button (right) - greyed out/disabled appearance
+                Text("Don't Allow")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0).opacity(0.3)) // Faded to show it's not the action
+                    .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .padding(20)
-            .background(Color.white.opacity(0.15))
-            .cornerRadius(20)
-            .opacity(showContent ? 1.0 : 0)
         }
-    }
-
-    // MARK: - Security Note
-
-    private var securityNote: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "lock.shield.fill")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.7))
-
-            Text("Your screen time data is private and secure")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.1))
-        .cornerRadius(12)
+        .frame(width: 270)
+        .background(Color.white)
+        .cornerRadius(13)
+        .shadow(color: .black.opacity(0.10), radius: 30, x: 0, y: 0)
         .opacity(showContent ? 1.0 : 0)
+        .scaleEffect(showContent ? 1.0 : 0.95)
     }
 
-    // MARK: - Continue Button
 
-    private var continueButton: some View {
-        Button(action: {
-            requestPermission()
-        }) {
-            HStack(spacing: 10) {
-                if isRequestingPermission {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .blue.opacity(0.9)))
-                    Text("Requesting Permission...")
-                        .font(.system(size: 18, weight: .bold))
-                } else if permissionGranted {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
-                    Text("Permission Granted!")
-                        .font(.system(size: 18, weight: .bold))
-                } else {
-                    Text("Continue")
-                        .font(.system(size: 18, weight: .bold))
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 20))
-                }
+    // MARK: - Bottom Security Section
+
+    private var bottomSecuritySection: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
+
+                Text("Your sensitive data is protected by Apple and never leaves your device")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
             }
-            .foregroundColor(Color.blue.opacity(0.9))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .background(Color.white)
-            .cornerRadius(14)
-            .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 40)
+
+            Button(action: {
+                // Open Apple's Screen Time privacy page
+                if let url = URL(string: "https://support.apple.com/en-us/HT208982") {
+                    UIApplication.shared.open(url)
+                }
+            }) {
+                Text("Learn More About Screen Time Privacy")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .underline()
+            }
         }
-        .disabled(isRequestingPermission || permissionGranted)
-        .scaleEffect(showContent ? 1.0 : 0.9)
         .opacity(showContent ? 1.0 : 0)
     }
 
@@ -236,26 +227,25 @@ struct PermissionsView: View {
                     isRequestingPermission = false
                     permissionGranted = true
 
+                    print("✅ Screen Time authorization granted")
+
                     // Wait a moment to show success state
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         onComplete()
                     }
                 }
-
-                print("✅ Screen Time authorization granted")
             } catch {
                 // Permission denied or error
                 await MainActor.run {
                     isRequestingPermission = false
                     permissionGranted = false
-                }
 
-                print("❌ Screen Time authorization failed: \(error)")
+                    print("❌ Screen Time authorization failed: \(error)")
 
-                // Still complete onboarding even if permission denied
-                // User can grant it later from Settings
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    onComplete()
+                    // Still complete onboarding - user can grant later from Settings
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        onComplete()
+                    }
                 }
             }
         }
@@ -266,6 +256,13 @@ struct PermissionsView: View {
 
 struct PermissionsView_Previews: PreviewProvider {
     static var previews: some View {
-        PermissionsView(onComplete: {})
+        Group {
+            PermissionsView(onComplete: {})
+                .previewDisplayName("Permissions - Light")
+
+            PermissionsView(onComplete: {})
+                .preferredColorScheme(.dark)
+                .previewDisplayName("Permissions - Dark")
+        }
     }
 }

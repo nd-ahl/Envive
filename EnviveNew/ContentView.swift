@@ -399,7 +399,7 @@ class CameraManager: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
     @Published var isCapturing = false
     @Published var cameraStatus: CameraStatus = .initializing
 
-    enum CameraStatus {
+    enum CameraStatus: String {
         case initializing
         case ready
         case frontOnly
@@ -1476,6 +1476,12 @@ class EnhancedScreenTimeModel: ObservableObject {
     // Session timing for background handling
     private var sessionStartTime: Date?
     private var sessionEndTime: Date?
+
+    // Computed property for total available screen time (includes active session)
+    var totalAvailableMinutes: Int {
+        let sessionMinutes = Int(ceil(sessionTimeRemaining / 60.0))
+        return minutesEarned + sessionMinutes
+    }
     private var pausedTime: Date?
 
     // Streak tracking
@@ -2173,6 +2179,12 @@ class EnhancedScreenTimeModel: ObservableObject {
                 if self.sessionTimeRemaining > 0 {
                     self.sessionTimeRemaining -= 1
                     self.sessionTimeUsed += 1
+
+                    // Deduct from minutesEarned every 60 seconds (1 minute)
+                    if Int(self.sessionTimeUsed) % 60 == 0 && self.minutesEarned > 0 {
+                        self.minutesEarned -= 1
+                        print("⏱️ Minute elapsed - minutesEarned now: \(self.minutesEarned)")
+                    }
                 } else {
                     print("⏰ Session timer expired - ending session")
                     self.endSession()
@@ -2188,9 +2200,17 @@ class EnhancedScreenTimeModel: ObservableObject {
         sessionTimer?.invalidate()
         sessionTimer = nil
 
-        // Deduct only the time actually used (in minutes)
+        // Calculate any remaining partial minute to deduct
+        let totalSecondsUsed = Int(sessionTimeUsed)
+        let remainingSeconds = totalSecondsUsed % 60
+
+        // If there's a partial minute used (e.g., 30 seconds), deduct one more minute
+        if remainingSeconds > 0 && minutesEarned > 0 {
+            minutesEarned -= 1
+            print("⏱️ Deducting partial minute (used \(remainingSeconds) seconds)")
+        }
+
         let minutesUsed = Int(ceil(sessionTimeUsed / 60.0))
-        minutesEarned -= minutesUsed
 
         // Reset session state
         isSessionActive = false
@@ -2243,6 +2263,12 @@ class EnhancedScreenTimeModel: ObservableObject {
                 if self.sessionTimeRemaining > 0 {
                     self.sessionTimeRemaining -= 1
                     self.sessionTimeUsed += 1
+
+                    // Deduct from minutesEarned every 60 seconds (1 minute)
+                    if Int(self.sessionTimeUsed) % 60 == 0 && self.minutesEarned > 0 {
+                        self.minutesEarned -= 1
+                        print("⏱️ Minute elapsed - minutesEarned now: \(self.minutesEarned)")
+                    }
                 } else {
                     self.endSession()
                 }
@@ -2596,27 +2622,50 @@ class CameraViewController: UIViewController {
         super.viewDidLoad()
         setupUI()
 
-        // Initialize camera manager first
-        print("🔧 Initializing camera manager...")
+        // Camera manager already initialized in its init() method
+        print("📱 [Camera VC] viewDidLoad started")
+        print("   Camera manager exists: \(cameraManager != nil)")
 
         // Observe camera status to setup preview when ready
         setupCameraStatusObserver()
 
-        // Start camera initialization
-        cameraManager?.setupDualCameraSystem()
+        // Check if camera is already ready (immediate check for race condition)
+        if let status = cameraManager?.cameraStatus {
+            print("   Camera status: \(status)")
+            if status == .ready || status == .frontOnly || status == .backOnly {
+                print("🔧 Camera already ready, setting up preview immediately...")
+                setupCamera()
+                debugCameraManagerState()
+            } else if status == .initializing {
+                print("⏳ Camera is still initializing, will wait for status change...")
+            } else if status == .failed {
+                print("❌ Camera initialization failed!")
+                if let error = cameraManager?.cameraError {
+                    print("   Error: \(error)")
+                }
+            }
+        } else {
+            print("⚠️ Camera status is nil")
+        }
     }
 
     private func setupCameraStatusObserver() {
         // Observe when camera becomes ready
+        print("📡 [Camera VC] Setting up camera status observer")
         cameraManager?.objectWillChange.sink { [weak self] _ in
             guard let self = self else { return }
 
             DispatchQueue.main.async {
                 // Check if camera is ready and preview hasn't been set up yet
+                let previewExists = self.cameraPreviewLayer != nil
+                let status = self.cameraManager?.cameraStatus
+
+                print("📡 [Camera VC] Status changed - Preview exists: \(previewExists), Status: \(status?.rawValue ?? "nil")")
+
                 if self.cameraPreviewLayer == nil,
                    let status = self.cameraManager?.cameraStatus,
                    (status == .ready || status == .frontOnly || status == .backOnly) {
-                    print("🔧 Camera is ready, setting up preview...")
+                    print("🔧 Camera is ready via observer, setting up preview...")
                     self.setupCamera()
                     self.debugCameraManagerState()
                 }
@@ -2924,23 +2973,37 @@ class CameraViewController: UIViewController {
 
         guard let captureSession = session,
               let previewView = view.subviews.first(where: { $0.tag == 200 }) else {
-            print("❌ Could not setup camera preview")
+            print("❌ Could not setup camera preview - session or preview view missing")
+            print("   Session exists: \(session != nil)")
+            print("   Preview view exists: \(view.subviews.first(where: { $0.tag == 200 }) != nil)")
             return
         }
+
+        print("🔧 Creating preview layer for \(position == .back ? "rear" : "front") camera")
+        print("   Preview view frame: \(previewView.frame)")
+        print("   Preview view bounds: \(previewView.bounds)")
 
         // Create and setup preview layer
         let previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
         previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.frame = view.bounds
+        previewLayer.frame = previewView.bounds  // FIX: Use previewView.bounds, not view.bounds
 
         previewView.layer.addSublayer(previewLayer)
         self.cameraPreviewLayer = previewLayer
 
+        print("   Preview layer frame: \(previewLayer.frame)")
+
         // Start the session if not already running
         if !captureSession.isRunning {
+            print("📷 Starting capture session...")
             DispatchQueue.global(qos: .userInitiated).async {
                 captureSession.startRunning()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    print("   Session running: \(captureSession.isRunning)")
+                }
             }
+        } else {
+            print("   Session already running")
         }
 
         print("✅ Single camera preview setup complete for \(position == .back ? "rear" : "front") camera")
@@ -4808,6 +4871,7 @@ struct ProfileView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @StateObject private var themeViewModel = DependencyContainer.shared
         .viewModelFactory.makeThemeSettingsViewModel()
+    @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
     @State private var showingNotificationSettings = false
     @State private var showingEditName = false
     @State private var showingEditAge = false
@@ -4819,180 +4883,206 @@ struct ProfileView: View {
 
     var body: some View {
         NavigationView {
-            List {
-                Section {
-                    HStack {
-                        Circle()
-                            .fill(Color.purple.opacity(0.3))
-                            .frame(width: 60, height: 60)
-                            .overlay(
-                                Text(String(userName.prefix(1)))
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                            )
+            profileContent
+        }
+        .alert("Edit Name", isPresented: $showingEditName) {
+            TextField("Enter your name", text: $tempName)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                if !tempName.trimmingCharacters(in: .whitespaces).isEmpty {
+                    userName = tempName
+                }
+            }
+        } message: {
+            Text("What would you like to be called?")
+        }
+        .alert("Reset Onboarding?", isPresented: $resetHelper.showingResetAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                resetHelper.performReset()
+            }
+        } message: {
+            Text("This will reset the app and show the welcome screen again. The app will close.")
+        }
+    }
 
-                        VStack(alignment: .leading) {
-                            Text(userName)
-                                .font(.title3)
+    private var profileContent: some View {
+        List {
+            Section {
+                HStack {
+                    Circle()
+                        .fill(Color.purple.opacity(0.3))
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Text(String(userName.prefix(1)))
+                                .font(.title2)
                                 .fontWeight(.semibold)
-                            Text("Credibility: \(Int(model.currentUser.credibilityScore))%")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
+                        )
 
-                        Spacer()
-                    }
-                    .padding(.vertical, 8)
-                }
-
-                Section("Personal Information") {
-                    Button(action: {
-                        tempName = userName
-                        showingEditName = true
-                    }) {
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.blue)
-                            Text("Name")
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text(userName)
-                                .foregroundColor(.secondary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Button(action: {
-                        showingEditAge = true
-                    }) {
-                        HStack {
-                            Image(systemName: "calendar")
-                                .foregroundColor(.blue)
-                            Text("Age")
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text("\(userAge)")
-                                .foregroundColor(.secondary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                Section("Statistics") {
-                    HStack {
-                        Text("Total XP Earned")
-                        Spacer()
-                        Text("\(model.currentUser.totalXPEarned)")
+                    VStack(alignment: .leading) {
+                        Text(userName)
+                            .font(.title3)
                             .fontWeight(.semibold)
+                        Text("Credibility: \(Int(model.currentUser.credibilityScore))%")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
 
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            }
+
+            Section("Personal Information") {
+                Button(action: {
+                    tempName = userName
+                    showingEditName = true
+                }) {
                     HStack {
-                        Text("Current XP Balance")
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.blue)
+                        Text("Name")
+                            .foregroundColor(.primary)
                         Spacer()
-                        Text("\(model.currentUser.xpBalance)")
+                        Text(userName)
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Button(action: {
+                    showingEditAge = true
+                }) {
+                    HStack {
+                        Image(systemName: "calendar")
+                            .foregroundColor(.blue)
+                        Text("Age")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Text("\(userAge)")
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section("Statistics") {
+                HStack {
+                    Text("Total XP Earned")
+                    Spacer()
+                    Text("\(model.currentUser.totalXPEarned)")
+                        .fontWeight(.semibold)
+                }
+
+                HStack {
+                    Text("Current XP Balance")
+                    Spacer()
+                    Text("\(model.currentUser.xpBalance)")
+                        .fontWeight(.semibold)
+                }
+
+                NavigationLink(destination: FriendsView().environmentObject(model)) {
+                    HStack {
+                        Image(systemName: "person.2.fill")
+                            .foregroundColor(.blue)
+                        Text("Friends")
+                        Spacer()
+                        Text("\(model.friends.count)")
                             .fontWeight(.semibold)
-                    }
-
-                    NavigationLink(destination: FriendsView().environmentObject(model)) {
-                        HStack {
-                            Image(systemName: "person.2.fill")
-                                .foregroundColor(.blue)
-                            Text("Friends")
-                            Spacer()
-                            Text("\(model.friends.count)")
-                                .fontWeight(.semibold)
-                            if model.pendingFriendRequests.count > 0 {
-                                Text("(\(model.pendingFriendRequests.count))")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                        }
-                    }
-                }
-
-                Section("Settings") {
-                    // Theme/Appearance Picker
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "paintbrush.fill")
-                                .foregroundColor(.blue)
-                            Text("Appearance")
-                                .foregroundColor(.primary)
-                        }
-
-                        Picker("Theme", selection: Binding(
-                            get: { themeViewModel.selectedTheme },
-                            set: { themeViewModel.selectTheme($0) }
-                        )) {
-                            ForEach(ThemeMode.allCases, id: \.self) { mode in
-                                HStack {
-                                    Image(systemName: mode.icon)
-                                    Text(mode.displayName)
-                                }
-                                .tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        // Current effective theme display
-                        HStack {
-                            Image(systemName: "info.circle")
+                        if model.pendingFriendRequests.count > 0 {
+                            Text("(\(model.pendingFriendRequests.count))")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Text("Current: \(themeViewModel.effectiveThemeDescription())")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.red)
                         }
                     }
-                    .padding(.vertical, 8)
+                }
+            }
 
-                    Button(action: {
-                        showingNotificationSettings = true
-                    }) {
-                        HStack {
-                            Image(systemName: "bell")
-                                .foregroundColor(.blue)
-                            Text("Notifications")
-                            Spacer()
-                            if model.notificationManager.hasPermission {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
+            Section("Settings") {
+                // Theme/Appearance Picker
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "paintbrush.fill")
+                            .foregroundColor(.blue)
+                        Text("Appearance")
+                            .foregroundColor(.primary)
+                    }
+
+                    Picker("Theme", selection: Binding(
+                        get: { themeViewModel.selectedTheme },
+                        set: { themeViewModel.selectTheme($0) }
+                    )) {
+                        ForEach(ThemeMode.allCases, id: \.self) { mode in
+                            HStack {
+                                Image(systemName: mode.icon)
+                                Text(mode.displayName)
                             }
+                            .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    // Current effective theme display
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text("Current: \(themeViewModel.effectiveThemeDescription())")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 8)
+
+                Button(action: {
+                    showingNotificationSettings = true
+                }) {
+                    HStack {
+                        Image(systemName: "bell")
+                            .foregroundColor(.blue)
+                        Text("Notifications")
+                        Spacer()
+                        if model.notificationManager.hasPermission {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
                         }
                     }
                 }
+            }
 
-                Section {
-                    Button("Test Friend Activity Notification") {
-                        model.simulateFriendActivity()
-                    }
-                    .foregroundColor(.blue)
+            Section {
+                Button("Test Friend Activity Notification") {
+                    model.simulateFriendActivity()
                 }
+                .foregroundColor(.blue)
             }
-            .navigationTitle("Profile")
-            .sheet(isPresented: $showingNotificationSettings) {
-                NotificationSettingsView()
-                    .environmentObject(model)
-            }
-            .sheet(isPresented: $showingEditAge) {
-                EditAgeView(userAge: $userAge)
-            }
-            .alert("Edit Name", isPresented: $showingEditName) {
-                TextField("Enter your name", text: $tempName)
-                Button("Cancel", role: .cancel) { }
-                Button("Save") {
-                    if !tempName.trimmingCharacters(in: .whitespaces).isEmpty {
-                        userName = tempName
-                    }
+
+            Section {
+                Button(action: {
+                    resetHelper.initiateReset()
+                }) {
+                    Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
+                        .foregroundColor(.orange)
                 }
-            } message: {
-                Text("What would you like to be called?")
+            } header: {
+                Text("Debug & Testing")
+            } footer: {
+                Text("Reset onboarding to see the welcome screen again")
+                    .font(.caption)
             }
+        }
+        .navigationTitle("Profile")
+        .sheet(isPresented: $showingNotificationSettings) {
+            NotificationSettingsView()
+                .environmentObject(model)
+        }
+        .sheet(isPresented: $showingEditAge) {
+            EditAgeView(userAge: $userAge)
         }
     }
 }
@@ -6294,34 +6384,12 @@ struct EnhancedHomeView: View {
                     LevelProgressBar(userLevel: currentUserLevel)
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 16) {
-                        StatCard(title: "Screen Time", value: "\(xpBalance) min", color: .blue, icon: "clock.fill")
+                        StatCard(title: "Screen Time", value: "\(model.totalAvailableMinutes) min", color: .blue, icon: "clock.fill")
                         StatCard(title: "Tasks Done", value: "\(completedTasksCount)", color: .green, icon: "checkmark.circle.fill")
                         StatCard(title: "Day Streak", value: "\(dayStreak)", color: .orange, icon: "flame.fill")
                         StatCard(title: "Credibility", value: "\(credibility)%", color: credibilityColor(score: credibility), icon: "checkmark.seal.fill")
                     }
-                    
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("Quick Actions")
-                                .font(.headline)
-                            Spacer()
-                        }
 
-                        NavigationLink(destination: Text("Task Browser - Coming Soon")) {
-                            HStack {
-                                Image(systemName: "list.bullet")
-                                Text("View All Tasks")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
-                        }
-                    }
-                    
                     if model.isSessionActive {
                         VStack(spacing: 12) {
                             Text("Spending Screen Time")
@@ -6377,7 +6445,7 @@ struct EnhancedHomeView: View {
                             Text("Start Spending Screen Time")
                                 .font(.headline)
 
-                            Text("You have \(xpBalance) earned minutes available")
+                            Text("You have \(model.totalAvailableMinutes) earned minutes available")
                                 .foregroundColor(.secondary)
                             
                             Picker("Duration", selection: $selectedDuration) {
@@ -6597,6 +6665,13 @@ struct EnhancedHomeView: View {
             totalXPEarned = 0
         }
 
+        // Convert XP to minutes and sync with model.minutesEarned
+        // This ensures the home screen and session system use the same value
+        let convertedMinutes = credibilityService.calculateXPToMinutes(xpAmount: xpBalance)
+        model.minutesEarned = convertedMinutes
+
+        print("🔄 Synced XP to minutes: \(xpBalance) XP = \(convertedMinutes) minutes")
+
         // Load credibility
         credibility = credibilityService.credibilityScore
 
@@ -6604,10 +6679,10 @@ struct EnhancedHomeView: View {
         let allTasks = taskService.getChildTasks(childId: childId, status: nil)
         completedTasksCount = allTasks.filter { $0.status == .approved }.count
 
-        // Calculate day streak based on consecutive approved tasks
-        dayStreak = credibilityService.consecutiveApprovedTasks
+        // Load day streak based on consecutive days with task uploads
+        dayStreak = credibilityService.dailyStreak
 
-        print("🏠 Loaded: \(xpBalance) min, \(completedTasksCount) tasks, \(credibility)% credibility, \(dayStreak) streak")
+        print("🏠 Loaded: \(xpBalance) XP (\(convertedMinutes) min), \(completedTasksCount) tasks, \(credibility)% credibility, \(dayStreak) day streak")
     }
 
     private func credibilityColor(score: Int) -> Color {

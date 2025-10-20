@@ -337,6 +337,14 @@ class MockCredibilityServiceForXP: CredibilityService {
         return mockConsecutiveTasks
     }
 
+    var lastTaskUploadDate: Date? {
+        return nil
+    }
+
+    var dailyStreak: Int {
+        return 0
+    }
+
     var hasRedemptionBonus: Bool {
         return mockHasBonus
     }
@@ -356,6 +364,10 @@ class MockCredibilityServiceForXP: CredibilityService {
     func processApprovedTask(taskId: UUID, reviewerId: UUID, notes: String?) {
         mockScore = min(100, mockScore + 1)
         mockConsecutiveTasks += 1
+    }
+
+    func processTaskUpload(taskId: UUID, userId: UUID) {
+        // No-op for testing
     }
 
     func calculateXPToMinutes(xpAmount: Int) -> Int {
@@ -381,6 +393,7 @@ class MockCredibilityServiceForXP: CredibilityService {
             score: mockScore,
             tier: getCurrentTier(),
             consecutiveApprovedTasks: mockConsecutiveTasks,
+            dailyStreak: 0,
             hasRedemptionBonus: mockHasBonus,
             redemptionBonusExpiry: mockBonusExpiry,
             history: mockHistory,

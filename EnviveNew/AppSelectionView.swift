@@ -4,6 +4,10 @@ import FamilyControls
 struct AppSelectionView: View {
     @Binding var selectedApps: FamilyActivitySelection
     @State private var isPresentingPicker = false
+    @State private var showingPermissionAlert = false
+    @State private var isRequestingPermission = false
+
+    private let authorizationCenter = AuthorizationCenter.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -18,20 +22,27 @@ struct AppSelectionView: View {
 
             Button(action: {
                 print("🎯 'Choose Apps and Websites' button tapped")
-                isPresentingPicker = true
-                print("🎯 isPresentingPicker set to: \(isPresentingPicker)")
+                checkPermissionAndShowPicker()
             }) {
                 HStack {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
-                    Text("Choose Apps and Websites")
-                        .fontWeight(.medium)
+                    if isRequestingPermission {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Requesting Permission...")
+                            .fontWeight(.medium)
+                    } else {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("Choose Apps and Websites")
+                            .fontWeight(.medium)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
             }
+            .disabled(isRequestingPermission)
             .familyActivityPicker(
                 isPresented: $isPresentingPicker,
                 selection: $selectedApps
@@ -98,6 +109,62 @@ struct AppSelectionView: View {
             Spacer()
         }
         .padding(.horizontal)
+        .alert("Screen Time Permission Required", isPresented: $showingPermissionAlert) {
+            Button("Grant Permission", role: .none) {
+                requestScreenTimePermission()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Envive needs Screen Time access to manage blocked apps. Tap 'Grant Permission' to enable this feature.")
+        }
+    }
+
+    // MARK: - Permission Checking
+
+    private func checkPermissionAndShowPicker() {
+        let status = authorizationCenter.authorizationStatus
+
+        switch status {
+        case .approved:
+            // Permission granted, show picker
+            isPresentingPicker = true
+            print("🎯 isPresentingPicker set to: \(isPresentingPicker)")
+            print("✅ Screen Time permission approved - showing app picker")
+        case .notDetermined, .denied:
+            // Permission not granted, show alert
+            showingPermissionAlert = true
+            print("❌ Screen Time permission not granted - status: \(status)")
+        @unknown default:
+            showingPermissionAlert = true
+            print("⚠️ Unknown Screen Time permission status")
+        }
+    }
+
+    private func requestScreenTimePermission() {
+        isRequestingPermission = true
+
+        Task {
+            do {
+                try await authorizationCenter.requestAuthorization(for: .individual)
+
+                await MainActor.run {
+                    isRequestingPermission = false
+
+                    // Check status again and show picker if approved
+                    if authorizationCenter.authorizationStatus == .approved {
+                        isPresentingPicker = true
+                        print("✅ Screen Time permission granted - showing app picker")
+                    } else {
+                        print("❌ Screen Time permission denied after request")
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isRequestingPermission = false
+                    print("❌ Screen Time permission request failed: \(error)")
+                }
+            }
+        }
     }
 }
 

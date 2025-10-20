@@ -9,6 +9,8 @@ final class CredibilityRepository {
         static let consecutiveTasks = "consecutiveApprovedTasks"
         static let hasBonus = "hasRedemptionBonus"
         static let bonusExpiry = "redemptionBonusExpiry"
+        static let lastUploadDate = "lastTaskUploadDate"
+        static let dailyStreak = "dailyTaskStreak"
     }
 
     init(storage: StorageService) {
@@ -52,5 +54,25 @@ final class CredibilityRepository {
         let active = storage.loadBool(forKey: Keys.hasBonus)
         let expiry = storage.loadDate(forKey: Keys.bonusExpiry)
         return (active, expiry)
+    }
+
+    func saveLastUploadDate(_ date: Date?) {
+        if let date = date {
+            storage.saveDate(date, forKey: Keys.lastUploadDate)
+        } else {
+            storage.remove(forKey: Keys.lastUploadDate)
+        }
+    }
+
+    func loadLastUploadDate() -> Date? {
+        storage.loadDate(forKey: Keys.lastUploadDate)
+    }
+
+    func saveDailyStreak(_ streak: Int) {
+        storage.saveInt(streak, forKey: Keys.dailyStreak)
+    }
+
+    func loadDailyStreak() -> Int {
+        storage.loadInt(forKey: Keys.dailyStreak, defaultValue: 0)
     }
 }
