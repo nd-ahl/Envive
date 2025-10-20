@@ -71,11 +71,22 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             intentIdentifiers: [],
             options: []
         )
-        
+
+        let taskAssignedCategory = UNNotificationCategory(
+            identifier: "TASK_ASSIGNED",
+            actions: [
+                UNNotificationAction(identifier: "VIEW_TASK_ACTION", title: "View Task", options: [.foreground]),
+                UNNotificationAction(identifier: "START_TASK_ACTION", title: "Start Now", options: [.foreground])
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+
         // Register categories
         UNUserNotificationCenter.current().setNotificationCategories([
             taskCompletedCategory,
-            friendRequestCategory
+            friendRequestCategory,
+            taskAssignedCategory
         ])
     }
     
@@ -122,29 +133,69 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         }
     }
     
+    func sendTaskAssignedNotification(childName: String, taskTitle: String, xpReward: Int) {
+        guard hasPermission else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "New Task Assigned! 🎯"
+        content.body = "\(taskTitle) • Earn \(xpReward) minutes"
+
+        // Use "complete" sound from Apple's sound library
+        content.sound = UNNotificationSound(named: UNNotificationSoundName("complete.caf"))
+        content.categoryIdentifier = "TASK_ASSIGNED"
+        content.badge = 1
+
+        // Add user info for handling
+        content.userInfo = [
+            "type": "task_assigned",
+            "child": childName,
+            "task": taskTitle,
+            "xp": xpReward
+        ]
+
+        // Create trigger (immediate)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+
+        // Create request
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: trigger
+        )
+
+        // Add notification
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Error sending task assignment notification: \(error)")
+            } else {
+                print("✅ Task assignment notification sent")
+            }
+        }
+    }
+
     func sendFriendRequestNotification(fromUser: String) {
         guard hasPermission else { return }
-        
+
         let content = UNMutableNotificationContent()
         content.title = "New Friend Request!"
         content.body = "\(fromUser) wants to be your friend"
         content.sound = .default
         content.categoryIdentifier = "FRIEND_REQUEST"
         content.badge = 1
-        
+
         content.userInfo = [
             "type": "friend_request",
             "from": fromUser
         ]
-        
+
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        
+
         let request = UNNotificationRequest(
             identifier: UUID().uuidString,
             content: content,
             trigger: trigger
         )
-        
+
         UNUserNotificationCenter.current().add(request)
     }
     
@@ -1477,10 +1528,11 @@ class EnhancedScreenTimeModel: ObservableObject {
     private var sessionStartTime: Date?
     private var sessionEndTime: Date?
 
-    // Computed property for total available screen time (includes active session)
+    // Computed property for total available screen time
+    // Returns only the minutesEarned balance (not including active session time)
+    // Active session time is displayed separately in the UI to avoid double-counting
     var totalAvailableMinutes: Int {
-        let sessionMinutes = Int(ceil(sessionTimeRemaining / 60.0))
-        return minutesEarned + sessionMinutes
+        return minutesEarned
     }
     private var pausedTime: Date?
 
@@ -4872,9 +4924,12 @@ struct ProfileView: View {
     @StateObject private var themeViewModel = DependencyContainer.shared
         .viewModelFactory.makeThemeSettingsViewModel()
     @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
+    @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+    @ObservedObject private var profilePhotoManager = ProfilePhotoManager.shared
     @State private var showingNotificationSettings = false
     @State private var showingEditName = false
     @State private var showingEditAge = false
+    @State private var showingProfilePhotoPicker = false
     @State private var tempName: String = ""
 
     // Persisted user data
@@ -4909,16 +4964,48 @@ struct ProfileView: View {
     private var profileContent: some View {
         List {
             Section {
+                // Profile photo display and edit
                 HStack {
-                    Circle()
-                        .fill(Color.purple.opacity(0.3))
-                        .frame(width: 60, height: 60)
-                        .overlay(
-                            Text(String(userName.prefix(1)))
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                        )
+                    Spacer()
+                    VStack(spacing: 16) {
+                        // Profile photo display
+                        if let profile = deviceModeManager.currentProfile,
+                           let photoFileName = profile.profilePhotoFileName,
+                           let image = profilePhotoManager.loadProfilePhoto(fileName: photoFileName) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 120, height: 120)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.purple, lineWidth: 3)
+                                )
+                        } else {
+                            Circle()
+                                .fill(Color.purple.opacity(0.3))
+                                .frame(width: 120, height: 120)
+                                .overlay(
+                                    Text(String(userName.prefix(2)).uppercased())
+                                        .font(.system(size: 40, weight: .semibold))
+                                        .foregroundColor(.white)
+                                )
+                        }
 
+                        Button(action: {
+                            showingProfilePhotoPicker = true
+                        }) {
+                            Text(deviceModeManager.currentProfile?.profilePhotoFileName == nil ? "Add Photo" : "Change Photo")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    Spacer()
+                }
+
+                // User info
+                HStack {
                     VStack(alignment: .leading) {
                         Text(userName)
                             .font(.title3)
@@ -5084,6 +5171,21 @@ struct ProfileView: View {
         .sheet(isPresented: $showingEditAge) {
             EditAgeView(userAge: $userAge)
         }
+        .sheet(isPresented: $showingProfilePhotoPicker) {
+            if let profile = deviceModeManager.currentProfile {
+                ProfilePhotoPicker(
+                    userId: profile.id,
+                    currentPhotoFileName: profile.profilePhotoFileName,
+                    onPhotoSelected: { fileName in
+                        updateProfilePhoto(fileName: fileName)
+                    }
+                )
+            }
+        }
+    }
+
+    private func updateProfilePhoto(fileName: String) {
+        deviceModeManager.updateProfilePhoto(fileName: fileName.isEmpty ? nil : fileName)
     }
 }
 
@@ -5293,7 +5395,21 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var showingNotificationSettings = false
     @Environment(\.scenePhase) private var scenePhase
-    
+
+    @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+
+    /// Determines the correct child ID based on the current device mode
+    private var currentChildId: UUID {
+        switch deviceModeManager.currentMode {
+        case .parent:
+            return deviceModeManager.getTestChild1Id()  // Shouldn't happen in child view, but default to child 1
+        case .child1:
+            return deviceModeManager.getTestChild1Id()
+        case .child2:
+            return deviceModeManager.getTestChild2Id()
+        }
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             ChildDashboardView(
@@ -5301,7 +5417,7 @@ struct ContentView: View {
                     taskService: DependencyContainer.shared.taskService,
                     xpService: DependencyContainer.shared.xpService,
                     credibilityService: DependencyContainer.shared.credibilityService,
-                    childId: DependencyContainer.shared.deviceModeManager.getTestChildId()
+                    childId: currentChildId
                 )
             )
                 .tabItem {
@@ -5334,10 +5450,14 @@ struct ContentView: View {
                 viewModel: ParentDashboardViewModel(
                     taskService: DependencyContainer.shared.taskService,
                     credibilityService: DependencyContainer.shared.credibilityService,
+                    xpService: DependencyContainer.shared.xpService,
                     parentId: UUID(), // TODO: Replace with actual parent ID from user session
-                    testChildId: DependencyContainer.shared.deviceModeManager.getTestChildId()
+                    testChild1Id: DependencyContainer.shared.deviceModeManager.getTestChild1Id(),
+                    testChild2Id: DependencyContainer.shared.deviceModeManager.getTestChild2Id(),
+                    deviceModeManager: DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
                 ),
-                appSelectionStore: model.appSelectionStore
+                appSelectionStore: model.appSelectionStore,
+                notificationManager: model.notificationManager
             )
                 .tabItem {
                     Image(systemName: "checkmark.seal.fill")
@@ -6337,18 +6457,32 @@ struct EnhancedHomeView: View {
     @State private var totalXPEarned: Int = 0
     @State private var dayStreak: Int = 0
     @State private var childId: UUID = UUID()
+    @State private var assignedTasks: [TaskAssignment] = []
 
     // Access stored user name
     @AppStorage("userName") private var userName: String = "User"
 
     // Services
-    private let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+    @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+    private let profilePhotoManager = ProfilePhotoManager.shared
     private let xpService = DependencyContainer.shared.xpService
     private let credibilityService = DependencyContainer.shared.credibilityService
     private let taskService = DependencyContainer.shared.taskService
 
     private var currentUserLevel: UserLevel {
         UserLevel(totalXP: totalXPEarned)
+    }
+
+    /// Determines the correct child ID based on the current device mode
+    private var currentChildId: UUID {
+        switch deviceModeManager.currentMode {
+        case .parent:
+            return deviceModeManager.getTestChild1Id()  // Shouldn't happen in child view, but default to child 1
+        case .child1:
+            return deviceModeManager.getTestChild1Id()
+        case .child2:
+            return deviceModeManager.getTestChild2Id()
+        }
     }
 
     var body: some View {
@@ -6368,15 +6502,30 @@ struct EnhancedHomeView: View {
                         Spacer()
 
                         NavigationLink(destination: ProfileView().environmentObject(model)) {
-                            Circle()
-                                .fill(Color.purple.opacity(0.3))
-                                .frame(width: 50, height: 50)
-                                .overlay(
-                                    Text(String(userName.prefix(1)))
-                                        .font(.title3)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.primary)
-                                )
+                            // Show profile photo if available, otherwise show initials
+                            if let profile = deviceModeManager.currentProfile,
+                               let photoFileName = profile.profilePhotoFileName,
+                               let image = profilePhotoManager.loadProfilePhoto(fileName: photoFileName) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 50, height: 50)
+                                    .clipShape(Circle())
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.purple, lineWidth: 2)
+                                    )
+                            } else {
+                                Circle()
+                                    .fill(Color.purple.opacity(0.3))
+                                    .frame(width: 50, height: 50)
+                                    .overlay(
+                                        Text(String(userName.prefix(1)))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                    )
+                            }
                         }
                     }
 
@@ -6466,6 +6615,143 @@ struct EnhancedHomeView: View {
                         .cornerRadius(12)
                     }
 
+                    // Your Tasks Card (using real assigned tasks)
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("Your Tasks")
+                                .font(.headline)
+                            Spacer()
+                            NavigationLink(destination: ChildDashboardView(
+                                viewModel: ChildDashboardViewModel(
+                                    taskService: taskService,
+                                    xpService: xpService,
+                                    credibilityService: credibilityService,
+                                    childId: childId
+                                )
+                            )) {
+                                Text("See All")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+
+                        if assignedTasks.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("No assigned tasks")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text("Check the task library for tasks you can do!")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding()
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(Array(assignedTasks.prefix(3)), id: \.id) { task in
+                                    NavigationLink(destination: ChildTaskDetailView(
+                                        assignment: task,
+                                        taskService: taskService
+                                    )) {
+                                        HStack(spacing: 12) {
+                                            // Profile photo or icon
+                                            if task.isParentAssigned,
+                                               let assignerId = task.assignedBy,
+                                               let assignerProfile = getAssignerProfile(assignerId) {
+                                                // Parent assigned task - show parent's photo
+                                                if let photoFileName = assignerProfile.profilePhotoFileName,
+                                                   let image = ProfilePhotoManager.shared.loadProfilePhoto(fileName: photoFileName) {
+                                                    Image(uiImage: image)
+                                                        .resizable()
+                                                        .scaledToFill()
+                                                        .frame(width: 32, height: 32)
+                                                        .clipShape(Circle())
+                                                } else {
+                                                    Circle()
+                                                        .fill(Color.blue.opacity(0.2))
+                                                        .frame(width: 32, height: 32)
+                                                        .overlay(
+                                                            Text(String(assignerProfile.name.prefix(1)).uppercased())
+                                                                .font(.system(size: 12, weight: .semibold))
+                                                                .foregroundColor(.blue)
+                                                        )
+                                                }
+                                            } else {
+                                                // Self-created task - show child's photo
+                                                if let profile = deviceModeManager.currentProfile,
+                                                   let photoFileName = profile.profilePhotoFileName,
+                                                   let image = ProfilePhotoManager.shared.loadProfilePhoto(fileName: photoFileName) {
+                                                    Image(uiImage: image)
+                                                        .resizable()
+                                                        .scaledToFill()
+                                                        .frame(width: 32, height: 32)
+                                                        .clipShape(Circle())
+                                                } else {
+                                                    Circle()
+                                                        .fill(Color.green.opacity(0.2))
+                                                        .frame(width: 32, height: 32)
+                                                        .overlay(
+                                                            Image(systemName: "person.fill")
+                                                                .font(.system(size: 14))
+                                                                .foregroundColor(.green)
+                                                        )
+                                                }
+                                            }
+
+                                            // Task Info
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(task.title)
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(.primary)
+                                                    .lineLimit(1)
+
+                                                HStack(spacing: 8) {
+                                                    Text(task.assignedLevel.shortName)
+                                                        .font(.caption)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 2)
+                                                        .background(Color.blue.opacity(0.2))
+                                                        .foregroundColor(.blue)
+                                                        .cornerRadius(4)
+
+                                                    Text("\(task.assignedLevel.baseXP) min")
+                                                        .font(.caption)
+                                                        .foregroundColor(.green)
+
+                                                    // Status badge
+                                                    if task.status == .inProgress {
+                                                        HStack(spacing: 4) {
+                                                            Image(systemName: "play.circle.fill")
+                                                                .font(.caption2)
+                                                            Text("In Progress")
+                                                        }
+                                                        .font(.caption)
+                                                        .foregroundColor(.green)
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.vertical, 8)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+
                     // Friends Activity Card
                     if !model.friendActivities.isEmpty {
                         VStack(spacing: 12) {
@@ -6523,112 +6809,6 @@ struct EnhancedHomeView: View {
                         .cornerRadius(12)
                     }
 
-                    // Current Tasks Card
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("Your Tasks")
-                                .font(.headline)
-                            Spacer()
-                            NavigationLink(destination: EnhancedTasksView().environmentObject(model)) {
-                                Text("See All")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-                        }
-
-                        let incompleteTasks = model.recentTasks.filter { !$0.completed }
-                        let completedTasks = model.recentTasks.filter { $0.completed }
-
-                        if incompleteTasks.isEmpty && completedTasks.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.title2)
-                                    .foregroundColor(.secondary)
-                                Text("No tasks yet")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Button("Add your first task") {
-                                    showingAddTask = true
-                                }
-                                .font(.caption)
-                                .buttonStyle(.bordered)
-                            }
-                            .padding()
-                        } else {
-                            VStack(spacing: 8) {
-                                if !incompleteTasks.isEmpty {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text("To Do (\(incompleteTasks.count))")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.primary)
-
-                                        ForEach(Array(incompleteTasks.prefix(3)), id: \.id) { task in
-                                            HStack {
-                                                Image(systemName: "circle")
-                                                    .foregroundColor(.gray)
-                                                    .font(.title3)
-
-                                                VStack(alignment: .leading, spacing: 2) {
-                                                    Text(task.title)
-                                                        .font(.subheadline)
-                                                        .lineLimit(1)
-                                                    HStack {
-                                                        Text(task.category.rawValue)
-                                                            .font(.caption)
-                                                            .padding(.horizontal, 6)
-                                                            .padding(.vertical, 2)
-                                                            .background(Color.blue.opacity(0.2))
-                                                            .cornerRadius(4)
-                                                        Text("\(task.xpReward) XP")
-                                                            .font(.caption)
-                                                            .foregroundColor(.green)
-                                                    }
-                                                }
-
-                                                Spacer()
-                                            }
-                                            .padding(.vertical, 2)
-                                        }
-                                    }
-                                }
-
-                                if !completedTasks.isEmpty {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text("Completed (\(completedTasks.count))")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.secondary)
-
-                                        ForEach(Array(completedTasks.prefix(2)), id: \.id) { task in
-                                            HStack {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.green)
-                                                    .font(.title3)
-
-                                                Text(task.title)
-                                                    .font(.subheadline)
-                                                    .strikethrough()
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-
-                                                Spacer()
-
-                                                Text("+\(task.xpReward) XP")
-                                                    .font(.caption)
-                                                    .foregroundColor(.green)
-                                            }
-                                            .padding(.vertical, 2)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-
                     Spacer(minLength: 50)
                 }
                 .padding()
@@ -6642,6 +6822,10 @@ struct EnhancedHomeView: View {
             .onAppear {
                 loadRealData()
             }
+            .onChange(of: deviceModeManager.currentMode) { _, _ in
+                // Reload data when mode switches between children
+                loadRealData()
+            }
             .refreshable {
                 loadRealData()
             }
@@ -6651,10 +6835,10 @@ struct EnhancedHomeView: View {
     // MARK: - Load Real Data
 
     private func loadRealData() {
-        // Get the test child ID (same ID used in ChildDashboardView)
-        childId = deviceModeManager.getTestChildId()
+        // Get the current child ID based on the device mode
+        childId = currentChildId
 
-        print("🏠 Home screen loading data for child ID: \(childId)")
+        print("🏠 Home screen loading data for child ID: \(childId) (mode: \(deviceModeManager.currentMode.displayName))")
 
         // Load XP balance (screen time minutes)
         if let balance = xpService.getBalance(userId: childId) {
@@ -6667,22 +6851,27 @@ struct EnhancedHomeView: View {
 
         // Convert XP to minutes and sync with model.minutesEarned
         // This ensures the home screen and session system use the same value
-        let convertedMinutes = credibilityService.calculateXPToMinutes(xpAmount: xpBalance)
+        let convertedMinutes = credibilityService.calculateXPToMinutes(xpAmount: xpBalance, childId: childId)
         model.minutesEarned = convertedMinutes
 
         print("🔄 Synced XP to minutes: \(xpBalance) XP = \(convertedMinutes) minutes")
 
         // Load credibility
-        credibility = credibilityService.credibilityScore
+        credibility = credibilityService.getCredibilityScore(childId: childId)
+
+        // Load tasks
+        let allTasks = taskService.getChildTasks(childId: childId, status: nil)
+
+        // Get assigned tasks (assigned and in-progress)
+        assignedTasks = allTasks.filter { $0.status == .assigned || $0.status == .inProgress }
 
         // Count completed tasks
-        let allTasks = taskService.getChildTasks(childId: childId, status: nil)
         completedTasksCount = allTasks.filter { $0.status == .approved }.count
 
         // Load day streak based on consecutive days with task uploads
-        dayStreak = credibilityService.dailyStreak
+        dayStreak = credibilityService.getDailyStreak(childId: childId)
 
-        print("🏠 Loaded: \(xpBalance) XP (\(convertedMinutes) min), \(completedTasksCount) tasks, \(credibility)% credibility, \(dayStreak) day streak")
+        print("🏠 Loaded: \(xpBalance) XP (\(convertedMinutes) min), \(assignedTasks.count) assigned tasks, \(completedTasksCount) completed tasks, \(credibility)% credibility, \(dayStreak) day streak")
     }
 
     private func credibilityColor(score: Int) -> Color {
@@ -6694,6 +6883,23 @@ struct EnhancedHomeView: View {
         default:
             return .red
         }
+    }
+
+    /// Get the profile of the user who assigned a task
+    private func getAssignerProfile(_ assignerId: UUID) -> UserProfile? {
+        let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+
+        // Try to load the actual stored profile
+        if let profile = deviceModeManager.getProfile(byId: assignerId) {
+            return profile
+        }
+
+        // Fallback: Create a default parent profile for display
+        return UserProfile(
+            id: assignerId,
+            name: "Parent",
+            mode: .parent
+        )
     }
 
     private func timeString(from timeInterval: TimeInterval) -> String {

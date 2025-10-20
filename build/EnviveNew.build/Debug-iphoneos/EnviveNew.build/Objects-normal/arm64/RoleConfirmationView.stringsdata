@@ -1,0 +1,80 @@
+{
+  "source": "/Users/nealahlstrom/github/Envive/EnviveNew/Views/Onboarding/RoleConfirmationView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Important: Confirm Your Device Role",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 69
+        }
+      },
+      {
+        "comment": "",
+        "key": "Setting Up as %@ Device",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 86
+        }
+      },
+      {
+        "comment": "",
+        "key": "This device will be able to:",
+        "location": {
+          "startingColumn": 40,
+          "startingLine": 103
+        }
+      },
+      {
+        "comment": "",
+        "key": "This device will:",
+        "location": {
+          "startingColumn": 73,
+          "startingLine": 103
+        }
+      },
+      {
+        "comment": "",
+        "key": "Each family member uses their own device with their assigned role",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 179
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your child's device needs separate setup",
+        "location": {
+          "startingColumn": 44,
+          "startingLine": 172
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your parent will set up their device separately",
+        "location": {
+          "startingColumn": 89,
+          "startingLine": 172
+        }
+      },
+      {
+        "comment": "",
+        "key": "Confirm - I'm a %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 202
+        }
+      },
+      {
+        "comment": "",
+        "key": "Go Back - I Made a Mistake",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 220
+        }
+      }
+    ]
+  },
+  "version": 1
+}

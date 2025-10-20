@@ -126,7 +126,7 @@ final class XPServiceImpl: XPService {
         let earnedToday = repository.getTotalEarnedToday(userId: userId)
         let redeemedToday = repository.getTotalRedeemedToday(userId: userId)
         let balance = repository.getBalance(userId: userId)
-        let credibilityScore = credibilityService.credibilityScore
+        let credibilityScore = credibilityService.getCredibilityScore(childId: userId)
         let earningRate = credibilityMultiplier(score: credibilityScore)
 
         return DailyXPStats(

@@ -1,0 +1,160 @@
+{
+  "source": "/Users/nealahlstrom/github/Envive/EnviveNew/Views/Parent/ChildSelectorView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Select Children",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 55
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 59
+        }
+      },
+      {
+        "comment": "",
+        "key": "Confirm",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 65
+        }
+      },
+      {
+        "comment": "",
+        "key": "Who should do this?",
+        "location": {
+          "startingColumn": 45,
+          "startingLine": 84
+        }
+      },
+      {
+        "comment": "",
+        "key": "Who should do this task?",
+        "location": {
+          "startingColumn": 69,
+          "startingLine": 84
+        }
+      },
+      {
+        "comment": "",
+        "key": "Select one child",
+        "location": {
+          "startingColumn": 45,
+          "startingLine": 88
+        }
+      },
+      {
+        "comment": "",
+        "key": "Select one or more children to assign a task",
+        "location": {
+          "startingColumn": 66,
+          "startingLine": 88
+        }
+      },
+      {
+        "comment": "",
+        "key": "Single Selection",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 109
+        }
+      },
+      {
+        "comment": "",
+        "key": "Multi-Select Enabled",
+        "location": {
+          "startingColumn": 70,
+          "startingLine": 109
+        }
+      },
+      {
+        "comment": "",
+        "key": "Tap a child to select them.",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 113
+        }
+      },
+      {
+        "comment": "",
+        "key": "Tap children to select or deselect. The same task will be assigned to all selected children.",
+        "location": {
+          "startingColumn": 81,
+          "startingLine": 113
+        }
+      },
+      {
+        "comment": "",
+        "key": "Available Children",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 128
+        }
+      },
+      {
+        "comment": "",
+        "key": "No Children Available",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 154
+        }
+      },
+      {
+        "comment": "",
+        "key": "Add children to your family to assign tasks",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "Selected (%lld)",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 174
+        }
+      },
+      {
+        "comment": "",
+        "key": "Clear All",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 179
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 263
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld XP",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 271
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld pending",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 280
+        }
+      }
+    ]
+  },
+  "version": 1
+}

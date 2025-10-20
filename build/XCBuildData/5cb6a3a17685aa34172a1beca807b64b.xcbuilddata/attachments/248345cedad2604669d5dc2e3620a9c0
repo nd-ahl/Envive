@@ -1,0 +1,108 @@
+{
+  "" : {
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsExtension-master.dia",
+    "emit-module-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsExtension-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsExtension-master-emit-module.dia",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsExtension-master.swiftdeps"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/AppIntent.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/AppIntent~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/Color+Hex.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/Color+Hex~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/EnviveNewWidgets.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgets~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/EnviveNewWidgetsBundle.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsBundle~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/EnviveNewWidgetsLiveActivity.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveNewWidgetsLiveActivity~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/EnviveSpendingWidget.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/EnviveSpendingWidget~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/FocusWidget.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/FocusWidgetEntry.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidgetEntry~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/FocusWidget_Previews.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/FocusWidget_Previews~partial.swiftmodule"
+  },
+  "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNewWidgetsExtension.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

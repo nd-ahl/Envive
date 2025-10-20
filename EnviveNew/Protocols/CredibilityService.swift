@@ -2,21 +2,25 @@ import Foundation
 import Combine
 
 protocol CredibilityService {
-    var credibilityScore: Int { get }
-    var credibilityHistory: [CredibilityHistoryEvent] { get }
-    var consecutiveApprovedTasks: Int { get }
-    var hasRedemptionBonus: Bool { get }
-    var redemptionBonusExpiry: Date? { get }
-    var lastTaskUploadDate: Date? { get }
-    var dailyStreak: Int { get }
+    // Per-child data access methods
+    func getCredibilityScore(childId: UUID) -> Int
+    func getCredibilityHistory(childId: UUID) -> [CredibilityHistoryEvent]
+    func getConsecutiveApprovedTasks(childId: UUID) -> Int
+    func getHasRedemptionBonus(childId: UUID) -> Bool
+    func getRedemptionBonusExpiry(childId: UUID) -> Date?
+    func getLastTaskUploadDate(childId: UUID) -> Date?
+    func getDailyStreak(childId: UUID) -> Int
 
-    func processDownvote(taskId: UUID, reviewerId: UUID, notes: String?)
-    func undoDownvote(taskId: UUID, reviewerId: UUID)
-    func processApprovedTask(taskId: UUID, reviewerId: UUID, notes: String?)
-    func processTaskUpload(taskId: UUID, userId: UUID)
-    func calculateXPToMinutes(xpAmount: Int) -> Int
-    func getConversionRate() -> Double
-    func getCurrentTier() -> CredibilityTier
-    func getCredibilityStatus() -> CredibilityStatus
-    func applyTimeBasedDecay()
+    // Actions with childId
+    func processDownvote(taskId: UUID, childId: UUID, reviewerId: UUID, notes: String?)
+    func undoDownvote(taskId: UUID, childId: UUID, reviewerId: UUID)
+    func processApprovedTask(taskId: UUID, childId: UUID, reviewerId: UUID, notes: String?)
+    func processTaskUpload(taskId: UUID, childId: UUID)
+
+    // Per-child calculations
+    func calculateXPToMinutes(xpAmount: Int, childId: UUID) -> Int
+    func getConversionRate(childId: UUID) -> Double
+    func getCurrentTier(childId: UUID) -> CredibilityTier
+    func getCredibilityStatus(childId: UUID) -> CredibilityStatus
+    func applyTimeBasedDecay(childId: UUID)
 }

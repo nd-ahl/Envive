@@ -52,6 +52,18 @@ struct RootNavigationView: View {
         }
     }
 
+    /// The current child ID based on which child mode is active
+    private var currentChildId: UUID {
+        switch currentEffectiveMode {
+        case .parent:
+            return deviceModeManager.getTestChild1Id()  // Shouldn't happen, but default to child 1
+        case .child1:
+            return deviceModeManager.getTestChild1Id()
+        case .child2:
+            return deviceModeManager.getTestChild2Id()
+        }
+    }
+
     // MARK: - Parent View
 
     private var parentView: some View {
@@ -61,10 +73,14 @@ struct RootNavigationView: View {
                 viewModel: ParentDashboardViewModel(
                     taskService: DependencyContainer.shared.taskService,
                     credibilityService: DependencyContainer.shared.credibilityService,
+                    xpService: DependencyContainer.shared.xpService,
                     parentId: deviceModeManager.currentProfile?.id ?? UUID(),
-                    testChildId: deviceModeManager.getTestChildId()
+                    testChild1Id: deviceModeManager.getTestChild1Id(),
+                    testChild2Id: deviceModeManager.getTestChild2Id(),
+                    deviceModeManager: deviceModeManager
                 ),
-                appSelectionStore: model.appSelectionStore
+                appSelectionStore: model.appSelectionStore,
+                notificationManager: model.notificationManager
             )
             .tabItem {
                 Image(systemName: "house.fill")
@@ -126,7 +142,7 @@ struct RootNavigationView: View {
                     taskService: DependencyContainer.shared.taskService,
                     xpService: DependencyContainer.shared.xpService,
                     credibilityService: DependencyContainer.shared.credibilityService,
-                    childId: deviceModeManager.getTestChildId()
+                    childId: currentChildId
                 )
             )
             .tabItem {
@@ -246,12 +262,54 @@ struct ParentProfileView: View {
     @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
     @ObservedObject private var deviceModeService = DeviceModeService.shared
     @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
+    @ObservedObject private var profilePhotoManager = ProfilePhotoManager.shared
+
+    @State private var showingProfilePhotoPicker = false
 
     var body: some View {
         NavigationView {
             List {
                 Section {
                     if let profile = deviceModeManager.currentProfile {
+                        // Profile Photo
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 16) {
+                                // Profile photo display
+                                if let photoFileName = profile.profilePhotoFileName,
+                                   let image = profilePhotoManager.loadProfilePhoto(fileName: photoFileName) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 120, height: 120)
+                                        .clipShape(Circle())
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.blue, lineWidth: 3)
+                                        )
+                                } else {
+                                    Circle()
+                                        .fill(Color.gray.opacity(0.3))
+                                        .frame(width: 120, height: 120)
+                                        .overlay(
+                                            Text(String(profile.name.prefix(2)).uppercased())
+                                                .font(.system(size: 40, weight: .semibold))
+                                                .foregroundColor(.white)
+                                        )
+                                }
+
+                                Button(action: {
+                                    showingProfilePhotoPicker = true
+                                }) {
+                                    Text(profile.profilePhotoFileName == nil ? "Add Photo" : "Change Photo")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                            Spacer()
+                        }
+
                         HStack {
                             Text("Name")
                             Spacer()
@@ -321,7 +379,22 @@ struct ParentProfileView: View {
             } message: {
                 Text("This will reset the app and show the welcome screen again. The app will close.")
             }
+            .sheet(isPresented: $showingProfilePhotoPicker) {
+                if let profile = deviceModeManager.currentProfile {
+                    ProfilePhotoPicker(
+                        userId: profile.id,
+                        currentPhotoFileName: profile.profilePhotoFileName,
+                        onPhotoSelected: { fileName in
+                            updateProfilePhoto(fileName: fileName)
+                        }
+                    )
+                }
+            }
         }
+    }
+
+    private func updateProfilePhoto(fileName: String) {
+        deviceModeManager.updateProfilePhoto(fileName: fileName.isEmpty ? nil : fileName)
     }
 }
 

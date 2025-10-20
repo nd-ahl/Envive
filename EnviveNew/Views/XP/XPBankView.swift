@@ -284,20 +284,20 @@ private class MockXPService: XPService {
 }
 
 private class MockCredibilityService: CredibilityService {
-    var credibilityScore: Int { 95 }
-    var credibilityHistory: [CredibilityHistoryEvent] { [] }
-    var consecutiveApprovedTasks: Int { 5 }
-    var lastTaskUploadDate: Date? { nil }
-    var dailyStreak: Int { 7 }
-    var hasRedemptionBonus: Bool { false }
-    var redemptionBonusExpiry: Date? { nil }
-    func processDownvote(taskId: UUID, reviewerId: UUID, notes: String?) {}
-    func undoDownvote(taskId: UUID, reviewerId: UUID) {}
-    func processApprovedTask(taskId: UUID, reviewerId: UUID, notes: String?) {}
-    func processTaskUpload(taskId: UUID, userId: UUID) {}
-    func calculateXPToMinutes(xpAmount: Int) -> Int { xpAmount }
-    func getConversionRate() -> Double { 1.0 }
-    func getCurrentTier() -> CredibilityTier {
+    func getCredibilityScore(childId: UUID) -> Int { 95 }
+    func getCredibilityHistory(childId: UUID) -> [CredibilityHistoryEvent] { [] }
+    func getConsecutiveApprovedTasks(childId: UUID) -> Int { 5 }
+    func getHasRedemptionBonus(childId: UUID) -> Bool { false }
+    func getRedemptionBonusExpiry(childId: UUID) -> Date? { nil }
+    func getLastTaskUploadDate(childId: UUID) -> Date? { nil }
+    func getDailyStreak(childId: UUID) -> Int { 7 }
+    func processDownvote(taskId: UUID, childId: UUID, reviewerId: UUID, notes: String?) {}
+    func undoDownvote(taskId: UUID, childId: UUID, reviewerId: UUID) {}
+    func processApprovedTask(taskId: UUID, childId: UUID, reviewerId: UUID, notes: String?) {}
+    func processTaskUpload(taskId: UUID, childId: UUID) {}
+    func calculateXPToMinutes(xpAmount: Int, childId: UUID) -> Int { xpAmount }
+    func getConversionRate(childId: UUID) -> Double { 1.0 }
+    func getCurrentTier(childId: UUID) -> CredibilityTier {
         CredibilityTier(
             name: "Excellent",
             range: 95...100,
@@ -306,10 +306,10 @@ private class MockCredibilityService: CredibilityService {
             description: "Excellent standing"
         )
     }
-    func getCredibilityStatus() -> CredibilityStatus {
+    func getCredibilityStatus(childId: UUID) -> CredibilityStatus {
         CredibilityStatus(
             score: 95,
-            tier: getCurrentTier(),
+            tier: getCurrentTier(childId: childId),
             consecutiveApprovedTasks: 5,
             dailyStreak: 7,
             hasRedemptionBonus: false,
@@ -319,5 +319,5 @@ private class MockCredibilityService: CredibilityService {
             recoveryPath: nil
         )
     }
-    func applyTimeBasedDecay() {}
+    func applyTimeBasedDecay(childId: UUID) {}
 }

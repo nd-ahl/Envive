@@ -14,16 +14,17 @@ final class ViewModelFactory {
     // MARK: - Credibility View Models
 
     /// Creates a view model for displaying credibility status
-    func makeCredibilityStatusViewModel() -> CredibilityStatusViewModel {
-        CredibilityStatusViewModel(credibilityService: container.credibilityService)
+    func makeCredibilityStatusViewModel(childId: UUID) -> CredibilityStatusViewModel {
+        CredibilityStatusViewModel(credibilityService: container.credibilityService, childId: childId)
     }
 
     /// Creates a view model for XP redemption
-    func makeXPRedemptionViewModel(availableXP: Int) -> XPRedemptionViewModel {
+    func makeXPRedemptionViewModel(availableXP: Int, childId: UUID) -> XPRedemptionViewModel {
         XPRedemptionViewModel(
             availableXP: availableXP,
             credibilityService: container.credibilityService,
-            rewardRepository: container.rewardRepository
+            rewardRepository: container.rewardRepository,
+            childId: childId
         )
     }
 
@@ -69,19 +70,21 @@ final class CredibilityStatusViewModel: ObservableObject {
     @Published var isLoading: Bool = false
 
     private let credibilityService: CredibilityService
+    private let childId: UUID
 
-    init(credibilityService: CredibilityService) {
+    init(credibilityService: CredibilityService, childId: UUID) {
         self.credibilityService = credibilityService
-        self.status = credibilityService.getCredibilityStatus()
+        self.childId = childId
+        self.status = credibilityService.getCredibilityStatus(childId: childId)
     }
 
     func refresh() {
-        status = credibilityService.getCredibilityStatus()
+        status = credibilityService.getCredibilityStatus(childId: childId)
     }
 
     func applyDecay() {
         isLoading = true
-        credibilityService.applyTimeBasedDecay()
+        credibilityService.applyTimeBasedDecay(childId: childId)
         refresh()
         isLoading = false
     }
@@ -107,15 +110,18 @@ final class XPRedemptionViewModel: ObservableObject {
     let availableXP: Int
     private let credibilityService: CredibilityService
     private let rewardRepository: RewardRepository
+    private let childId: UUID
 
     init(
         availableXP: Int,
         credibilityService: CredibilityService,
-        rewardRepository: RewardRepository
+        rewardRepository: RewardRepository,
+        childId: UUID
     ) {
         self.availableXP = availableXP
         self.credibilityService = credibilityService
         self.rewardRepository = rewardRepository
+        self.childId = childId
     }
 
     var xpAmount: Int? {
@@ -129,8 +135,8 @@ final class XPRedemptionViewModel: ObservableObject {
 
     func previewConversion() -> (rate: Double, minutes: Int)? {
         guard let xp = xpAmount, isValidAmount else { return nil }
-        let minutes = credibilityService.calculateXPToMinutes(xpAmount: xp)
-        let rate = credibilityService.getConversionRate()
+        let minutes = credibilityService.calculateXPToMinutes(xpAmount: xp, childId: childId)
+        let rate = credibilityService.getConversionRate(childId: childId)
         return (rate, minutes)
     }
 
@@ -143,7 +149,7 @@ final class XPRedemptionViewModel: ObservableObject {
         isProcessing = true
         errorMessage = nil
 
-        let minutes = credibilityService.calculateXPToMinutes(xpAmount: xp)
+        let minutes = credibilityService.calculateXPToMinutes(xpAmount: xp, childId: childId)
 
         // Update earned minutes
         let currentMinutes = rewardRepository.loadEarnedMinutes()
@@ -192,6 +198,7 @@ final class TaskVerificationViewModel: ObservableObject {
             // Update credibility
             credibilityService.processApprovedTask(
                 taskId: verification.taskId,
+                childId: verification.userId,
                 reviewerId: verification.reviewerId ?? UUID(),
                 notes: notes
             )
@@ -209,6 +216,7 @@ final class TaskVerificationViewModel: ObservableObject {
             // Update credibility
             credibilityService.processDownvote(
                 taskId: verification.taskId,
+                childId: verification.userId,
                 reviewerId: verification.reviewerId ?? UUID(),
                 notes: notes
             )

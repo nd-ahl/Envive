@@ -1,0 +1,18 @@
+"/Users/nealahlstrom/github/Envive/EnviveNew/Components/Credibility/CredibilityComponents.swift":
+  dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/CredibilityComponents.d"
+  object: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/CredibilityComponents.o"
+  swift-dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/CredibilityComponents.swiftdeps"
+  const-values: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/CredibilityComponents.swiftconstvalues"
+  diagnostics: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/CredibilityComponents.dia"
+"/Users/nealahlstrom/github/Envive/EnviveNew/Views/Parent/TaskReviewView.swift":
+  dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskReviewView.d"
+  swift-dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskReviewView.swiftdeps"
+  diagnostics: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskReviewView.dia"
+  const-values: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskReviewView.swiftconstvalues"
+  object: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskReviewView.o"
+"/Users/nealahlstrom/github/Envive/EnviveNew/Views/Parent/ParentDashboardView.swift":
+  dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/ParentDashboardView.d"
+  object: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/ParentDashboardView.o"
+  swift-dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/ParentDashboardView.swiftdeps"
+  diagnostics: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/ParentDashboardView.dia"
+  const-values: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/ParentDashboardView.swiftconstvalues"

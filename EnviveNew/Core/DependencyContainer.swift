@@ -9,8 +9,9 @@ final class DependencyContainer {
         UserDefaultsStorage()
     }()
 
-    lazy var credibilityService: CredibilityService = {
-        CredibilityServiceImpl(
+    lazy var credibilityService: CredibilityServiceImpl = {
+        // No longer needs a default userId - methods accept childId parameter
+        return CredibilityServiceImpl(
             storage: storage,
             calculator: CredibilityCalculator(),
             tierProvider: CredibilityTierProvider()

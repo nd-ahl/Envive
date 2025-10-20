@@ -72,16 +72,16 @@ class DeviceModeService: ObservableObject {
 
     /// Check if current device is child mode
     var isChildDevice: Bool {
-        return deviceMode == .child
+        return deviceMode.isChildMode
     }
 
     /// Get device mode from legacy UserRole string
     static func deviceModeFromUserRole(_ roleString: String) -> DeviceMode {
-        return roleString == "child" ? .child : .parent
+        return roleString == "child" ? .child1 : .parent
     }
 
     /// Convert UserRole enum to DeviceMode
     static func deviceModeFromUserRole(_ role: UserRole) -> DeviceMode {
-        return role == .child ? .child : .parent
+        return role == .child ? .child1 : .parent
     }
 }

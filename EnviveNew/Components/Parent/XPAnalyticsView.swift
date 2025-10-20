@@ -60,7 +60,7 @@ class XPAnalyticsManager: ObservableObject {
             lifetimeSpent: balance.lifetimeSpent,
             earnedToday: dailyStats.earnedToday,
             redeemedToday: dailyStats.redeemedToday,
-            credibilityScore: credibilityService.credibilityScore,
+            credibilityScore: credibilityService.getCredibilityScore(childId: userId),
             earningRate: dailyStats.earningRate,
             recentTransactions: transactions,
             weeklyHistory: weeklyHistory

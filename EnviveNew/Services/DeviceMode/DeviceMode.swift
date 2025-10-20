@@ -6,14 +6,17 @@ import Foundation
 /// This allows single-device testing while maintaining clean architecture for multi-device Firebase sync
 enum DeviceMode: String, Codable, CaseIterable {
     case parent
-    case child
+    case child1
+    case child2
 
     var displayName: String {
         switch self {
         case .parent:
             return "Parent"
-        case .child:
-            return "Child"
+        case .child1:
+            return "Child 1"
+        case .child2:
+            return "Child 2"
         }
     }
 
@@ -21,7 +24,9 @@ enum DeviceMode: String, Codable, CaseIterable {
         switch self {
         case .parent:
             return "person.2.fill"
-        case .child:
+        case .child1:
+            return "person.fill"
+        case .child2:
             return "person.fill"
         }
     }
@@ -30,8 +35,20 @@ enum DeviceMode: String, Codable, CaseIterable {
         switch self {
         case .parent:
             return "Manage tasks, approve completions, and monitor children"
-        case .child:
-            return "Complete tasks and earn screen time"
+        case .child1:
+            return "Complete tasks and earn screen time (Sarah)"
+        case .child2:
+            return "Complete tasks and earn screen time (Jake)"
+        }
+    }
+
+    /// Check if this mode is any child mode
+    var isChildMode: Bool {
+        switch self {
+        case .parent:
+            return false
+        case .child1, .child2:
+            return true
         }
     }
 }
@@ -49,13 +66,16 @@ struct UserProfile: Codable, Identifiable {
     /// User's age
     var age: Int?
 
+    /// Profile photo file name (stored in Documents directory)
+    var profilePhotoFileName: String?
+
     /// For parent mode - track which children they manage (future: from Firebase)
     var managedChildrenIds: [UUID]
 
     /// For child mode - track their parent (future: from Firebase)
     var parentId: UUID?
 
-    init(id: UUID = UUID(), name: String, mode: DeviceMode, age: Int? = nil, parentId: UUID? = nil) {
+    init(id: UUID = UUID(), name: String, mode: DeviceMode, age: Int? = nil, parentId: UUID? = nil, profilePhotoFileName: String? = nil) {
         self.id = id
         self.name = name
         self.mode = mode
@@ -63,5 +83,6 @@ struct UserProfile: Codable, Identifiable {
         self.createdAt = Date()
         self.managedChildrenIds = []
         self.parentId = parentId
+        self.profilePhotoFileName = profilePhotoFileName
     }
 }

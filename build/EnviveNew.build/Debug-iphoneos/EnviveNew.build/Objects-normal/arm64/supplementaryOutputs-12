@@ -1,0 +1,18 @@
+"/Users/nealahlstrom/github/Envive/EnviveNew/ViewModels/XPBankViewModel.swift":
+  diagnostics: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankViewModel.dia"
+  const-values: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankViewModel.swiftconstvalues"
+  swift-dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankViewModel.swiftdeps"
+  dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankViewModel.d"
+  object: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankViewModel.o"
+"/Users/nealahlstrom/github/Envive/EnviveNew/Views/XP/XPBankView.swift":
+  swift-dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankView.swiftdeps"
+  dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankView.d"
+  diagnostics: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankView.dia"
+  const-values: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankView.swiftconstvalues"
+  object: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/XPBankView.o"
+"/Users/nealahlstrom/github/Envive/EnviveNew/Services/Tasks/TaskService.swift":
+  dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskService.d"
+  swift-dependencies: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskService.swiftdeps"
+  diagnostics: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskService.dia"
+  object: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskService.o"
+  const-values: "/Users/nealahlstrom/github/Envive/build/EnviveNew.build/Debug-iphoneos/EnviveNew.build/Objects-normal/arm64/TaskService.swiftconstvalues"

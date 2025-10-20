@@ -3,7 +3,7 @@ import Foundation
 final class CredibilityRepository {
     private let storage: StorageService
 
-    private enum Keys {
+    private enum KeyPrefix {
         static let score = "userCredibilityScore"
         static let history = "userCredibilityHistory"
         static let consecutiveTasks = "consecutiveApprovedTasks"
@@ -17,62 +17,92 @@ final class CredibilityRepository {
         self.storage = storage
     }
 
-    func saveScore(_ score: Int) {
-        storage.saveInt(score, forKey: Keys.score)
+    // MARK: - User-specific keys
+
+    private func scoreKey(for childId: UUID) -> String {
+        "\(KeyPrefix.score)_\(childId.uuidString)"
     }
 
-    func loadScore(defaultValue: Int = 100) -> Int {
-        storage.loadInt(forKey: Keys.score, defaultValue: defaultValue)
+    private func historyKey(for childId: UUID) -> String {
+        "\(KeyPrefix.history)_\(childId.uuidString)"
     }
 
-    func saveHistory(_ history: [CredibilityHistoryEvent]) {
-        storage.save(history, forKey: Keys.history)
+    private func consecutiveTasksKey(for childId: UUID) -> String {
+        "\(KeyPrefix.consecutiveTasks)_\(childId.uuidString)"
     }
 
-    func loadHistory() -> [CredibilityHistoryEvent] {
-        storage.load(forKey: Keys.history) ?? []
+    private func hasBonusKey(for childId: UUID) -> String {
+        "\(KeyPrefix.hasBonus)_\(childId.uuidString)"
     }
 
-    func saveConsecutiveTasks(_ count: Int) {
-        storage.saveInt(count, forKey: Keys.consecutiveTasks)
+    private func bonusExpiryKey(for childId: UUID) -> String {
+        "\(KeyPrefix.bonusExpiry)_\(childId.uuidString)"
     }
 
-    func loadConsecutiveTasks() -> Int {
-        storage.loadInt(forKey: Keys.consecutiveTasks, defaultValue: 0)
+    private func lastUploadDateKey(for childId: UUID) -> String {
+        "\(KeyPrefix.lastUploadDate)_\(childId.uuidString)"
     }
 
-    func saveRedemptionBonus(active: Bool, expiry: Date?) {
-        storage.saveBool(active, forKey: Keys.hasBonus)
+    private func dailyStreakKey(for childId: UUID) -> String {
+        "\(KeyPrefix.dailyStreak)_\(childId.uuidString)"
+    }
+
+    func saveScore(_ score: Int, childId: UUID) {
+        storage.saveInt(score, forKey: scoreKey(for: childId))
+    }
+
+    func loadScore(childId: UUID, defaultValue: Int = 100) -> Int {
+        storage.loadInt(forKey: scoreKey(for: childId), defaultValue: defaultValue)
+    }
+
+    func saveHistory(_ history: [CredibilityHistoryEvent], childId: UUID) {
+        storage.save(history, forKey: historyKey(for: childId))
+    }
+
+    func loadHistory(childId: UUID) -> [CredibilityHistoryEvent] {
+        storage.load(forKey: historyKey(for: childId)) ?? []
+    }
+
+    func saveConsecutiveTasks(_ count: Int, childId: UUID) {
+        storage.saveInt(count, forKey: consecutiveTasksKey(for: childId))
+    }
+
+    func loadConsecutiveTasks(childId: UUID) -> Int {
+        storage.loadInt(forKey: consecutiveTasksKey(for: childId), defaultValue: 0)
+    }
+
+    func saveRedemptionBonus(active: Bool, expiry: Date?, childId: UUID) {
+        storage.saveBool(active, forKey: hasBonusKey(for: childId))
         if let expiry = expiry {
-            storage.saveDate(expiry, forKey: Keys.bonusExpiry)
+            storage.saveDate(expiry, forKey: bonusExpiryKey(for: childId))
         } else {
-            storage.remove(forKey: Keys.bonusExpiry)
+            storage.remove(forKey: bonusExpiryKey(for: childId))
         }
     }
 
-    func loadRedemptionBonus() -> (active: Bool, expiry: Date?) {
-        let active = storage.loadBool(forKey: Keys.hasBonus)
-        let expiry = storage.loadDate(forKey: Keys.bonusExpiry)
+    func loadRedemptionBonus(childId: UUID) -> (active: Bool, expiry: Date?) {
+        let active = storage.loadBool(forKey: hasBonusKey(for: childId))
+        let expiry = storage.loadDate(forKey: bonusExpiryKey(for: childId))
         return (active, expiry)
     }
 
-    func saveLastUploadDate(_ date: Date?) {
+    func saveLastUploadDate(_ date: Date?, childId: UUID) {
         if let date = date {
-            storage.saveDate(date, forKey: Keys.lastUploadDate)
+            storage.saveDate(date, forKey: lastUploadDateKey(for: childId))
         } else {
-            storage.remove(forKey: Keys.lastUploadDate)
+            storage.remove(forKey: lastUploadDateKey(for: childId))
         }
     }
 
-    func loadLastUploadDate() -> Date? {
-        storage.loadDate(forKey: Keys.lastUploadDate)
+    func loadLastUploadDate(childId: UUID) -> Date? {
+        storage.loadDate(forKey: lastUploadDateKey(for: childId))
     }
 
-    func saveDailyStreak(_ streak: Int) {
-        storage.saveInt(streak, forKey: Keys.dailyStreak)
+    func saveDailyStreak(_ streak: Int, childId: UUID) {
+        storage.saveInt(streak, forKey: dailyStreakKey(for: childId))
     }
 
-    func loadDailyStreak() -> Int {
-        storage.loadInt(forKey: Keys.dailyStreak, defaultValue: 0)
+    func loadDailyStreak(childId: UUID) -> Int {
+        storage.loadInt(forKey: dailyStreakKey(for: childId), defaultValue: 0)
     }
 }

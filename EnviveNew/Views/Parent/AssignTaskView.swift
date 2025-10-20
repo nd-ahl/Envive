@@ -7,6 +7,7 @@ struct AssignTaskView: View {
     let taskService: TaskService
     let parentId: UUID
     let selectedChildren: [ChildSummary]
+    let notificationManager: NotificationManager
 
     @Environment(\.dismiss) private var dismiss
 
@@ -524,6 +525,17 @@ struct AssignTaskView: View {
                 dueDate: hasDueDate ? dueDate : nil
             )
             print("✅ Task assigned with ID: \(assignment.id), status: \(assignment.status)")
+
+            // Send notification to child with the "complete" sound
+            notificationManager.sendTaskAssignedNotification(
+                childName: child.name,
+                taskTitle: template.title,
+                xpReward: selectedLevel.baseXP
+            )
+
+            // Play haptic feedback for parent
+            HapticFeedbackManager.shared.taskAssigned()
+
             return assignment
         }
 
@@ -827,7 +839,8 @@ struct AssignTaskView_Previews: PreviewProvider {
                     xpBalance: 120,
                     pendingCount: 0
                 )
-            ]
+            ],
+            notificationManager: NotificationManager()
         )
     }
 }

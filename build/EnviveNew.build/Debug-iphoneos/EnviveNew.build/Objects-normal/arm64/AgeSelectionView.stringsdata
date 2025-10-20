@@ -1,0 +1,104 @@
+{
+  "source": "/Users/nealahlstrom/github/Envive/EnviveNew/Views/Onboarding/AgeSelectionView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "🎂",
+        "location": {
+          "startingColumn": 40,
+          "startingLine": 73
+        }
+      },
+      {
+        "comment": "",
+        "key": "🎈",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 73
+        }
+      },
+      {
+        "comment": "",
+        "key": "How old are you?",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 79
+        }
+      },
+      {
+        "comment": "",
+        "key": "This helps us personalize your experience",
+        "location": {
+          "startingColumn": 44,
+          "startingLine": 85
+        }
+      },
+      {
+        "comment": "",
+        "key": "Just so we know how to set things up!",
+        "location": {
+          "startingColumn": 90,
+          "startingLine": 85
+        }
+      },
+      {
+        "comment": "",
+        "key": "Age",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 113
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 100
+        }
+      },
+      {
+        "comment": "",
+        "key": "years old",
+        "location": {
+          "startingColumn": 44,
+          "startingLine": 105
+        }
+      },
+      {
+        "comment": "",
+        "key": "years",
+        "location": {
+          "startingColumn": 58,
+          "startingLine": 105
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 115
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your age is private and secure",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 141
+        }
+      },
+      {
+        "comment": "",
+        "key": "Continue",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 159
+        }
+      }
+    ]
+  },
+  "version": 1
+}

@@ -706,11 +706,11 @@ class ChildDashboardViewModel: ObservableObject {
         }
 
         // Load credibility
-        credibility = credibilityService.credibilityScore
+        credibility = credibilityService.getCredibilityScore(childId: childId)
 
         // Convert XP to minutes using credibility multiplier
         // This ensures consistency with home screen and session system
-        xpBalance = credibilityService.calculateXPToMinutes(xpAmount: rawXP)
+        xpBalance = credibilityService.calculateXPToMinutes(xpAmount: rawXP, childId: childId)
 
         print("👶 XP: \(rawXP) → Minutes: \(xpBalance) (credibility: \(credibility)%)")
 
@@ -855,6 +855,77 @@ struct ChildTaskDetailView: View {
                         .font(.subheadline)
                         .foregroundColor(.orange)
                 }
+            }
+
+            // Task Creator Info
+            Divider()
+
+            HStack(spacing: 8) {
+                // Profile photo or initials
+                if assignment.isParentAssigned,
+                   let assignerId = assignment.assignedBy,
+                   let assignerProfile = getAssignerProfile(assignerId) {
+
+                    if let photoFileName = assignerProfile.profilePhotoFileName,
+                       let image = ProfilePhotoManager.shared.loadProfilePhoto(fileName: photoFileName) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 32, height: 32)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(Color.blue.opacity(0.2))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Text(String(assignerProfile.name.prefix(1)).uppercased())
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.blue)
+                            )
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Assigned by")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(assignerProfile.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                } else {
+                    // Self-created task - show child's photo
+                    let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+
+                    if let profile = deviceModeManager.currentProfile,
+                       let photoFileName = profile.profilePhotoFileName,
+                       let image = ProfilePhotoManager.shared.loadProfilePhoto(fileName: photoFileName) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 32, height: 32)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(Color.green.opacity(0.2))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.green)
+                            )
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Created by")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("You")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                }
+
+                Spacer()
             }
         }
         .padding()
@@ -1128,6 +1199,10 @@ struct ChildTaskDetailView: View {
         let success = taskService.startTask(assignmentId: assignment.id)
         if success {
             print("✅ Task started successfully")
+
+            // Play haptic and audio feedback
+            HapticFeedbackManager.shared.taskStarted()
+
             // Save start time to persistent storage
             TaskTimerManager.shared.setStartTime(Date(), for: assignment.id)
             // Start the stopwatch
@@ -1162,11 +1237,18 @@ struct ChildTaskDetailView: View {
 
         if success {
             print("✅ Task completed and submitted for review (Time spent: \(timeSpentMinutes) minutes)")
+
+            // Play rewarding haptic and audio feedback
+            HapticFeedbackManager.shared.taskCompleted()
+
             // Remove start time from persistent storage
             TaskTimerManager.shared.removeStartTime(for: assignment.id)
             showingCompleteConfirmation = true
         } else {
             print("❌ Failed to complete task")
+
+            // Play error haptic
+            HapticFeedbackManager.shared.error()
         }
     }
 
@@ -1198,6 +1280,24 @@ struct ChildTaskDetailView: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Get the profile of the user who assigned this task
+    private func getAssignerProfile(_ assignerId: UUID) -> UserProfile? {
+        // Use the device mode manager to get the profile by ID
+        let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+
+        // Try to load the actual stored profile
+        if let profile = deviceModeManager.getProfile(byId: assignerId) {
+            return profile
+        }
+
+        // Fallback: Create a default parent profile for display
+        return UserProfile(
+            id: assignerId,
+            name: "Parent",
+            mode: .parent
+        )
     }
 
     // MARK: - Timer Management

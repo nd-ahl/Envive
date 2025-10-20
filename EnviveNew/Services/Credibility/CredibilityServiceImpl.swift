@@ -1,15 +1,7 @@
 import Foundation
 import Combine
 
-final class CredibilityServiceImpl: ObservableObject, CredibilityService {
-    @Published private(set) var credibilityScore: Int
-    @Published private(set) var credibilityHistory: [CredibilityHistoryEvent]
-    @Published private(set) var consecutiveApprovedTasks: Int
-    @Published private(set) var hasRedemptionBonus: Bool
-    @Published private(set) var redemptionBonusExpiry: Date?
-    @Published private(set) var lastTaskUploadDate: Date?
-    @Published private(set) var dailyStreak: Int
-
+final class CredibilityServiceImpl: CredibilityService {
     private let repository: CredibilityRepository
     private let calculator: CredibilityCalculator
     private let tierProvider: CredibilityTierProvider
@@ -27,23 +19,45 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         self.repository = CredibilityRepository(storage: storage)
         self.calculator = calculator
         self.tierProvider = tierProvider
-
-        // Load persisted state
-        self.credibilityScore = repository.loadScore()
-        self.credibilityHistory = repository.loadHistory()
-        self.consecutiveApprovedTasks = repository.loadConsecutiveTasks()
-        self.lastTaskUploadDate = repository.loadLastUploadDate()
-        self.dailyStreak = repository.loadDailyStreak()
-
-        let bonus = repository.loadRedemptionBonus()
-        self.hasRedemptionBonus = bonus.active
-        self.redemptionBonusExpiry = bonus.expiry
-
-        checkRedemptionBonusExpiry()
-        validateDailyStreak()
     }
 
-    func processDownvote(taskId: UUID, reviewerId: UUID, notes: String? = nil) {
+    // MARK: - Per-Child Data Access
+
+    func getCredibilityScore(childId: UUID) -> Int {
+        repository.loadScore(childId: childId)
+    }
+
+    func getCredibilityHistory(childId: UUID) -> [CredibilityHistoryEvent] {
+        repository.loadHistory(childId: childId)
+    }
+
+    func getConsecutiveApprovedTasks(childId: UUID) -> Int {
+        repository.loadConsecutiveTasks(childId: childId)
+    }
+
+    func getHasRedemptionBonus(childId: UUID) -> Bool {
+        repository.loadRedemptionBonus(childId: childId).active
+    }
+
+    func getRedemptionBonusExpiry(childId: UUID) -> Date? {
+        repository.loadRedemptionBonus(childId: childId).expiry
+    }
+
+    func getLastTaskUploadDate(childId: UUID) -> Date? {
+        repository.loadLastUploadDate(childId: childId)
+    }
+
+    func getDailyStreak(childId: UUID) -> Int {
+        repository.loadDailyStreak(childId: childId)
+    }
+
+    func processDownvote(taskId: UUID, childId: UUID, reviewerId: UUID, notes: String? = nil) {
+        var credibilityHistory = repository.loadHistory(childId: childId)
+        var credibilityScore = repository.loadScore(childId: childId)
+        var consecutiveApprovedTasks = repository.loadConsecutiveTasks(childId: childId)
+        let bonus = repository.loadRedemptionBonus(childId: childId)
+        var hasRedemptionBonus = bonus.active
+
         let lastDownvote = credibilityHistory
             .filter { $0.event == .downvote }
             .sorted { $0.timestamp > $1.timestamp }
@@ -67,18 +81,32 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         credibilityHistory.append(event)
 
         if hasRedemptionBonus && credibilityScore < redemptionBonusThreshold {
-            deactivateRedemptionBonus()
+            hasRedemptionBonus = false
+            repository.saveRedemptionBonus(active: false, expiry: nil, childId: childId)
+
+            let bonusEvent = CredibilityHistoryEvent(
+                event: .redemptionBonusExpired,
+                amount: 0,
+                newScore: credibilityScore
+            )
+            credibilityHistory.append(bonusEvent)
         }
 
-        persistState()
-        print("💔 Downvote: \(penalty) points. Score: \(previousScore) → \(credibilityScore)")
+        repository.saveScore(credibilityScore, childId: childId)
+        repository.saveHistory(credibilityHistory, childId: childId)
+        repository.saveConsecutiveTasks(consecutiveApprovedTasks, childId: childId)
+
+        print("💔 Downvote (child: \(childId)): \(penalty) points. Score: \(previousScore) → \(credibilityScore)")
     }
 
-    func undoDownvote(taskId: UUID, reviewerId: UUID) {
+    func undoDownvote(taskId: UUID, childId: UUID, reviewerId: UUID) {
+        var credibilityHistory = repository.loadHistory(childId: childId)
+        var credibilityScore = repository.loadScore(childId: childId)
+
         guard let index = credibilityHistory.lastIndex(where: {
             $0.event == .downvote && $0.taskId == taskId && $0.reviewerId == reviewerId
         }) else {
-            print("⚠️ No downvote found to undo")
+            print("⚠️ No downvote found to undo for child: \(childId)")
             return
         }
 
@@ -98,11 +126,20 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         )
         credibilityHistory.append(undoEvent)
 
-        persistState()
-        print("↩️ Downvote undone: +\(restored) points. Score: \(previousScore) → \(credibilityScore)")
+        repository.saveScore(credibilityScore, childId: childId)
+        repository.saveHistory(credibilityHistory, childId: childId)
+
+        print("↩️ Downvote undone (child: \(childId)): +\(restored) points. Score: \(previousScore) → \(credibilityScore)")
     }
 
-    func processApprovedTask(taskId: UUID, reviewerId: UUID, notes: String? = nil) {
+    func processApprovedTask(taskId: UUID, childId: UUID, reviewerId: UUID, notes: String? = nil) {
+        var credibilityHistory = repository.loadHistory(childId: childId)
+        var credibilityScore = repository.loadScore(childId: childId)
+        var consecutiveApprovedTasks = repository.loadConsecutiveTasks(childId: childId)
+        let bonus = repository.loadRedemptionBonus(childId: childId)
+        var hasRedemptionBonus = bonus.active
+        var redemptionBonusExpiry = bonus.expiry
+
         let previousScore = credibilityScore
         let config = CredibilityCalculationConfig()
 
@@ -120,52 +157,92 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         credibilityHistory.append(event)
 
         if calculator.shouldAwardStreakBonus(consecutiveTasks: consecutiveApprovedTasks) {
-            applyStreakBonus()
+            // Apply streak bonus
+            credibilityScore = calculator.clampScore(credibilityScore + config.streakBonusAmount)
+
+            let streakEvent = CredibilityHistoryEvent(
+                event: .streakBonus,
+                amount: config.streakBonusAmount,
+                newScore: credibilityScore,
+                streakCount: consecutiveApprovedTasks
+            )
+            credibilityHistory.append(streakEvent)
+            print("🔥 Streak bonus (child: \(childId))! \(consecutiveApprovedTasks) tasks. +\(config.streakBonusAmount)")
         }
 
         if !hasRedemptionBonus &&
            credibilityScore >= redemptionBonusThreshold &&
            previousScore < redemptionBonusPreviousThreshold {
-            activateRedemptionBonus()
+            // Activate redemption bonus
+            hasRedemptionBonus = true
+            redemptionBonusExpiry = Calendar.current.date(
+                byAdding: .day,
+                value: redemptionBonusDays,
+                to: Date()
+            )
+
+            let bonusEvent = CredibilityHistoryEvent(
+                event: .redemptionBonusActivated,
+                amount: 0,
+                newScore: credibilityScore
+            )
+            credibilityHistory.append(bonusEvent)
+            print("⭐️ Redemption bonus activated (child: \(childId))! 1.3x for \(redemptionBonusDays) days")
         }
 
-        persistState()
-        print("✅ Approved: +\(config.approvedTaskBonus). Score: \(previousScore) → \(credibilityScore)")
+        repository.saveScore(credibilityScore, childId: childId)
+        repository.saveHistory(credibilityHistory, childId: childId)
+        repository.saveConsecutiveTasks(consecutiveApprovedTasks, childId: childId)
+        repository.saveRedemptionBonus(active: hasRedemptionBonus, expiry: redemptionBonusExpiry, childId: childId)
+
+        print("✅ Approved (child: \(childId)): +\(config.approvedTaskBonus). Score: \(previousScore) → \(credibilityScore)")
     }
 
-    func calculateXPToMinutes(xpAmount: Int) -> Int {
-        let tier = getCurrentTier()
-        let multiplier = tier.multiplier * (hasRedemptionBonus ? redemptionBonusMultiplier : 1.0)
+    func calculateXPToMinutes(xpAmount: Int, childId: UUID) -> Int {
+        let tier = getCurrentTier(childId: childId)
+        let hasBonus = repository.loadRedemptionBonus(childId: childId).active
+        let multiplier = tier.multiplier * (hasBonus ? redemptionBonusMultiplier : 1.0)
         return Int((Double(xpAmount) * multiplier).rounded())
     }
 
-    func getConversionRate() -> Double {
-        let tier = getCurrentTier()
-        return tier.multiplier * (hasRedemptionBonus ? redemptionBonusMultiplier : 1.0)
+    func getConversionRate(childId: UUID) -> Double {
+        let tier = getCurrentTier(childId: childId)
+        let hasBonus = repository.loadRedemptionBonus(childId: childId).active
+        return tier.multiplier * (hasBonus ? redemptionBonusMultiplier : 1.0)
     }
 
-    func getCurrentTier() -> CredibilityTier {
-        tierProvider.getTier(for: credibilityScore)
+    func getCurrentTier(childId: UUID) -> CredibilityTier {
+        let score = repository.loadScore(childId: childId)
+        return tierProvider.getTier(for: score)
     }
 
-    func getCredibilityStatus() -> CredibilityStatus {
-        let tier = getCurrentTier()
-        let recoveryPath = calculateRecoveryPath()
+    func getCredibilityStatus(childId: UUID) -> CredibilityStatus {
+        let score = repository.loadScore(childId: childId)
+        let history = repository.loadHistory(childId: childId)
+        let consecutiveTasks = repository.loadConsecutiveTasks(childId: childId)
+        let streak = repository.loadDailyStreak(childId: childId)
+        let bonus = repository.loadRedemptionBonus(childId: childId)
+
+        let tier = tierProvider.getTier(for: score)
+        let recoveryPath = calculateRecoveryPath(childId: childId)
 
         return CredibilityStatus(
-            score: credibilityScore,
+            score: score,
             tier: tier,
-            consecutiveApprovedTasks: consecutiveApprovedTasks,
-            dailyStreak: dailyStreak,
-            hasRedemptionBonus: hasRedemptionBonus,
-            redemptionBonusExpiry: redemptionBonusExpiry,
-            history: credibilityHistory,
-            conversionRate: getConversionRate(),
+            consecutiveApprovedTasks: consecutiveTasks,
+            dailyStreak: streak,
+            hasRedemptionBonus: bonus.active,
+            redemptionBonusExpiry: bonus.expiry,
+            history: history,
+            conversionRate: getConversionRate(childId: childId),
             recoveryPath: recoveryPath
         )
     }
 
-    func applyTimeBasedDecay() {
+    func applyTimeBasedDecay(childId: UUID) {
+        var credibilityHistory = repository.loadHistory(childId: childId)
+        var credibilityScore = repository.loadScore(childId: childId)
+
         let recovery = calculator.calculateDecayRecovery(for: credibilityHistory, currentDate: Date())
 
         guard recovery > 0 else { return }
@@ -179,93 +256,34 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         )
         credibilityHistory.append(event)
 
-        persistState()
-        print("🔄 Time decay: +\(recovery) points. New score: \(credibilityScore)")
+        repository.saveScore(credibilityScore, childId: childId)
+        repository.saveHistory(credibilityHistory, childId: childId)
+
+        print("🔄 Time decay (child: \(childId)): +\(recovery) points. New score: \(credibilityScore)")
     }
 
-    // MARK: - Private
+    // MARK: - Private Helpers
 
-    private func applyStreakBonus() {
-        let config = CredibilityCalculationConfig()
-        let previousScore = credibilityScore
-
-        credibilityScore = calculator.clampScore(credibilityScore + config.streakBonusAmount)
-
-        let event = CredibilityHistoryEvent(
-            event: .streakBonus,
-            amount: config.streakBonusAmount,
-            newScore: credibilityScore,
-            streakCount: consecutiveApprovedTasks
-        )
-        credibilityHistory.append(event)
-
-        print("🔥 Streak bonus! \(consecutiveApprovedTasks) tasks. +\(config.streakBonusAmount)")
-    }
-
-    private func activateRedemptionBonus() {
-        hasRedemptionBonus = true
-        redemptionBonusExpiry = Calendar.current.date(
-            byAdding: .day,
-            value: redemptionBonusDays,
-            to: Date()
-        )
-
-        let event = CredibilityHistoryEvent(
-            event: .redemptionBonusActivated,
-            amount: 0,
-            newScore: credibilityScore
-        )
-        credibilityHistory.append(event)
-
-        print("⭐️ Redemption bonus activated! 1.3x for \(redemptionBonusDays) days")
-    }
-
-    private func deactivateRedemptionBonus() {
-        hasRedemptionBonus = false
-        redemptionBonusExpiry = nil
-
-        let event = CredibilityHistoryEvent(
-            event: .redemptionBonusExpired,
-            amount: 0,
-            newScore: credibilityScore
-        )
-        credibilityHistory.append(event)
-    }
-
-    private func checkRedemptionBonusExpiry() {
-        guard hasRedemptionBonus,
-              let expiry = redemptionBonusExpiry,
-              Date() > expiry else { return }
-
-        deactivateRedemptionBonus()
-        persistState()
-    }
-
-    private func calculateRecoveryPath() -> String? {
-        let currentTier = getCurrentTier()
-        guard let nextTier = tierProvider.nextTier(above: credibilityScore) else {
+    private func calculateRecoveryPath(childId: UUID) -> String? {
+        let score = repository.loadScore(childId: childId)
+        let currentTier = tierProvider.getTier(for: score)
+        guard let nextTier = tierProvider.nextTier(above: score) else {
             return nil
         }
 
         let config = CredibilityCalculationConfig()
-        let pointsNeeded = nextTier.range.lowerBound - credibilityScore
+        let pointsNeeded = nextTier.range.lowerBound - score
         let tasksNeeded = (pointsNeeded + config.approvedTaskBonus - 1) / config.approvedTaskBonus
 
         return "Complete \(tasksNeeded) approved tasks to reach \(nextTier.name) status"
     }
 
-    private func persistState() {
-        repository.saveScore(credibilityScore)
-        repository.saveHistory(credibilityHistory)
-        repository.saveConsecutiveTasks(consecutiveApprovedTasks)
-        repository.saveRedemptionBonus(active: hasRedemptionBonus, expiry: redemptionBonusExpiry)
-        repository.saveLastUploadDate(lastTaskUploadDate)
-        repository.saveDailyStreak(dailyStreak)
-    }
-
     // MARK: - Daily Streak Management
 
-    func processTaskUpload(taskId: UUID, userId: UUID) {
+    func processTaskUpload(taskId: UUID, childId: UUID) {
+        var dailyStreak = repository.loadDailyStreak(childId: childId)
+        let lastTaskUploadDate = repository.loadLastUploadDate(childId: childId)
+
         let now = Date()
         let calendar = Calendar.current
 
@@ -273,7 +291,7 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
         if let lastUpload = lastTaskUploadDate {
             if calendar.isDateInToday(lastUpload) {
                 // Already uploaded today - no streak change
-                print("📤 Task uploaded (already counted today). Streak: \(dailyStreak)")
+                print("📤 Task uploaded (child: \(childId), already counted today). Streak: \(dailyStreak)")
                 return
             }
 
@@ -281,51 +299,41 @@ final class CredibilityServiceImpl: ObservableObject, CredibilityService {
             if calendar.isDateInYesterday(lastUpload) {
                 // Consecutive day! Increment streak
                 dailyStreak += 1
-                print("🔥 Daily streak increased! \(dailyStreak) days")
+                print("🔥 Daily streak increased (child: \(childId))! \(dailyStreak) days")
 
                 // Check for streak bonus every 10 days
                 if dailyStreak % 10 == 0 {
-                    applyStreakBonus()
+                    var credibilityScore = repository.loadScore(childId: childId)
+                    var credibilityHistory = repository.loadHistory(childId: childId)
+                    let config = CredibilityCalculationConfig()
+
+                    credibilityScore = calculator.clampScore(credibilityScore + config.streakBonusAmount)
+
+                    let streakEvent = CredibilityHistoryEvent(
+                        event: .streakBonus,
+                        amount: config.streakBonusAmount,
+                        newScore: credibilityScore,
+                        streakCount: dailyStreak
+                    )
+                    credibilityHistory.append(streakEvent)
+
+                    repository.saveScore(credibilityScore, childId: childId)
+                    repository.saveHistory(credibilityHistory, childId: childId)
+
+                    print("🔥 Streak bonus (child: \(childId))! \(dailyStreak) days. +\(config.streakBonusAmount)")
                 }
             } else {
                 // More than 24 hours passed - reset streak
                 dailyStreak = 1
-                print("💔 Streak broken. Starting fresh at 1 day")
+                print("💔 Streak broken (child: \(childId)). Starting fresh at 1 day")
             }
         } else {
             // First ever upload
             dailyStreak = 1
-            print("🎉 First daily task! Streak: 1 day")
+            print("🎉 First daily task (child: \(childId))! Streak: 1 day")
         }
 
-        lastTaskUploadDate = now
-        persistState()
-    }
-
-    private func validateDailyStreak() {
-        guard let lastUpload = lastTaskUploadDate else {
-            // No previous uploads, keep streak at 0
-            if dailyStreak > 0 {
-                dailyStreak = 0
-                persistState()
-            }
-            return
-        }
-
-        let calendar = Calendar.current
-        let now = Date()
-
-        // If last upload was today or yesterday, streak is still valid
-        if calendar.isDateInToday(lastUpload) || calendar.isDateInYesterday(lastUpload) {
-            print("✅ Daily streak still valid: \(dailyStreak) days")
-            return
-        }
-
-        // More than 24 hours since last upload - reset streak
-        if dailyStreak > 0 {
-            print("💔 24+ hours without upload. Streak reset from \(dailyStreak) to 0")
-            dailyStreak = 0
-            persistState()
-        }
+        repository.saveLastUploadDate(now, childId: childId)
+        repository.saveDailyStreak(dailyStreak, childId: childId)
     }
 }

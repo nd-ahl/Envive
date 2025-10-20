@@ -1,0 +1,72 @@
+{
+  "source": "/Users/nealahlstrom/github/Envive/EnviveNewWidgets/FocusWidget.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Start Spending",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 17
+        }
+      },
+      {
+        "comment": "",
+        "key": "Select Time",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 28
+        }
+      },
+      {
+        "comment": "",
+        "key": "Minutes",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 31
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lock In",
+        "location": {
+          "startingColumn": 14,
+          "startingLine": 186
+        }
+      },
+      {
+        "comment": "",
+        "key": "Spend Time",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 200
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld minutes",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 237
+        }
+      },
+      {
+        "comment": "",
+        "key": "Envive Focus",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 323
+        }
+      },
+      {
+        "comment": "",
+        "key": "Track your available screen time and current streak. Tap to spend time.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 324
+        }
+      }
+    ]
+  },
+  "version": 1
+}

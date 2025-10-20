@@ -11,12 +11,9 @@ struct AppManagementView: View {
 
     @State private var isPresentingPicker = false
     @State private var tempSelection: FamilyActivitySelection
-    @State private var showingSaveConfirmation = false
     @State private var showingClearConfirmation = false
     @State private var showingPermissionAlert = false
     @State private var isRequestingPermission = false
-
-    @Environment(\.dismiss) private var dismiss
 
     private let authorizationCenter = AuthorizationCenter.shared
 
@@ -45,22 +42,6 @@ struct AppManagementView: View {
             }
             .navigationTitle("App Management")
             .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        tempSelection = appSelectionStore.familyActivitySelection
-                        dismiss()
-                    }
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveChanges()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(!hasChanges)
-                }
-            }
             .sheet(isPresented: $isPresentingPicker) {
                 NavigationView {
                     FamilyActivityPickerView(selection: $tempSelection)
@@ -69,18 +50,13 @@ struct AppManagementView: View {
                         .toolbar {
                             ToolbarItem(placement: .navigationBarTrailing) {
                                 Button("Done") {
+                                    // Save changes automatically when Done is pressed
+                                    saveChanges()
                                     isPresentingPicker = false
                                 }
                             }
                         }
                 }
-            }
-            .alert("Changes Saved", isPresented: $showingSaveConfirmation) {
-                Button("OK") {
-                    dismiss()
-                }
-            } message: {
-                Text("Blocked apps have been updated successfully.")
             }
             .alert("Clear All Restrictions?", isPresented: $showingClearConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -274,14 +250,6 @@ struct AppManagementView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
-    // MARK: - Computed Properties
-
-    private var hasChanges: Bool {
-        tempSelection.applicationTokens != appSelectionStore.familyActivitySelection.applicationTokens ||
-        tempSelection.categoryTokens != appSelectionStore.familyActivitySelection.categoryTokens ||
-        tempSelection.webDomainTokens != appSelectionStore.familyActivitySelection.webDomainTokens
-    }
-
     // MARK: - Actions
 
     private func checkPermissionAndShowPicker() {
@@ -333,7 +301,7 @@ struct AppManagementView: View {
         appSelectionStore.familyActivitySelection = tempSelection
         appSelectionStore.saveSelection()
         settingsManager.blockApps(tempSelection)
-        showingSaveConfirmation = true
+        print("✅ App restrictions saved automatically")
     }
 
     private func clearAllRestrictions() {

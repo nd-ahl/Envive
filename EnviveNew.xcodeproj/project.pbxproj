@@ -281,6 +281,12 @@
 			);
 			name = EnviveNew;
 			packageProductDependencies = (
+				2574D49398D447EBA59FD5B4 /* Supabase */,
+				ABFDAD56273642489FEB5EF4 /* Auth */,
+				084695E008964A0CA6B3B089 /* PostgREST */,
+				E204E5FDAAC64653AB39F18D /* Realtime */,
+				25E50402BA5945138CF9E5B3 /* Storage */,
+				A0DB7213DFC04CAEA0C9BA1C /* Functions */,
 			);
 			productName = EnviveNew;
 			productReference = 89FD665F2E7E7F6600C1C642 /* EnviveNew.app */;
@@ -1102,6 +1108,39 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		ABFDAD56273642489FEB5EF4 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		A0DB7213DFC04CAEA0C9BA1C /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		084695E008964A0CA6B3B089 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		E204E5FDAAC64653AB39F18D /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		25E50402BA5945138CF9E5B3 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		2574D49398D447EBA59FD5B4 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		89FD668E2E7E968B00C1C642 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {

@@ -124,7 +124,7 @@ class TaskServiceImpl: TaskService {
         repository.saveAssignment(assignment)
 
         // Process daily streak when task is uploaded
-        credibilityService.processTaskUpload(taskId: assignment.id, userId: assignment.childId)
+        credibilityService.processTaskUpload(taskId: assignment.id, childId: assignment.childId)
 
         // TODO: Send notification to parent
 
@@ -185,11 +185,12 @@ class TaskServiceImpl: TaskService {
         // Increase credibility (+5)
         credibilityService.processApprovedTask(
             taskId: assignment.id,
+            childId: assignment.childId,
             reviewerId: parentId,
             notes: parentNotes
         )
 
-        let newCredibility = credibilityService.credibilityScore
+        let newCredibility = credibilityService.getCredibilityScore(childId: assignment.childId)
 
         // Update assignment
         assignment.status = .approved
@@ -244,11 +245,12 @@ class TaskServiceImpl: TaskService {
         // Increase credibility (+5)
         credibilityService.processApprovedTask(
             taskId: assignment.id,
+            childId: assignment.childId,
             reviewerId: parentId,
             notes: parentNotes
         )
 
-        let newCredibility = credibilityService.credibilityScore
+        let newCredibility = credibilityService.getCredibilityScore(childId: assignment.childId)
 
         // Update assignment
         assignment.status = .approved
@@ -294,11 +296,12 @@ class TaskServiceImpl: TaskService {
         // Decrease credibility (-20)
         credibilityService.processDownvote(
             taskId: assignment.id,
+            childId: assignment.childId,
             reviewerId: parentId,
             notes: reason
         )
 
-        let newCredibility = credibilityService.credibilityScore
+        let newCredibility = credibilityService.getCredibilityScore(childId: assignment.childId)
 
         // Update assignment
         assignment.status = .declined

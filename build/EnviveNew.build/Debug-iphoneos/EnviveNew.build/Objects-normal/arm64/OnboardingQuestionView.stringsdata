@@ -1,0 +1,144 @@
+{
+  "source": "/Users/nealahlstrom/github/Envive/EnviveNew/Views/Onboarding/OnboardingQuestionView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Question %lld of %lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 84
+        }
+      },
+      {
+        "comment": "",
+        "key": "👋",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 97
+        }
+      },
+      {
+        "comment": "",
+        "key": "First things first...",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 102
+        }
+      },
+      {
+        "comment": "",
+        "key": "Are you a parent or a child?",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 108
+        }
+      },
+      {
+        "comment": "",
+        "key": "📱",
+        "location": {
+          "startingColumn": 48,
+          "startingLine": 146
+        }
+      },
+      {
+        "comment": "",
+        "key": "⏰",
+        "location": {
+          "startingColumn": 57,
+          "startingLine": 146
+        }
+      },
+      {
+        "comment": "",
+        "key": "How much screen time?",
+        "location": {
+          "startingColumn": 48,
+          "startingLine": 149
+        }
+      },
+      {
+        "comment": "",
+        "key": "How much time do you get?",
+        "location": {
+          "startingColumn": 74,
+          "startingLine": 149
+        }
+      },
+      {
+        "comment": "",
+        "key": "On average, how much daily screen time do your kids get?",
+        "location": {
+          "startingColumn": 48,
+          "startingLine": 154
+        }
+      },
+      {
+        "comment": "",
+        "key": "How many hours of screen time do you usually get per day?",
+        "location": {
+          "startingColumn": 109,
+          "startingLine": 154
+        }
+      },
+      {
+        "comment": "",
+        "key": "💭",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 180
+        }
+      },
+      {
+        "comment": "",
+        "key": "What's the struggle?",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 183
+        }
+      },
+      {
+        "comment": "",
+        "key": "What's your biggest screen time challenge?",
+        "location": {
+          "startingColumn": 48,
+          "startingLine": 188
+        }
+      },
+      {
+        "comment": "",
+        "key": "What's hardest for you about screen time limits?",
+        "location": {
+          "startingColumn": 95,
+          "startingLine": 188
+        }
+      },
+      {
+        "comment": "",
+        "key": "Get Started",
+        "location": {
+          "startingColumn": 66,
+          "startingLine": 216
+        }
+      },
+      {
+        "comment": "",
+        "key": "Continue",
+        "location": {
+          "startingColumn": 82,
+          "startingLine": 216
+        }
+      },
+      {
+        "comment": "",
+        "key": "Back",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 237
+        }
+      }
+    ]
+  },
+  "version": 1
+}

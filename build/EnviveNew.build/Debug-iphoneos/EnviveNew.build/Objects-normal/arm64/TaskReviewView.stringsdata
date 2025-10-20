@@ -1,0 +1,448 @@
+{
+  "source": "/Users/nealahlstrom/github/Envive/EnviveNew/Views/Parent/TaskReviewView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Review Task",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 46
+        }
+      },
+      {
+        "comment": "",
+        "key": "Task Approved",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 48
+        }
+      },
+      {
+        "comment": "",
+        "key": "Task Declined",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 55
+        }
+      },
+      {
+        "comment": "",
+        "key": "OK",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 49
+        }
+      },
+      {
+        "comment": "",
+        "key": "OK",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 56
+        }
+      },
+      {
+        "comment": "",
+        "key": "Completed %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 92
+        }
+      },
+      {
+        "comment": "",
+        "key": "✅ Photo proof submitted by child",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "Photo Evidence",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 112
+        }
+      },
+      {
+        "comment": "",
+        "key": "No photo submitted",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 172
+        }
+      },
+      {
+        "comment": "",
+        "key": "Time Spent on Task",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 189
+        }
+      },
+      {
+        "comment": "",
+        "key": "Time Worked",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 201
+        }
+      },
+      {
+        "comment": "",
+        "key": "Consider adjusting the task level based on time spent:",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 217
+        }
+      },
+      {
+        "comment": "",
+        "key": "•",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 224
+        }
+      },
+      {
+        "comment": "",
+        "key": "Quick tasks (< 10 min) → Easy",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 225
+        }
+      },
+      {
+        "comment": "",
+        "key": "•",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 228
+        }
+      },
+      {
+        "comment": "",
+        "key": "Medium tasks (10-30 min) → Medium",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 229
+        }
+      },
+      {
+        "comment": "",
+        "key": "•",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 232
+        }
+      },
+      {
+        "comment": "",
+        "key": "Long tasks (> 30 min) → Hard",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 233
+        }
+      },
+      {
+        "comment": "",
+        "key": "Child's Notes",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 270
+        }
+      },
+      {
+        "comment": "",
+        "key": "Trust Level",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 290
+        }
+      },
+      {
+        "comment": "",
+        "key": "Recent History",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 306
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld approved",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 309
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reward",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 328
+        }
+      },
+      {
+        "comment": "",
+        "key": "Child will earn:",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 333
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld XP",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 336
+        }
+      },
+      {
+        "comment": "",
+        "key": "Trust impact:",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 344
+        }
+      },
+      {
+        "comment": "",
+        "key": "APPROVE",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 373
+        }
+      },
+      {
+        "comment": "",
+        "key": "+%lld XP",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 376
+        }
+      },
+      {
+        "comment": "",
+        "key": "EDIT & APPROVE",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 393
+        }
+      },
+      {
+        "comment": "",
+        "key": "DECLINE",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 411
+        }
+      },
+      {
+        "comment": "",
+        "key": "⚠️ Lowers Trust",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 414
+        }
+      },
+      {
+        "comment": "",
+        "key": "Edit Task",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 494
+        }
+      },
+      {
+        "comment": "",
+        "key": "Task Details",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 456
+        }
+      },
+      {
+        "comment": "",
+        "key": "Level",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 462
+        }
+      },
+      {
+        "comment": "",
+        "key": "Parent Notes",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 486
+        }
+      },
+      {
+        "comment": "",
+        "key": "Title",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 457
+        }
+      },
+      {
+        "comment": "",
+        "key": "Description",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 458
+        }
+      },
+      {
+        "comment": "",
+        "key": "Task Level",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 463
+        }
+      },
+      {
+        "comment": "",
+        "key": "New XP Reward:",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 471
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld XP",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 473
+        }
+      },
+      {
+        "comment": "",
+        "key": "Child will earn:",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 478
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld XP",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 480
+        }
+      },
+      {
+        "comment": "",
+        "key": "This message will be shown to the child",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 489
+        }
+      },
+      {
+        "comment": "",
+        "key": "Notes for child (optional)",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 487
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 498
+        }
+      },
+      {
+        "comment": "",
+        "key": "Save & Approve",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 503
+        }
+      },
+      {
+        "comment": "",
+        "key": "Decline Task",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 573
+        }
+      },
+      {
+        "comment": "",
+        "key": "Declining Will",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 530
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reason (Required)",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 552
+        }
+      },
+      {
+        "comment": "",
+        "key": "Give child 0 XP",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 532
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lower trust rating (%@)",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 536
+        }
+      },
+      {
+        "comment": "",
+        "key": "Child needs %lld approved tasks to rebuild trust",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 543
+        }
+      },
+      {
+        "comment": "",
+        "key": "Or write custom reason",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 569
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 577
+        }
+      },
+      {
+        "comment": "",
+        "key": "Confirm Decline",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 582
+        }
+      }
+    ]
+  },
+  "version": 1
+}

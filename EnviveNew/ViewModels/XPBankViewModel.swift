@@ -51,7 +51,7 @@ final class XPBankViewModel: ObservableObject {
         }
 
         // Load credibility info
-        credibilityScore = credibilityService.credibilityScore
+        credibilityScore = credibilityService.getCredibilityScore(childId: userId)
         credibilityTier = xpService.credibilityTierName(score: credibilityScore)
         earningRatePercentage = xpService.earningRatePercentage(score: credibilityScore)
 
@@ -112,7 +112,7 @@ final class XPBankViewModel: ObservableObject {
 
     /// Get the trust level tier with star rating
     var trustLevel: CredibilityTier {
-        return credibilityService.getCurrentTier()
+        return credibilityService.getCurrentTier(childId: userId)
     }
 
     /// Simple trust display for child (no percentages)

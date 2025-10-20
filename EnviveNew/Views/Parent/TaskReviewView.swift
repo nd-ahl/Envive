@@ -633,8 +633,8 @@ class TaskReviewViewModel: ObservableObject {
         self.credibilityService = credibilityService
         self.parentId = parentId
 
-        self.currentCredibility = credibilityService.credibilityScore
-        self.consecutiveApprovals = credibilityService.consecutiveApprovedTasks
+        self.currentCredibility = credibilityService.getCredibilityScore(childId: assignment.childId)
+        self.consecutiveApprovals = credibilityService.getConsecutiveApprovedTasks(childId: assignment.childId)
         self.recentDeclines = 0 // TODO: Calculate from history
 
         // Initialize edit state
@@ -646,7 +646,7 @@ class TaskReviewViewModel: ObservableObject {
     // MARK: - Trust Level Helpers
 
     var trustLevel: CredibilityTier {
-        return credibilityService.getCurrentTier()
+        return credibilityService.getCurrentTier(childId: assignment.childId)
     }
 
     var trustImpactDisplay: String {

@@ -19,6 +19,7 @@ struct EnviveNewApp: App {
 
     // Onboarding management
     @StateObject private var onboardingManager = OnboardingManager.shared
+    @State private var isCreatingHousehold = false
 
     var body: some Scene {
         WindowGroup {
@@ -54,6 +55,45 @@ struct EnviveNewApp: App {
                             onboardingManager.hasCompletedQuestions = false
                         }
                     )
+                } else if onboardingManager.shouldShowHouseholdSelection {
+                    // Get user role from saved responses
+                    let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+                    let userRole = roleString == "child" ? UserRole.child : UserRole.parent
+
+                    HouseholdSelectionView(
+                        userRole: userRole,
+                        onCreateHousehold: {
+                            isCreatingHousehold = true
+                            onboardingManager.completeHouseholdSelection()
+                        },
+                        onJoinHousehold: {
+                            isCreatingHousehold = false
+                            onboardingManager.completeHouseholdSelection()
+                        }
+                    )
+                } else if onboardingManager.shouldShowSignIn {
+                    if isCreatingHousehold {
+                        // Show sign in/sign up for creating household
+                        SignInView(
+                            isCreatingHousehold: true,
+                            onComplete: {
+                                onboardingManager.completeSignIn()
+                            },
+                            onBack: {
+                                onboardingManager.hasCompletedHouseholdSelection = false
+                            }
+                        )
+                    } else {
+                        // Show join household flow
+                        JoinHouseholdView(
+                            onComplete: {
+                                onboardingManager.completeSignIn()
+                            },
+                            onBack: {
+                                onboardingManager.hasCompletedHouseholdSelection = false
+                            }
+                        )
+                    }
                 } else if onboardingManager.shouldShowAgeSelection {
                     // Get user role from saved responses
                     let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"

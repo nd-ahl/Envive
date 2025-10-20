@@ -10,21 +10,22 @@ struct ModeSwitcherView: View {
 
     @State private var selectedMode: DeviceMode
     @State private var parentName: String = ""
-    @State private var childName: String = ""
+    @State private var child1Name: String = ""
+    @State private var child2Name: String = ""
     @State private var showingConfirmation = false
 
     init(deviceModeManager: LocalDeviceModeManager) {
         self.deviceModeManager = deviceModeManager
         _selectedMode = State(initialValue: deviceModeManager.currentMode)
 
-        // Load existing profile names if available
-        if let profile = deviceModeManager.currentProfile {
-            _parentName = State(initialValue: profile.mode == .parent ? profile.name : "Parent")
-            _childName = State(initialValue: profile.mode == .child ? profile.name : "Child")
-        } else {
-            _parentName = State(initialValue: "Parent")
-            _childName = State(initialValue: "Child")
-        }
+        // Load existing profile names for all modes if available
+        let parentProfile = deviceModeManager.getProfile(byMode: .parent)
+        let child1Profile = deviceModeManager.getProfile(byMode: .child1)
+        let child2Profile = deviceModeManager.getProfile(byMode: .child2)
+
+        _parentName = State(initialValue: parentProfile?.name ?? "Parent")
+        _child1Name = State(initialValue: child1Profile?.name ?? "Sarah")
+        _child2Name = State(initialValue: child2Profile?.name ?? "Jake")
     }
 
     var body: some View {
@@ -113,7 +114,8 @@ struct ModeSwitcherView: View {
             Text("Enter Name")
                 .font(.headline)
 
-            if selectedMode == .parent {
+            switch selectedMode {
+            case .parent:
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Parent Name")
                         .font(.subheadline)
@@ -123,13 +125,25 @@ struct ModeSwitcherView: View {
                         .textFieldStyle(.roundedBorder)
                         .autocapitalization(.words)
                 }
-            } else {
+
+            case .child1:
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Child Name")
+                    Text("Child 1 Name")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    TextField("e.g., Sarah, Alex", text: $childName)
+                    TextField("e.g., Sarah", text: $child1Name)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.words)
+                }
+
+            case .child2:
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Child 2 Name")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    TextField("e.g., Jake", text: $child2Name)
                         .textFieldStyle(.roundedBorder)
                         .autocapitalization(.words)
                 }
@@ -187,7 +201,16 @@ struct ModeSwitcherView: View {
     // MARK: - Computed Properties
 
     private var canSwitch: Bool {
-        let name = selectedMode == .parent ? parentName : childName
+        let name: String
+        switch selectedMode {
+        case .parent:
+            name = parentName
+        case .child1:
+            name = child1Name
+        case .child2:
+            name = child2Name
+        }
+
         return !name.trimmingCharacters(in: .whitespaces).isEmpty &&
                (selectedMode != deviceModeManager.currentMode ||
                 name != deviceModeManager.currentProfile?.name)
@@ -196,13 +219,39 @@ struct ModeSwitcherView: View {
     // MARK: - Actions
 
     private func handleModeSwitch() {
-        let name = selectedMode == .parent ? parentName : childName
+        let name: String
+        switch selectedMode {
+        case .parent:
+            name = parentName
+        case .child1:
+            name = child1Name
+        case .child2:
+            name = child2Name
+        }
 
-        // Create new profile
-        let profile = UserProfile(
-            name: name.trimmingCharacters(in: .whitespaces),
-            mode: selectedMode
-        )
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+
+        // Load existing profile for this mode, or create new one
+        var profile: UserProfile
+        if let existingProfile = deviceModeManager.getProfile(byMode: selectedMode) {
+            // Use existing profile but update the name if changed
+            profile = UserProfile(
+                id: existingProfile.id,
+                name: trimmedName,
+                mode: selectedMode,
+                age: existingProfile.age,
+                parentId: existingProfile.parentId,
+                profilePhotoFileName: existingProfile.profilePhotoFileName
+            )
+            print("🔄 Loaded existing \(selectedMode.displayName) profile with ID: \(profile.id)")
+        } else {
+            // Create new profile
+            profile = UserProfile(
+                name: trimmedName,
+                mode: selectedMode
+            )
+            print("🆕 Created new \(selectedMode.displayName) profile with ID: \(profile.id)")
+        }
 
         // Switch mode
         deviceModeManager.switchMode(to: selectedMode, profile: profile)
@@ -283,6 +332,11 @@ struct ModeSwitcherButton: View {
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging = false
 
+    /// Display name showing actual profile name if available
+    private var currentDisplayName: String {
+        deviceModeManager.currentProfile?.name ?? deviceModeManager.currentMode.displayName
+    }
+
     var body: some View {
         Button(action: {
             if !isDragging {
@@ -296,7 +350,7 @@ struct ModeSwitcherButton: View {
             HStack(spacing: 6) {
                 Image(systemName: deviceModeManager.currentMode.icon)
                     .font(.caption)
-                Text(deviceModeManager.currentMode.displayName)
+                Text(currentDisplayName)
                     .font(.caption)
                     .fontWeight(.semibold)
                 Image(systemName: deviceModeService.isRoleLocked ? "lock.fill" : "arrow.triangle.2.circlepath")

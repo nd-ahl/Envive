@@ -6,14 +6,16 @@ import Combine
 struct ParentDashboardView: View {
     @StateObject private var viewModel: ParentDashboardViewModel
     @ObservedObject var appSelectionStore: AppSelectionStore
+    @ObservedObject var notificationManager: NotificationManager
 
     @State private var showingChildSelector = false
     @State private var showingAssignTask = false
     @State private var selectedChildrenForAssignment: [ChildSummary] = []
 
-    init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore) {
+    init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore, notificationManager: NotificationManager) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.appSelectionStore = appSelectionStore
+        self.notificationManager = notificationManager
     }
 
     var body: some View {
@@ -65,7 +67,8 @@ struct ParentDashboardView: View {
                     AssignTaskView(
                         taskService: viewModel.taskService,
                         parentId: viewModel.parentId,
-                        selectedChildren: selectedChildrenForAssignment
+                        selectedChildren: selectedChildrenForAssignment,
+                        notificationManager: notificationManager
                     )
                 }
             }
@@ -347,33 +350,55 @@ class ParentDashboardViewModel: ObservableObject {
 
     let taskService: TaskService
     let credibilityService: CredibilityService
+    let xpService: XPService
     let parentId: UUID
-    private let testChildId: UUID
+    private let testChild1Id: UUID
+    private let testChild2Id: UUID
+    private let deviceModeManager: LocalDeviceModeManager
 
-    init(taskService: TaskService, credibilityService: CredibilityService, parentId: UUID, testChildId: UUID) {
+    init(taskService: TaskService, credibilityService: CredibilityService, xpService: XPService, parentId: UUID, testChild1Id: UUID, testChild2Id: UUID, deviceModeManager: LocalDeviceModeManager) {
         self.taskService = taskService
         self.credibilityService = credibilityService
+        self.xpService = xpService
         self.parentId = parentId
-        self.testChildId = testChildId
+        self.testChild1Id = testChild1Id
+        self.testChild2Id = testChild2Id
+        self.deviceModeManager = deviceModeManager
     }
 
     func loadData() {
         // Load pending approvals
         pendingApprovals = taskService.getPendingApprovals()
 
-        // For single-device testing: create a test child profile using consistent ID
-        // This ensures tasks assigned by parent show up when switching to child mode
+        // Load actual profile names for each child from storage
+        let child1Profile = deviceModeManager.getProfile(byMode: .child1)
+        let child2Profile = deviceModeManager.getProfile(byMode: .child2)
+
+        let child1Name = child1Profile?.name ?? "Child 1"
+        let child2Name = child2Profile?.name ?? "Child 2"
+
+        // For single-device testing: create both test child profiles using consistent IDs
+        // This ensures tasks assigned by parent show up when switching to each child mode
         children = [
             ChildSummary(
-                id: testChildId,
-                name: "Test Child",
-                credibility: 95,
-                xpBalance: 45,
-                pendingCount: pendingApprovals.filter { $0.childId == testChildId }.count
+                id: testChild1Id,
+                name: child1Name,
+                credibility: credibilityService.getCredibilityScore(childId: testChild1Id),
+                xpBalance: xpService.getBalance(userId: testChild1Id)?.currentXP ?? 0,
+                pendingCount: pendingApprovals.filter { $0.childId == testChild1Id }.count
+            ),
+            ChildSummary(
+                id: testChild2Id,
+                name: child2Name,
+                credibility: credibilityService.getCredibilityScore(childId: testChild2Id),
+                xpBalance: xpService.getBalance(userId: testChild2Id)?.currentXP ?? 0,
+                pendingCount: pendingApprovals.filter { $0.childId == testChild2Id }.count
             )
         ]
 
-        print("📋 Parent dashboard loaded. Test child ID: \(testChildId)")
+        print("📋 Parent dashboard loaded.")
+        print("📋 Test child 1 (\(child1Name)) ID: \(testChild1Id)")
+        print("📋 Test child 2 (\(child2Name)) ID: \(testChild2Id)")
         print("📋 Pending approvals: \(pendingApprovals.count)")
     }
 

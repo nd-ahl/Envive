@@ -49,10 +49,24 @@ class OnboardingManager: ObservableObject {
         }
     }
 
+    @Published var hasCompletedHouseholdSelection: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedHouseholdSelection, forKey: householdSelectionKey)
+        }
+    }
+
+    @Published var hasCompletedSignIn: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedSignIn, forKey: signInKey)
+        }
+    }
+
     private let onboardingKey = "hasCompletedOnboarding"
     private let welcomeKey = "hasCompletedWelcome"
     private let questionsKey = "hasCompletedQuestions"
     private let roleConfirmationKey = "hasCompletedRoleConfirmation"
+    private let householdSelectionKey = "hasCompletedHouseholdSelection"
+    private let signInKey = "hasCompletedSignIn"
     private let ageSelectionKey = "hasCompletedAgeSelection"
     private let permissionsKey = "hasCompletedPermissions"
     private let benefitsKey = "hasCompletedBenefits"
@@ -62,6 +76,8 @@ class OnboardingManager: ObservableObject {
         self.hasCompletedWelcome = UserDefaults.standard.bool(forKey: welcomeKey)
         self.hasCompletedQuestions = UserDefaults.standard.bool(forKey: questionsKey)
         self.hasCompletedRoleConfirmation = UserDefaults.standard.bool(forKey: roleConfirmationKey)
+        self.hasCompletedHouseholdSelection = UserDefaults.standard.bool(forKey: householdSelectionKey)
+        self.hasCompletedSignIn = UserDefaults.standard.bool(forKey: signInKey)
         self.hasCompletedAgeSelection = UserDefaults.standard.bool(forKey: ageSelectionKey)
         self.hasCompletedPermissions = UserDefaults.standard.bool(forKey: permissionsKey)
         self.hasCompletedBenefits = UserDefaults.standard.bool(forKey: benefitsKey)
@@ -109,12 +125,26 @@ class OnboardingManager: ObservableObject {
         print("✅ Benefits screen completed")
     }
 
+    /// Mark household selection as completed
+    func completeHouseholdSelection() {
+        hasCompletedHouseholdSelection = true
+        print("✅ Household selection completed")
+    }
+
+    /// Mark sign in as completed
+    func completeSignIn() {
+        hasCompletedSignIn = true
+        print("✅ Sign in completed")
+    }
+
     /// Mark entire onboarding flow as completed
     func completeOnboarding() {
         hasCompletedOnboarding = true
         hasCompletedWelcome = true
         hasCompletedQuestions = true
         hasCompletedRoleConfirmation = true
+        hasCompletedHouseholdSelection = true
+        hasCompletedSignIn = true
         hasCompletedAgeSelection = true
         hasCompletedPermissions = true
         hasCompletedBenefits = true
@@ -127,11 +157,17 @@ class OnboardingManager: ObservableObject {
         hasCompletedWelcome = false
         hasCompletedQuestions = false
         hasCompletedRoleConfirmation = false
+        hasCompletedHouseholdSelection = false
+        hasCompletedSignIn = false
         hasCompletedAgeSelection = false
         hasCompletedPermissions = false
         hasCompletedBenefits = false
         UserDefaults.standard.removeObject(forKey: "userAge")
         UserDefaults.standard.removeObject(forKey: "userRole")
+        UserDefaults.standard.removeObject(forKey: "userId")
+        UserDefaults.standard.removeObject(forKey: "userEmail")
+        UserDefaults.standard.removeObject(forKey: "householdCode")
+        UserDefaults.standard.removeObject(forKey: "isInHousehold")
 
         // Unlock and reset device role
         DeviceModeService.shared.resetDeviceRole()
@@ -159,9 +195,19 @@ class OnboardingManager: ObservableObject {
         return hasCompletedQuestions && !hasCompletedRoleConfirmation
     }
 
+    /// Check if user should see household selection
+    var shouldShowHouseholdSelection: Bool {
+        return hasCompletedRoleConfirmation && !hasCompletedHouseholdSelection
+    }
+
+    /// Check if user should see sign in (when creating household)
+    var shouldShowSignIn: Bool {
+        return hasCompletedHouseholdSelection && !hasCompletedSignIn
+    }
+
     /// Check if user should see age selection
     var shouldShowAgeSelection: Bool {
-        return hasCompletedRoleConfirmation && !hasCompletedAgeSelection
+        return hasCompletedSignIn && !hasCompletedAgeSelection
     }
 
     /// Check if user should see permissions screen

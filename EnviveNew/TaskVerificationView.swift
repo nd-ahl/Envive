@@ -146,7 +146,7 @@ class TaskVerificationManager: ObservableObject {
             verifications[index].updatedAt = Date()
 
             // Get current credibility score
-            let currentCredibility = credibilityService.credibilityScore
+            let currentCredibility = credibilityService.getCredibilityScore(childId: verification.userId)
 
             // Update credibility
             credibilityManager.processApprovedTask(
