@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Supabase
 
 // MARK: - Onboarding Manager
 
@@ -61,12 +62,26 @@ class OnboardingManager: ObservableObject {
         }
     }
 
+    @Published var hasCompletedNameEntry: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedNameEntry, forKey: nameEntryKey)
+        }
+    }
+
+    @Published var hasCompletedFamilySetup: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedFamilySetup, forKey: familySetupKey)
+        }
+    }
+
     private let onboardingKey = "hasCompletedOnboarding"
     private let welcomeKey = "hasCompletedWelcome"
     private let questionsKey = "hasCompletedQuestions"
     private let roleConfirmationKey = "hasCompletedRoleConfirmation"
     private let householdSelectionKey = "hasCompletedHouseholdSelection"
     private let signInKey = "hasCompletedSignIn"
+    private let nameEntryKey = "hasCompletedNameEntry"
+    private let familySetupKey = "hasCompletedFamilySetup"
     private let ageSelectionKey = "hasCompletedAgeSelection"
     private let permissionsKey = "hasCompletedPermissions"
     private let benefitsKey = "hasCompletedBenefits"
@@ -78,6 +93,8 @@ class OnboardingManager: ObservableObject {
         self.hasCompletedRoleConfirmation = UserDefaults.standard.bool(forKey: roleConfirmationKey)
         self.hasCompletedHouseholdSelection = UserDefaults.standard.bool(forKey: householdSelectionKey)
         self.hasCompletedSignIn = UserDefaults.standard.bool(forKey: signInKey)
+        self.hasCompletedNameEntry = UserDefaults.standard.bool(forKey: nameEntryKey)
+        self.hasCompletedFamilySetup = UserDefaults.standard.bool(forKey: familySetupKey)
         self.hasCompletedAgeSelection = UserDefaults.standard.bool(forKey: ageSelectionKey)
         self.hasCompletedPermissions = UserDefaults.standard.bool(forKey: permissionsKey)
         self.hasCompletedBenefits = UserDefaults.standard.bool(forKey: benefitsKey)
@@ -137,6 +154,38 @@ class OnboardingManager: ObservableObject {
         print("✅ Sign in completed")
     }
 
+    /// Mark name entry as completed and save name
+    func completeNameEntry(name: String) {
+        UserDefaults.standard.set(name, forKey: "parentName")
+        hasCompletedNameEntry = true
+        print("✅ Name entry completed: \(name)")
+
+        // Also update the Supabase profile
+        Task {
+            guard let userId = AuthenticationService.shared.currentProfile?.id else { return }
+
+            do {
+                try await SupabaseService.shared.client
+                    .from("profiles")
+                    .update(["full_name": name])
+                    .eq("id", value: userId)
+                    .execute()
+
+                print("✅ Parent name saved to Supabase: \(name)")
+            } catch {
+                print("❌ Failed to save parent name to Supabase: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Mark family setup as completed (add profiles + link devices)
+    func completeFamilySetup() {
+        hasCompletedFamilySetup = true
+        // Also mark age selection as complete since we collect age during family setup
+        hasCompletedAgeSelection = true
+        print("✅ Family setup completed")
+    }
+
     /// Mark entire onboarding flow as completed
     func completeOnboarding() {
         hasCompletedOnboarding = true
@@ -145,6 +194,8 @@ class OnboardingManager: ObservableObject {
         hasCompletedRoleConfirmation = true
         hasCompletedHouseholdSelection = true
         hasCompletedSignIn = true
+        hasCompletedNameEntry = true
+        hasCompletedFamilySetup = true
         hasCompletedAgeSelection = true
         hasCompletedPermissions = true
         hasCompletedBenefits = true
@@ -159,6 +210,8 @@ class OnboardingManager: ObservableObject {
         hasCompletedRoleConfirmation = false
         hasCompletedHouseholdSelection = false
         hasCompletedSignIn = false
+        hasCompletedNameEntry = false
+        hasCompletedFamilySetup = false
         hasCompletedAgeSelection = false
         hasCompletedPermissions = false
         hasCompletedBenefits = false
@@ -166,6 +219,7 @@ class OnboardingManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "userRole")
         UserDefaults.standard.removeObject(forKey: "userId")
         UserDefaults.standard.removeObject(forKey: "userEmail")
+        UserDefaults.standard.removeObject(forKey: "parentName")
         UserDefaults.standard.removeObject(forKey: "householdCode")
         UserDefaults.standard.removeObject(forKey: "isInHousehold")
 
@@ -205,14 +259,24 @@ class OnboardingManager: ObservableObject {
         return hasCompletedHouseholdSelection && !hasCompletedSignIn
     }
 
-    /// Check if user should see age selection
+    /// Check if user should see name entry
+    var shouldShowNameEntry: Bool {
+        return hasCompletedSignIn && !hasCompletedNameEntry
+    }
+
+    /// Check if user should see family setup (add profiles + link devices)
+    var shouldShowFamilySetup: Bool {
+        return hasCompletedNameEntry && !hasCompletedFamilySetup
+    }
+
+    /// Check if user should see age selection (SKIPPED - age collected during family setup)
     var shouldShowAgeSelection: Bool {
-        return hasCompletedSignIn && !hasCompletedAgeSelection
+        return false // Age is collected during child profile creation
     }
 
     /// Check if user should see permissions screen
     var shouldShowPermissions: Bool {
-        return hasCompletedAgeSelection && !hasCompletedPermissions
+        return hasCompletedFamilySetup && !hasCompletedPermissions
     }
 
     /// Check if user should see benefits screen
@@ -224,5 +288,10 @@ class OnboardingManager: ObservableObject {
     var userAge: Int? {
         let age = UserDefaults.standard.integer(forKey: "userAge")
         return age > 0 ? age : nil
+    }
+
+    /// Get saved parent name
+    var parentName: String? {
+        return UserDefaults.standard.string(forKey: "parentName")
     }
 }

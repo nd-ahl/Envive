@@ -41,7 +41,7 @@ class AuthenticationService: ObservableObject {
 
     /// Sign up with email and password
     func signUp(email: String, password: String, fullName: String, role: UserRole) async throws -> Profile {
-        // Create auth user
+        // Create auth user with metadata for the database trigger
         let response = try await supabase.auth.signUp(
             email: email,
             password: password,
@@ -53,28 +53,15 @@ class AuthenticationService: ObservableObject {
 
         let user = response.user
 
-        // Create profile in database
-        let profile = Profile(
-            id: user.id.uuidString,
-            email: email,
-            fullName: fullName,
-            role: role == .parent ? "parent" : "child",
-            householdId: nil,
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-
-        try await supabase
-            .from("profiles")
-            .insert(profile)
-            .execute()
-
         await MainActor.run {
             self.isAuthenticated = true
-            self.currentProfile = profile
         }
 
-        return profile
+        // The profile was auto-created by the database trigger
+        // Wait a moment for the trigger to complete, then load the profile
+        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+
+        return try await loadProfile(userId: user.id.uuidString)
     }
 
     /// Sign in with email and password
@@ -94,7 +81,7 @@ class AuthenticationService: ObservableObject {
 
     // MARK: - Apple Sign In
 
-    /// Sign in with Apple (to be implemented with proper Apple credentials)
+    /// Sign in with Apple
     func signInWithApple(authorization: ASAuthorization) async throws -> Profile {
         guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
             throw AuthError.invalidAppleCredentials
@@ -105,7 +92,16 @@ class AuthenticationService: ObservableObject {
             throw AuthError.invalidAppleToken
         }
 
+        // Prepare user metadata for the database trigger
+        let fullName = [
+            appleIDCredential.fullName?.givenName,
+            appleIDCredential.fullName?.familyName
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+
         // Sign in with Supabase using Apple token
+        // The database trigger will automatically create the profile
         let session = try await supabase.auth.signInWithIdToken(
             credentials: .init(
                 provider: .apple,
@@ -113,42 +109,15 @@ class AuthenticationService: ObservableObject {
             )
         )
 
-        // Check if profile exists
-        let userId = session.user.id.uuidString
-
-        do {
-            return try await loadProfile(userId: userId)
-        } catch {
-            // Profile doesn't exist, create one
-            let email = appleIDCredential.email ?? session.user.email ?? "unknown@apple.com"
-            let fullName = [
-                appleIDCredential.fullName?.givenName,
-                appleIDCredential.fullName?.familyName
-            ]
-            .compactMap { $0 }
-            .joined(separator: " ")
-
-            let profile = Profile(
-                id: userId,
-                email: email,
-                fullName: fullName.isEmpty ? nil : fullName,
-                role: "parent", // Default to parent, can be changed later
-                householdId: nil,
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-
-            try await supabase
-                .from("profiles")
-                .insert(profile)
-                .execute()
-
-            await MainActor.run {
-                self.currentProfile = profile
-            }
-
-            return profile
+        await MainActor.run {
+            self.isAuthenticated = true
         }
+
+        // The profile was auto-created by the database trigger
+        // Wait a moment for the trigger to complete, then load the profile
+        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+
+        return try await loadProfile(userId: session.user.id.uuidString)
     }
 
     // MARK: - Profile Management

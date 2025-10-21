@@ -9,6 +9,8 @@ struct Profile: Codable, Identifiable {
     let fullName: String?
     let role: String // "parent" or "child"
     let householdId: String? // UUID of the household they belong to
+    let avatarUrl: String? // URL to profile picture
+    let age: Int? // User's age (for children)
     let createdAt: Date
     let updatedAt: Date
 
@@ -18,6 +20,8 @@ struct Profile: Codable, Identifiable {
         case fullName = "full_name"
         case role
         case householdId = "household_id"
+        case avatarUrl = "avatar_url"
+        case age
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

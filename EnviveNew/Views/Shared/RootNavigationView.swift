@@ -1,5 +1,6 @@
 import SwiftUI
 import LocalAuthentication
+import Supabase
 
 // MARK: - Root Navigation View
 
@@ -263,8 +264,15 @@ struct ParentProfileView: View {
     @ObservedObject private var deviceModeService = DeviceModeService.shared
     @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
     @ObservedObject private var profilePhotoManager = ProfilePhotoManager.shared
+    @ObservedObject private var householdService = HouseholdService.shared
+    @ObservedObject private var authService = AuthenticationService.shared
+
+    private let supabase = SupabaseService.shared.client
 
     @State private var showingProfilePhotoPicker = false
+    @State private var showCopiedMessage = false
+    @State private var showingNameEditor = false
+    @State private var editedName = ""
 
     var body: some View {
         NavigationView {
@@ -310,11 +318,21 @@ struct ParentProfileView: View {
                             Spacer()
                         }
 
-                        HStack {
-                            Text("Name")
-                            Spacer()
-                            Text(profile.name)
-                                .foregroundColor(.secondary)
+                        // Parent name (editable)
+                        Button(action: {
+                            editedName = OnboardingManager.shared.parentName ?? ""
+                            showingNameEditor = true
+                        }) {
+                            HStack {
+                                Text("Name")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text(OnboardingManager.shared.parentName ?? "Add name")
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
 
                         HStack {
@@ -328,9 +346,136 @@ struct ParentProfileView: View {
                     Text("Profile")
                 }
 
+                // Household invite code section
+                if let household = householdService.currentHousehold {
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Household Invite Code")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+
+                            HStack {
+                                Text(household.inviteCode)
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .tracking(4)
+
+                                Spacer()
+
+                                Button(action: {
+                                    copyInviteCode(household.inviteCode)
+                                }) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.title3)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    copyInviteCode(household.inviteCode)
+                                }) {
+                                    HStack {
+                                        Image(systemName: "doc.on.doc")
+                                        Text("Copy Code")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                }
+
+                                Button(action: {
+                                    shareInviteCode(household.inviteCode, householdName: household.name)
+                                }) {
+                                    HStack {
+                                        Image(systemName: "square.and.arrow.up")
+                                        Text("Share")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 8)
+
+                        if showCopiedMessage {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Code copied to clipboard!")
+                                    .font(.subheadline)
+                            }
+                        }
+                    } header: {
+                        Text("Family")
+                    } footer: {
+                        Text("Share this code with family members to add them to your household")
+                    }
+                } else if let inviteCode = UserDefaults.standard.string(forKey: "householdCode") {
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Household Invite Code")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+
+                            HStack {
+                                Text(inviteCode)
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .tracking(4)
+
+                                Spacer()
+
+                                Button(action: {
+                                    copyInviteCode(inviteCode)
+                                }) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.title3)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    copyInviteCode(inviteCode)
+                                }) {
+                                    HStack {
+                                        Image(systemName: "doc.on.doc")
+                                        Text("Copy Code")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                }
+
+                                Button(action: {
+                                    shareInviteCode(inviteCode, householdName: "My Household")
+                                }) {
+                                    HStack {
+                                        Image(systemName: "square.and.arrow.up")
+                                        Text("Share")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 8)
+
+                        if showCopiedMessage {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Code copied to clipboard!")
+                                    .font(.subheadline)
+                            }
+                        }
+                    } header: {
+                        Text("Family")
+                    } footer: {
+                        Text("Share this code with family members to add them to your household")
+                    }
+                }
+
                 Section {
                     NavigationLink(destination: Text("Family Settings")) {
-                        Label("Family", systemImage: "person.2")
+                        Label("Manage Family", systemImage: "person.2")
                     }
 
                     NavigationLink(destination: Text("Notifications Settings")) {
@@ -390,11 +535,80 @@ struct ParentProfileView: View {
                     )
                 }
             }
+            .alert("Edit Name", isPresented: $showingNameEditor) {
+                TextField("Your name", text: $editedName)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") {
+                    saveParentName(editedName)
+                }
+            } message: {
+                Text("Enter your name")
+            }
         }
     }
 
     private func updateProfilePhoto(fileName: String) {
         deviceModeManager.updateProfilePhoto(fileName: fileName.isEmpty ? nil : fileName)
+    }
+
+    private func copyInviteCode(_ code: String) {
+        UIPasteboard.general.string = code
+
+        withAnimation {
+            showCopiedMessage = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation {
+                showCopiedMessage = false
+            }
+        }
+    }
+
+    private func shareInviteCode(_ code: String, householdName: String) {
+        let message = """
+        Join my household on Envive!
+
+        Household: \(householdName)
+        Invite Code: \(code)
+
+        Download Envive and enter this code to join.
+        """
+
+        let activityVC = UIActivityViewController(
+            activityItems: [message],
+            applicationActivities: nil
+        )
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+
+    private func saveParentName(_ name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
+        // Save to UserDefaults
+        UserDefaults.standard.set(trimmedName, forKey: "parentName")
+
+        // Update in Supabase profile
+        Task {
+            guard let userId = authService.currentProfile?.id else { return }
+
+            do {
+                try await supabase
+                    .from("profiles")
+                    .update(["full_name": trimmedName])
+                    .eq("id", value: userId)
+                    .execute()
+
+                print("✅ Parent name updated: \(trimmedName)")
+            } catch {
+                print("❌ Failed to update parent name: \(error.localizedDescription)")
+            }
+        }
     }
 }
 

@@ -84,8 +84,8 @@ struct EnviveNewApp: App {
                             }
                         )
                     } else {
-                        // Show join household flow
-                        JoinHouseholdView(
+                        // Show join household flow for children
+                        ChildOnboardingCoordinator(
                             onComplete: {
                                 onboardingManager.completeSignIn()
                             },
@@ -93,6 +93,16 @@ struct EnviveNewApp: App {
                                 onboardingManager.hasCompletedHouseholdSelection = false
                             }
                         )
+                    }
+                } else if onboardingManager.shouldShowNameEntry {
+                    // NEW: Parent name entry
+                    ParentNameEntryView { name in
+                        onboardingManager.completeNameEntry(name: name)
+                    }
+                } else if onboardingManager.shouldShowFamilySetup {
+                    // NEW: Family setup flow (add profiles + link devices)
+                    OnboardingCoordinator {
+                        onboardingManager.completeFamilySetup()
                     }
                 } else if onboardingManager.shouldShowAgeSelection {
                     // Get user role from saved responses

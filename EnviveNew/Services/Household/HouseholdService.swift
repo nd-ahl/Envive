@@ -202,4 +202,100 @@ class HouseholdService: ObservableObject {
             self.currentHousehold = nil
         }
     }
+
+    // MARK: - Child Profile Management
+
+    /// Create a child profile (not a full auth user, just a profile entry)
+    func createChildProfile(
+        name: String,
+        age: Int,
+        householdId: String,
+        createdBy: String,
+        avatarUrl: String? = nil
+    ) async throws -> String {
+        // Generate a unique ID for this child profile
+        let childId = UUID().uuidString
+
+        // Create the profile entry with encodable struct
+        struct ChildProfileInsert: Encodable {
+            let id: String
+            let full_name: String
+            let role: String
+            let household_id: String
+            let age: Int
+            let avatar_url: String?
+        }
+
+        let profileData = ChildProfileInsert(
+            id: childId,
+            full_name: name,
+            role: "child",
+            household_id: householdId,
+            age: age,
+            avatar_url: avatarUrl
+        )
+
+        try await supabase
+            .from("profiles")
+            .insert(profileData)
+            .execute()
+
+        // Add to household_members
+        try await addMemberToHousehold(
+            householdId: householdId,
+            userId: childId,
+            role: "child"
+        )
+
+        return childId
+    }
+
+    /// Upload profile picture to Supabase Storage
+    func uploadProfilePicture(userId: String, imageData: Data) async throws -> String {
+        let fileName = "\(userId)/avatar.jpg"
+        let bucketName = "avatars"
+
+        // Upload to Supabase Storage
+        try await supabase.storage
+            .from(bucketName)
+            .upload(
+                path: fileName,
+                file: imageData,
+                options: .init(
+                    cacheControl: "3600",
+                    contentType: "image/jpeg",
+                    upsert: true
+                )
+            )
+
+        // Get public URL
+        let publicURL = try supabase.storage
+            .from(bucketName)
+            .getPublicURL(path: fileName)
+
+        return publicURL.absoluteString
+    }
+
+    /// Get child profiles for a household by invite code
+    func getChildProfilesByInviteCode(_ inviteCode: String) async throws -> [Profile] {
+        // Get household by invite code
+        let household: Household = try await supabase
+            .from("households")
+            .select()
+            .eq("invite_code", value: inviteCode)
+            .single()
+            .execute()
+            .value
+
+        // Get all child profiles in this household
+        let profiles: [Profile] = try await supabase
+            .from("profiles")
+            .select()
+            .eq("household_id", value: household.id)
+            .eq("role", value: "child")
+            .execute()
+            .value
+
+        return profiles
+    }
 }
