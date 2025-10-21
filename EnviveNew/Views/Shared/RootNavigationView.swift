@@ -482,8 +482,34 @@ struct ParentProfileView: View {
                         Label("Notifications", systemImage: "bell")
                     }
 
-                    NavigationLink(destination: Text("Privacy Settings")) {
-                        Label("Privacy", systemImage: "lock")
+                    Button(action: {
+                        if let url = URL(string: "https://nd-ahl.github.io/Envive/privacy-policy") {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        HStack {
+                            Label("Privacy Policy", systemImage: "hand.raised.fill")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "arrow.up.forward")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button(action: {
+                        if let url = URL(string: "https://nd-ahl.github.io/Envive/terms-of-service") {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        HStack {
+                            Label("Terms of Service", systemImage: "doc.text.fill")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "arrow.up.forward")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 } header: {
                     Text("Settings")
