@@ -98,7 +98,7 @@ struct RootNavigationView: View {
                 .tag(1)
 
             // Children Overview/Management
-            ParentChildrenView()
+            ParentChildrenManagementView()
                 .tabItem {
                     Image(systemName: "person.2.fill")
                     Text("Children")
