@@ -10,8 +10,6 @@
 	<string>Envive needs access to save captured task verification photos to your photo library and to select photos for your profile.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Envive needs access to save photos to your library.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Envive uses location to track activity completion and share with friends.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

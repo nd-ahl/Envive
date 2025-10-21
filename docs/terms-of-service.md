@@ -235,7 +235,7 @@ Before filing a claim, please contact us to attempt informal resolution.
 
 ### Governing Law
 
-These Terms are governed by the laws of [Your State], United States, without regard to conflict of law principles.
+These Terms are governed by the laws of Utah, United States, without regard to conflict of law principles.
 
 ### Arbitration
 
@@ -273,8 +273,8 @@ Provisions that by their nature should survive termination will survive (includi
 
 For questions about these Terms, please contact:
 
-- **Email:** [Your support email]
-- **GitHub:** https://github.com/[your-username]/Envive
+- **Email:** Envive.app@gmail.com
+- **GitHub:** https://github.com/nd-ahl/Envive
 
 ## 18. Apple-Specific Terms
 

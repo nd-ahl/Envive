@@ -15,8 +15,8 @@ Envive is a family organization and screen time management app designed to help 
 
 If you have questions about our legal policies, please contact us:
 
-- **Email:** [Your support email]
-- **GitHub:** [https://github.com/[your-username]/Envive](https://github.com/[your-username]/Envive)
+- **Email:** Envive.app@gmail.com
+- **GitHub:** [https://github.com/nd-ahl/Envive](https://github.com/nd-ahl/Envive)
 
 ## Last Updated
 

@@ -26,7 +26,6 @@ When you use Envive, we may automatically collect:
 
 - **Screen Time Data:** We use Apple's Family Controls framework to monitor and manage app usage and screen time. This includes which apps are used and for how long.
 - **Photos:** When you verify completed tasks, photos you take are stored with your account.
-- **Location Data:** We collect location information when you track activities or complete location-based tasks (only when the app is in use).
 - **Device Information:** Device type, operating system version, and unique device identifiers.
 - **Usage Data:** How you interact with the app, features used, and app performance data.
 
@@ -87,7 +86,7 @@ Envive is designed for families with children under 13 years of age. We comply w
 - Review your child's personal information
 - Request deletion of your child's information
 - Refuse further collection of your child's information
-- Contact us with questions: [Your email address]
+- Contact us with questions: Envive.app@gmail.com
 
 ## Data Security
 
@@ -110,7 +109,7 @@ You have the right to:
 - **Objection:** Object to certain data processing activities
 - **Data Portability:** Receive your data in a portable format
 
-To exercise these rights, please contact us at [Your email address].
+To exercise these rights, please contact us at Envive.app@gmail.com.
 
 **For California Residents:** You have additional rights under the California Consumer Privacy Act (CCPA). Contact us to exercise these rights.
 
@@ -123,15 +122,6 @@ We retain your information for as long as your account is active. When you delet
 - Personal information is deleted within 30 days
 - Some data may be retained for legal compliance or security purposes
 - Anonymized data may be retained for analytics
-
-## Location Data
-
-We collect location data only when:
-- You are actively using location-based features
-- You have granted location permission
-- The app is in use (not in the background)
-
-You can revoke location access at any time in your device settings.
 
 ## Photo and Camera Access
 
@@ -155,8 +145,8 @@ Continued use of the app after changes constitutes acceptance of the updated pol
 
 If you have questions about this Privacy Policy or your data, please contact us:
 
-- **Email:** [Your support email]
-- **GitHub:** https://github.com/[your-username]/Envive
+- **Email:** Envive.app@gmail.com
+- **GitHub:** https://github.com/nd-ahl/Envive
 
 ## Consent
 
