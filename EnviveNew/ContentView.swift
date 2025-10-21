@@ -5483,10 +5483,7 @@ struct ContentView: View {
                     taskService: DependencyContainer.shared.taskService,
                     credibilityService: DependencyContainer.shared.credibilityService,
                     xpService: DependencyContainer.shared.xpService,
-                    parentId: UUID(), // TODO: Replace with actual parent ID from user session
-                    testChild1Id: DependencyContainer.shared.deviceModeManager.getTestChild1Id(),
-                    testChild2Id: DependencyContainer.shared.deviceModeManager.getTestChild2Id(),
-                    deviceModeManager: DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+                    parentId: UUID() // TODO: Replace with actual parent ID from user session
                 ),
                 appSelectionStore: model.appSelectionStore,
                 notificationManager: model.notificationManager

@@ -75,10 +75,7 @@ struct RootNavigationView: View {
                     taskService: DependencyContainer.shared.taskService,
                     credibilityService: DependencyContainer.shared.credibilityService,
                     xpService: DependencyContainer.shared.xpService,
-                    parentId: deviceModeManager.currentProfile?.id ?? UUID(),
-                    testChild1Id: deviceModeManager.getTestChild1Id(),
-                    testChild2Id: deviceModeManager.getTestChild2Id(),
-                    deviceModeManager: deviceModeManager
+                    parentId: deviceModeManager.currentProfile?.id ?? UUID()
                 ),
                 appSelectionStore: model.appSelectionStore,
                 notificationManager: model.notificationManager

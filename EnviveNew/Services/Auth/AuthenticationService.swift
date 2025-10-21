@@ -145,6 +145,23 @@ class AuthenticationService: ObservableObject {
         await MainActor.run {
             self.currentProfile = response
             self.isAuthenticated = true
+
+            // Set household context for data isolation
+            if let householdIdString = response.householdId,
+               let householdId = UUID(uuidString: householdIdString) {
+
+                // If user is a parent, set their ID as the parent ID for household context
+                let parentId: UUID? = response.role == "parent" ? UUID(uuidString: response.id) : nil
+
+                HouseholdContext.shared.setHouseholdContext(
+                    householdId: householdId,
+                    parentId: parentId
+                )
+
+                print("🏠 Household context set for \(response.role): household=\(householdId), parent=\(parentId?.uuidString ?? "none")")
+            } else {
+                print("⚠️ No household ID found for user - household context not set")
+            }
         }
 
         return response
@@ -242,6 +259,9 @@ class AuthenticationService: ObservableObject {
         // Clear in-memory service state
         HouseholdService.shared.currentHousehold = nil
         HouseholdService.shared.householdMembers = []
+
+        // Clear household context for data isolation
+        HouseholdContext.shared.clearHouseholdContext()
 
         // Reset OnboardingManager state
         OnboardingManager.shared.resetOnboarding()

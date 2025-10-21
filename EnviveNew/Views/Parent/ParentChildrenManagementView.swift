@@ -599,6 +599,7 @@ class ChildrenManagementViewModel: ObservableObject {
     private let xpService: XPService
     private let credibilityService: CredibilityService
     private let deviceModeManager: LocalDeviceModeManager
+    private let householdContext = HouseholdContext.shared
 
     init(taskService: TaskService, xpService: XPService, credibilityService: CredibilityService, deviceModeManager: LocalDeviceModeManager) {
         self.taskService = taskService
@@ -608,29 +609,22 @@ class ChildrenManagementViewModel: ObservableObject {
     }
 
     func loadChildren() {
-        // Load children from device mode manager
-        let child1Profile = deviceModeManager.getProfile(byMode: .child1)
-        let child2Profile = deviceModeManager.getProfile(byMode: .child2)
+        // Load children from household context (household-scoped)
+        let householdChildren = householdContext.householdChildren
 
-        var loadedChildren: [ChildInfo] = []
+        print("📊 Loading children for management view: \(householdChildren.count) in household")
 
-        if let child1 = child1Profile {
-            loadedChildren.append(ChildInfo(
-                id: child1.id,
-                name: child1.name,
-                profilePhotoFileName: child1.profilePhotoFileName
-            ))
-        }
-
-        if let child2 = child2Profile {
-            loadedChildren.append(ChildInfo(
-                id: child2.id,
-                name: child2.name,
-                profilePhotoFileName: child2.profilePhotoFileName
-            ))
+        // Convert to ChildInfo format
+        let loadedChildren = householdChildren.map { child in
+            ChildInfo(
+                id: child.id,
+                name: child.name,
+                profilePhotoFileName: child.profilePhotoFileName
+            )
         }
 
         children = loadedChildren
+        print("✅ Children management view loaded \(loadedChildren.count) children")
     }
 
     // MARK: - Statistics Methods

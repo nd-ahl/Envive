@@ -4,8 +4,10 @@ import SwiftUI
 
 /// A view that allows switching between Parent and Child modes
 /// For single-device testing during development
+/// NOW WITH HOUSEHOLD SCOPING: Only shows children from current parent's household
 struct ModeSwitcherView: View {
     @ObservedObject var deviceModeManager: LocalDeviceModeManager
+    @ObservedObject var householdContext = HouseholdContext.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedMode: DeviceMode
@@ -13,6 +15,7 @@ struct ModeSwitcherView: View {
     @State private var child1Name: String = ""
     @State private var child2Name: String = ""
     @State private var showingConfirmation = false
+    @State private var availableChildren: [UserProfile] = []
 
     init(deviceModeManager: LocalDeviceModeManager) {
         self.deviceModeManager = deviceModeManager
@@ -34,6 +37,11 @@ struct ModeSwitcherView: View {
                 VStack(spacing: 24) {
                     // Header
                     headerSection
+
+                    // Household Info
+                    if householdContext.isParent() {
+                        householdInfoSection
+                    }
 
                     // Mode Selection
                     modeSelectionSection
@@ -57,6 +65,9 @@ struct ModeSwitcherView: View {
                         dismiss()
                     }
                 }
+            }
+            .onAppear {
+                loadAvailableChildren()
             }
             .alert("Mode Switched!", isPresented: $showingConfirmation) {
                 Button("OK") {
@@ -88,6 +99,43 @@ struct ModeSwitcherView: View {
         .padding()
     }
 
+    // MARK: - Household Info Section
+
+    private var householdInfoSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "house.fill")
+                    .foregroundColor(.blue)
+                Text("Current Household")
+                    .font(.headline)
+            }
+
+            if availableChildren.isEmpty {
+                Text("No children in household yet. Create child profiles to see them here.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                Text("\(availableChildren.count) child(ren) in household:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                ForEach(availableChildren) { child in
+                    HStack {
+                        Image(systemName: "person.circle.fill")
+                            .foregroundColor(.green)
+                        Text(child.name)
+                            .font(.subheadline)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .padding()
+        .background(Color.blue.opacity(0.05))
+        .cornerRadius(12)
+    }
+
     // MARK: - Mode Selection
 
     private var modeSelectionSection: some View {
@@ -95,7 +143,8 @@ struct ModeSwitcherView: View {
             Text("Select Mode")
                 .font(.headline)
 
-            ForEach(DeviceMode.allCases, id: \.self) { mode in
+            // Only show modes that are valid for current household
+            ForEach(availableModes, id: \.self) { mode in
                 ModeSelectionCard(
                     mode: mode,
                     isSelected: selectedMode == mode,
@@ -105,6 +154,21 @@ struct ModeSwitcherView: View {
                 )
             }
         }
+    }
+
+    private var availableModes: [DeviceMode] {
+        // Parent mode is always available
+        var modes: [DeviceMode] = [.parent]
+
+        // Add child modes only if children exist in household
+        if availableChildren.count > 0 {
+            modes.append(.child1)
+        }
+        if availableChildren.count > 1 {
+            modes.append(.child2)
+        }
+
+        return modes
     }
 
     // MARK: - Name Input Section
@@ -258,6 +322,30 @@ struct ModeSwitcherView: View {
 
         // Show confirmation
         showingConfirmation = true
+    }
+
+    private func loadAvailableChildren() {
+        // Load children from household context
+        availableChildren = householdContext.householdChildren
+
+        print("👶 Loaded \(availableChildren.count) children from household")
+
+        // If no household context, try to load from device manager
+        if availableChildren.isEmpty && householdContext.currentParentId == nil {
+            // Legacy fallback: load all children from device manager
+            var tempChildren: [UserProfile] = []
+
+            if let child1 = deviceModeManager.getProfile(byMode: .child1) {
+                tempChildren.append(child1)
+            }
+
+            if let child2 = deviceModeManager.getProfile(byMode: .child2) {
+                tempChildren.append(child2)
+            }
+
+            availableChildren = tempChildren
+            print("⚠️  Using legacy mode - loaded \(tempChildren.count) children from device manager")
+        }
     }
 }
 

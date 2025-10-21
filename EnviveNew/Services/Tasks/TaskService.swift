@@ -55,6 +55,7 @@ class TaskServiceImpl: TaskService {
     private let repository: TaskRepository
     private let xpService: XPService
     private let credibilityService: CredibilityService
+    private let householdContext = HouseholdContext.shared
 
     init(repository: TaskRepository, xpService: XPService, credibilityService: CredibilityService) {
         self.repository = repository
@@ -149,10 +150,24 @@ class TaskServiceImpl: TaskService {
     }
 
     func getPendingApprovals() -> [TaskAssignment] {
-        return repository.getPendingReviewTasks()
+        let allPendingTasks = repository.getPendingReviewTasks()
+
+        // Filter to only tasks for children in current household
+        let householdTasks = householdContext.filterTasksForHousehold(allPendingTasks) { task in
+            task.childId
+        }
+
+        print("📋 getPendingApprovals: \(allPendingTasks.count) total → \(householdTasks.count) household-scoped")
+        return householdTasks
     }
 
     func getPendingApprovals(forChild childId: UUID) -> [TaskAssignment] {
+        // Validate child is in current household
+        guard householdContext.isChildInHousehold(childId) else {
+            print("⚠️ getPendingApprovals: Child \(childId) not in current household")
+            return []
+        }
+
         return repository.getPendingReviewTasks(forChild: childId)
     }
 
@@ -326,6 +341,14 @@ class TaskServiceImpl: TaskService {
     // MARK: - Queries
 
     func getChildTasks(childId: UUID, status: TaskAssignmentStatus?) -> [TaskAssignment] {
+        // Validate child is in current household (if household context is set)
+        if householdContext.currentHouseholdId != nil {
+            guard householdContext.isChildInHousehold(childId) else {
+                print("⚠️ getChildTasks: Child \(childId) not in current household")
+                return []
+            }
+        }
+
         if let status = status {
             return repository.getAssignments(forChild: childId, status: status)
         } else {
