@@ -34,9 +34,6 @@ struct ParentDashboardView: View {
 
                     // Children Overview
                     childrenOverviewSection
-
-                    // Legal
-                    legalSection
                 }
                 .padding()
             }
@@ -207,59 +204,6 @@ struct ParentDashboardView: View {
                 )
             }
         }
-    }
-
-    // MARK: - Legal Section
-
-    private var legalSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Legal")
-                .font(.headline)
-
-            HStack(spacing: 12) {
-                // Privacy Policy Button
-                Button(action: {
-                    if let url = URL(string: "https://nd-ahl.github.io/Envive/privacy-policy") {
-                        UIApplication.shared.open(url)
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "hand.raised.fill")
-                            .font(.title3)
-                        Text("Privacy Policy")
-                            .fontWeight(.medium)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .foregroundColor(.blue)
-                    .cornerRadius(10)
-                }
-
-                // Terms of Service Button
-                Button(action: {
-                    if let url = URL(string: "https://nd-ahl.github.io/Envive/terms-of-service") {
-                        UIApplication.shared.open(url)
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "doc.text.fill")
-                            .font(.title3)
-                        Text("Terms of Service")
-                            .fontWeight(.medium)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .foregroundColor(.blue)
-                    .cornerRadius(10)
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 }
 
