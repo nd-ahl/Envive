@@ -5142,6 +5142,42 @@ struct ProfileView: View {
                 }
             }
 
+            Section("Legal") {
+                Button(action: {
+                    if let url = URL(string: "https://nd-ahl.github.io/Envive/privacy-policy") {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "hand.raised.fill")
+                            .foregroundColor(.blue)
+                        Text("Privacy Policy")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "arrow.up.forward")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Button(action: {
+                    if let url = URL(string: "https://nd-ahl.github.io/Envive/terms-of-service") {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "doc.text.fill")
+                            .foregroundColor(.blue)
+                        Text("Terms of Service")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "arrow.up.forward")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
             Section {
                 Button("Test Friend Activity Notification") {
                     model.simulateFriendActivity()
