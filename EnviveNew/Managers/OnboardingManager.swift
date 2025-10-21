@@ -259,14 +259,18 @@ class OnboardingManager: ObservableObject {
         return hasCompletedHouseholdSelection && !hasCompletedSignIn
     }
 
-    /// Check if user should see name entry
+    /// Check if user should see name entry (PARENT ONLY)
     var shouldShowNameEntry: Bool {
-        return hasCompletedSignIn && !hasCompletedNameEntry
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isParent = roleString == "parent"
+        return isParent && hasCompletedSignIn && !hasCompletedNameEntry
     }
 
-    /// Check if user should see family setup (add profiles + link devices)
+    /// Check if user should see family setup (add profiles + link devices) (PARENT ONLY)
     var shouldShowFamilySetup: Bool {
-        return hasCompletedNameEntry && !hasCompletedFamilySetup
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isParent = roleString == "parent"
+        return isParent && hasCompletedNameEntry && !hasCompletedFamilySetup
     }
 
     /// Check if user should see age selection (SKIPPED - age collected during family setup)
@@ -276,7 +280,16 @@ class OnboardingManager: ObservableObject {
 
     /// Check if user should see permissions screen
     var shouldShowPermissions: Bool {
-        return hasCompletedFamilySetup && !hasCompletedPermissions
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isParent = roleString == "parent"
+
+        if isParent {
+            // Parents go through: SignIn → NameEntry → FamilySetup → Permissions
+            return hasCompletedFamilySetup && !hasCompletedPermissions
+        } else {
+            // Children skip name entry and family setup, go straight to permissions
+            return hasCompletedSignIn && !hasCompletedPermissions
+        }
     }
 
     /// Check if user should see benefits screen

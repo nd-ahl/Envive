@@ -204,10 +204,14 @@ struct ChildInviteCodeEntryView: View {
         isVerifying = true
         errorMessage = nil
 
+        print("🔑 Child entering invite code: \(inviteCode)")
+
         Task {
             do {
                 // Verify the invite code exists
                 let isValid = try await householdService.verifyInviteCode(inviteCode)
+
+                print("🔑 Invite code validation result: \(isValid)")
 
                 await MainActor.run {
                     isVerifying = false
@@ -219,6 +223,7 @@ struct ChildInviteCodeEntryView: View {
                     }
                 }
             } catch {
+                print("❌ Error verifying invite code: \(error.localizedDescription)")
                 await MainActor.run {
                     isVerifying = false
                     errorMessage = "Could not verify code. Please try again."

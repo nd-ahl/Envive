@@ -216,6 +216,12 @@ class HouseholdService: ObservableObject {
         // Generate a unique ID for this child profile
         let childId = UUID().uuidString
 
+        print("🔵 Creating child profile:")
+        print("  - Name: \(name)")
+        print("  - Age: \(age)")
+        print("  - Household ID: \(householdId)")
+        print("  - Child ID: \(childId)")
+
         // Create the profile entry with encodable struct
         struct ChildProfileInsert: Encodable {
             let id: String
@@ -240,12 +246,16 @@ class HouseholdService: ObservableObject {
             .insert(profileData)
             .execute()
 
+        print("✅ Child profile inserted into profiles table")
+
         // Add to household_members
         try await addMemberToHousehold(
             householdId: householdId,
             userId: childId,
             role: "child"
         )
+
+        print("✅ Child added to household_members table")
 
         return childId
     }
@@ -278,6 +288,8 @@ class HouseholdService: ObservableObject {
 
     /// Get child profiles for a household by invite code
     func getChildProfilesByInviteCode(_ inviteCode: String) async throws -> [Profile] {
+        print("🔍 Searching for household with invite code: \(inviteCode)")
+
         // Get household by invite code
         let household: Household = try await supabase
             .from("households")
@@ -287,6 +299,9 @@ class HouseholdService: ObservableObject {
             .execute()
             .value
 
+        print("✅ Found household: \(household.name) (ID: \(household.id))")
+        print("🔍 Searching for child profiles in household: \(household.id)")
+
         // Get all child profiles in this household
         let profiles: [Profile] = try await supabase
             .from("profiles")
@@ -295,6 +310,11 @@ class HouseholdService: ObservableObject {
             .eq("role", value: "child")
             .execute()
             .value
+
+        print("✅ Found \(profiles.count) child profile(s):")
+        for profile in profiles {
+            print("  - Name: \(profile.fullName ?? "Unknown"), Age: \(profile.age ?? 0), ID: \(profile.id)")
+        }
 
         return profiles
     }

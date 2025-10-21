@@ -373,6 +373,9 @@ struct SignInView: View {
                         print("✅ Household created: \(household.name)")
                         print("Invite code: \(household.inviteCode)")
 
+                        // Reload profile to get updated household_id
+                        try await authService.refreshCurrentProfile()
+
                         // Save household info
                         UserDefaults.standard.set(household.id, forKey: "householdId")
                         UserDefaults.standard.set(household.inviteCode, forKey: "householdCode")
@@ -393,6 +396,13 @@ struct SignInView: View {
                     }
                     if let name = profile.fullName {
                         UserDefaults.standard.set(name, forKey: "userName")
+                    }
+
+                    // Set device mode to parent (they're creating a household)
+                    if isCreatingHousehold {
+                        let parentMode = DeviceModeService.deviceModeFromUserRole(.parent)
+                        DeviceModeService.shared.setDeviceMode(parentMode)
+                        print("✅ Device mode set to PARENT")
                     }
 
                     await MainActor.run {
@@ -451,6 +461,9 @@ struct SignInView: View {
                     print("✅ Household created: \(household.name)")
                     print("Invite code: \(household.inviteCode)")
 
+                    // Reload profile to get updated household_id
+                    try await authService.refreshCurrentProfile()
+
                     // Save household info
                     UserDefaults.standard.set(household.id, forKey: "householdId")
                     UserDefaults.standard.set(household.inviteCode, forKey: "householdCode")
@@ -482,6 +495,13 @@ struct SignInView: View {
                 }
                 if let name = profile.fullName {
                     UserDefaults.standard.set(name, forKey: "userName")
+                }
+
+                // Set device mode to parent (they're creating a household)
+                if isCreatingHousehold {
+                    let parentMode = DeviceModeService.deviceModeFromUserRole(.parent)
+                    DeviceModeService.shared.setDeviceMode(parentMode)
+                    print("✅ Device mode set to PARENT")
                 }
 
                 await MainActor.run {

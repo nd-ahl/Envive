@@ -6,6 +6,7 @@ import SwiftUI
 struct ChildProfileSelectorView: View {
     let inviteCode: String
     let onProfileSelected: (Profile) -> Void
+    let onBack: () -> Void
 
     @StateObject private var householdService = HouseholdService.shared
     @State private var childProfiles: [Profile] = []
@@ -33,6 +34,22 @@ struct ChildProfileSelectorView: View {
                     .tint(.white)
             } else {
                 VStack(spacing: 0) {
+                    // Back button
+                    HStack {
+                        Button(action: onBack) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("Back")
+                                    .font(.system(size: 17, weight: .medium))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .padding(.leading, 20)
+                        .padding(.top, 20)
+                        Spacer()
+                    }
+
                     Spacer()
 
                     // Content
@@ -277,7 +294,8 @@ struct ChildProfileSelectorView_Previews: PreviewProvider {
     static var previews: some View {
         ChildProfileSelectorView(
             inviteCode: "123456",
-            onProfileSelected: { _ in }
+            onProfileSelected: { _ in },
+            onBack: {}
         )
     }
 }

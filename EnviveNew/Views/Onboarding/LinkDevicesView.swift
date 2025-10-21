@@ -5,6 +5,7 @@ import SwiftUI
 /// Onboarding screen for linking additional family devices
 struct LinkDevicesView: View {
     let onComplete: () -> Void
+    let onBack: () -> Void
 
     @StateObject private var householdService = HouseholdService.shared
     @State private var networkSharingEnabled = false
@@ -27,9 +28,25 @@ struct LinkDevicesView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Back button
+                HStack {
+                    Button(action: onBack) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                    }
+                    .padding(.leading, 20)
+                    .padding(.top, 20)
+                    Spacer()
+                }
+
                 // Header
                 headerSection
-                    .padding(.top, 60)
+                    .padding(.top, 20)
 
                 Spacer()
 
@@ -257,10 +274,15 @@ struct LinkDevicesView: View {
         if let household = householdService.currentHousehold {
             inviteCode = household.inviteCode
             householdName = household.name
+            print("✅ LinkDevicesView: Loaded household from service")
+            print("  - Name: \(householdName)")
+            print("  - Invite Code: \(inviteCode)")
         } else {
             // Try to load from UserDefaults as fallback
             inviteCode = UserDefaults.standard.string(forKey: "householdCode") ?? ""
             householdName = "My Household"
+            print("⚠️ LinkDevicesView: No household in service, using UserDefaults")
+            print("  - Invite Code: \(inviteCode)")
         }
     }
 
@@ -304,6 +326,6 @@ struct LinkDevicesView: View {
 
 struct LinkDevicesView_Previews: PreviewProvider {
     static var previews: some View {
-        LinkDevicesView(onComplete: {})
+        LinkDevicesView(onComplete: {}, onBack: {})
     }
 }

@@ -41,6 +41,9 @@ class AuthenticationService: ObservableObject {
 
     /// Sign up with email and password
     func signUp(email: String, password: String, fullName: String, role: UserRole) async throws -> Profile {
+        // DO NOT clear data here - user is mid-onboarding!
+        // Only clear data on sign OUT or when existing user signs IN
+
         // Create auth user with metadata for the database trigger
         let response = try await supabase.auth.signUp(
             email: email,
@@ -66,6 +69,9 @@ class AuthenticationService: ObservableObject {
 
     /// Sign in with email and password
     func signIn(email: String, password: String) async throws -> Profile {
+        // DO NOT clear data here automatically
+        // Caller should clear if needed (e.g., ExistingUserSignInView)
+
         let session = try await supabase.auth.signIn(
             email: email,
             password: password
@@ -83,6 +89,9 @@ class AuthenticationService: ObservableObject {
 
     /// Sign in with Apple
     func signInWithApple(authorization: ASAuthorization) async throws -> Profile {
+        // DO NOT clear data here automatically
+        // Caller should clear if needed (e.g., ExistingUserSignInView)
+
         guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
             throw AuthError.invalidAppleCredentials
         }
@@ -141,6 +150,16 @@ class AuthenticationService: ObservableObject {
         return response
     }
 
+    /// Refresh the current user's profile from the database
+    func refreshCurrentProfile() async throws {
+        guard let currentUserId = currentProfile?.id else {
+            throw NSError(domain: "AuthenticationService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No current user"])
+        }
+
+        _ = try await loadProfile(userId: currentUserId)
+        print("✅ Profile refreshed - householdId: \(currentProfile?.householdId ?? "nil")")
+    }
+
     /// Update user profile
     func updateProfile(_ profile: Profile) async throws {
         try await supabase
@@ -154,6 +173,14 @@ class AuthenticationService: ObservableObject {
         }
     }
 
+    // MARK: - Password Reset
+
+    /// Send password reset email to user
+    func resetPassword(email: String) async throws {
+        try await supabase.auth.resetPasswordForEmail(email)
+        print("✅ Password reset email sent to: \(email)")
+    }
+
     // MARK: - Sign Out
 
     /// Sign out the current user
@@ -164,6 +191,65 @@ class AuthenticationService: ObservableObject {
             self.isAuthenticated = false
             self.currentProfile = nil
         }
+
+        // Clear all cached user data for a fresh start
+        clearAllUserData()
+    }
+
+    // MARK: - Data Cleanup
+
+    /// Public method to manually clear all user data (useful for testing or fresh starts)
+    func resetAllUserData() {
+        clearAllUserData()
+    }
+
+    /// Clear ALL user data from UserDefaults to ensure fresh start for new users
+    /// This prevents data leakage between different user accounts
+    private func clearAllUserData() {
+        let defaults = UserDefaults.standard
+
+        // Profile & Authentication Data
+        defaults.removeObject(forKey: "userId")
+        defaults.removeObject(forKey: "userEmail")
+        defaults.removeObject(forKey: "userName")
+        defaults.removeObject(forKey: "userRole")
+        defaults.removeObject(forKey: "userAge")
+        defaults.removeObject(forKey: "parentName")
+
+        // Household Data
+        defaults.removeObject(forKey: "householdId")
+        defaults.removeObject(forKey: "householdCode")
+        defaults.removeObject(forKey: "isInHousehold")
+
+        // Child Profile Linking (for devices)
+        defaults.removeObject(forKey: "linkedChildProfileId")
+        defaults.removeObject(forKey: "childName")
+        defaults.removeObject(forKey: "childAge")
+
+        // Onboarding State - Reset ALL flags
+        defaults.removeObject(forKey: "hasCompletedOnboarding")
+        defaults.removeObject(forKey: "hasCompletedWelcome")
+        defaults.removeObject(forKey: "hasCompletedQuestions")
+        defaults.removeObject(forKey: "hasCompletedRoleConfirmation")
+        defaults.removeObject(forKey: "hasCompletedHouseholdSelection")
+        defaults.removeObject(forKey: "hasCompletedSignIn")
+        defaults.removeObject(forKey: "hasCompletedNameEntry")
+        defaults.removeObject(forKey: "hasCompletedFamilySetup")
+        defaults.removeObject(forKey: "hasCompletedAgeSelection")
+        defaults.removeObject(forKey: "hasCompletedPermissions")
+        defaults.removeObject(forKey: "hasCompletedBenefits")
+
+        // Clear in-memory service state
+        HouseholdService.shared.currentHousehold = nil
+        HouseholdService.shared.householdMembers = []
+
+        // Reset OnboardingManager state
+        OnboardingManager.shared.resetOnboarding()
+
+        // Reset device role
+        DeviceModeService.shared.resetDeviceRole()
+
+        print("🧹 All user data cleared - fresh start for new user")
     }
 }
 

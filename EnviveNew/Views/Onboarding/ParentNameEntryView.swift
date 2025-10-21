@@ -5,6 +5,7 @@ import SwiftUI
 /// Screen for parent to enter/confirm their name
 struct ParentNameEntryView: View {
     let onComplete: (String) -> Void
+    let onBack: () -> Void
 
     @StateObject private var authService = AuthenticationService.shared
     @State private var parentName: String = ""
@@ -24,6 +25,22 @@ struct ParentNameEntryView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Back button
+                HStack {
+                    Button(action: onBack) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                    }
+                    .padding(.leading, 20)
+                    .padding(.top, 20)
+                    Spacer()
+                }
+
                 Spacer()
 
                 // Content
@@ -165,6 +182,6 @@ struct ParentNameEntryView: View {
 
 struct ParentNameEntryView_Previews: PreviewProvider {
     static var previews: some View {
-        ParentNameEntryView(onComplete: { _ in })
+        ParentNameEntryView(onComplete: { _ in }, onBack: {})
     }
 }

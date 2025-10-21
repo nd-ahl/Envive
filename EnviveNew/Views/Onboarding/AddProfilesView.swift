@@ -7,6 +7,7 @@ import PhotosUI
 struct AddProfilesView: View {
     let onContinue: () -> Void
     let onSkip: () -> Void
+    let onBack: () -> Void
 
     @StateObject private var householdService = HouseholdService.shared
     @StateObject private var authService = AuthenticationService.shared
@@ -29,9 +30,25 @@ struct AddProfilesView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Back button
+                HStack {
+                    Button(action: onBack) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                    }
+                    .padding(.leading, 20)
+                    .padding(.top, 20)
+                    Spacer()
+                }
+
                 // Header
                 headerSection
-                    .padding(.top, 60)
+                    .padding(.top, 20)
 
                 Spacer()
 
@@ -207,11 +224,18 @@ struct AddProfilesView: View {
     private func handleContinue() {
         // Save all child profiles to the database
         Task {
-            guard let currentProfile = authService.currentProfile,
-                  let householdId = currentProfile.householdId else {
-                print("❌ No household found")
+            guard let currentProfile = authService.currentProfile else {
+                print("❌ No current profile found")
                 return
             }
+
+            guard let householdId = currentProfile.householdId else {
+                print("❌ No household found for user \(currentProfile.id)")
+                print("❌ Profile: \(currentProfile)")
+                return
+            }
+
+            print("✅ Creating \(childProfiles.count) child profile(s) in household: \(householdId)")
 
             for childData in childProfiles {
                 do {
@@ -341,7 +365,8 @@ struct AddProfilesView_Previews: PreviewProvider {
     static var previews: some View {
         AddProfilesView(
             onContinue: {},
-            onSkip: {}
+            onSkip: {},
+            onBack: {}
         )
     }
 }

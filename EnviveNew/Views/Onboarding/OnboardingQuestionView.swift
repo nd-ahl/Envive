@@ -5,6 +5,7 @@ import SwiftUI
 /// Asks users personalization questions to tailor their experience
 struct OnboardingQuestionView: View {
     let onComplete: () -> Void
+    let onBack: () -> Void
 
     @State private var currentQuestion = 0
     @State private var showContent = false
@@ -228,17 +229,19 @@ struct OnboardingQuestionView: View {
             .disabled(!canContinue)
 
             // Back button
-            if currentQuestion > 0 {
-                Button(action: {
+            Button(action: {
+                if currentQuestion > 0 {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         currentQuestion -= 1
                     }
-                }) {
-                    Text("Back")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.vertical, 10)
+                } else {
+                    onBack()
                 }
+            }) {
+                Text("Back")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.vertical, 10)
             }
         }
         .padding(.bottom, 30)
@@ -431,6 +434,6 @@ enum ScreenTimeChallenge: String {
 
 struct OnboardingQuestionView_Previews: PreviewProvider {
     static var previews: some View {
-        OnboardingQuestionView(onComplete: {})
+        OnboardingQuestionView(onComplete: {}, onBack: {})
     }
 }

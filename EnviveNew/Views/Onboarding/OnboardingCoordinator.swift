@@ -5,6 +5,7 @@ import SwiftUI
 /// Manages the onboarding flow after account creation
 struct OnboardingCoordinator: View {
     let onComplete: () -> Void
+    let onBack: () -> Void
 
     @State private var currentStep: OnboardingStep = .addProfiles
 
@@ -22,7 +23,8 @@ struct OnboardingCoordinator: View {
                         withAnimation {
                             currentStep = .linkDevices
                         }
-                    }
+                    },
+                    onBack: onBack
                 )
 
             case .linkDevices:
@@ -31,6 +33,11 @@ struct OnboardingCoordinator: View {
                         // Save onboarding completion
                         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
                         onComplete()
+                    },
+                    onBack: {
+                        withAnimation {
+                            currentStep = .addProfiles
+                        }
                     }
                 )
             }
@@ -49,6 +56,6 @@ private enum OnboardingStep {
 
 struct OnboardingCoordinator_Previews: PreviewProvider {
     static var previews: some View {
-        OnboardingCoordinator(onComplete: {})
+        OnboardingCoordinator(onComplete: {}, onBack: {})
     }
 }

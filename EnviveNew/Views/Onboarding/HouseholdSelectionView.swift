@@ -7,6 +7,7 @@ struct HouseholdSelectionView: View {
     let userRole: UserRole
     let onCreateHousehold: () -> Void
     let onJoinHousehold: () -> Void
+    let onBack: () -> Void
 
     @State private var showContent = false
     @State private var selectedOption: HouseholdOption?
@@ -25,6 +26,22 @@ struct HouseholdSelectionView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Back button
+                HStack {
+                    Button(action: onBack) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                    }
+                    .padding(.leading, 20)
+                    .padding(.top, 20)
+                    Spacer()
+                }
+
                 Spacer()
 
                 // Content
@@ -208,14 +225,16 @@ struct HouseholdSelectionView_Previews: PreviewProvider {
             HouseholdSelectionView(
                 userRole: .parent,
                 onCreateHousehold: {},
-                onJoinHousehold: {}
+                onJoinHousehold: {},
+                onBack: {}
             )
             .previewDisplayName("Parent View")
 
             HouseholdSelectionView(
                 userRole: .child,
                 onCreateHousehold: {},
-                onJoinHousehold: {}
+                onJoinHousehold: {},
+                onBack: {}
             )
             .previewDisplayName("Child View")
         }

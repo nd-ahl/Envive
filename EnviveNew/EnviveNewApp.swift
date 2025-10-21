@@ -19,25 +19,42 @@ struct EnviveNewApp: App {
 
     // Onboarding management
     @StateObject private var onboardingManager = OnboardingManager.shared
+    @StateObject private var authService = AuthenticationService.shared
     @State private var isCreatingHousehold = false
+    @State private var showingSignIn = false
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if onboardingManager.shouldShowWelcome {
+                if showingSignIn {
+                    // Existing user sign-in flow (skip onboarding)
+                    ExistingUserSignInView(
+                        onComplete: {
+                            // User signed in successfully - skip onboarding
+                            onboardingManager.completeOnboarding()
+                            showingSignIn = false
+                        },
+                        onBack: {
+                            showingSignIn = false
+                        }
+                    )
+                } else if onboardingManager.shouldShowWelcome {
                     WelcomeView(
                         onGetStarted: {
                             onboardingManager.completeWelcome()
                         },
                         onSignIn: {
-                            onboardingManager.completeWelcome()
-                            // TODO: Navigate to sign in
+                            // Show sign-in screen for existing users
+                            showingSignIn = true
                         }
                     )
                 } else if onboardingManager.shouldShowQuestions {
                     OnboardingQuestionView(
                         onComplete: {
                             onboardingManager.completeQuestions()
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedWelcome = false
                         }
                     )
                 } else if onboardingManager.shouldShowRoleConfirmation {
@@ -69,6 +86,9 @@ struct EnviveNewApp: App {
                         onJoinHousehold: {
                             isCreatingHousehold = false
                             onboardingManager.completeHouseholdSelection()
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedRoleConfirmation = false
                         }
                     )
                 } else if onboardingManager.shouldShowSignIn {
@@ -96,14 +116,24 @@ struct EnviveNewApp: App {
                     }
                 } else if onboardingManager.shouldShowNameEntry {
                     // NEW: Parent name entry
-                    ParentNameEntryView { name in
-                        onboardingManager.completeNameEntry(name: name)
-                    }
+                    ParentNameEntryView(
+                        onComplete: { name in
+                            onboardingManager.completeNameEntry(name: name)
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedSignIn = false
+                        }
+                    )
                 } else if onboardingManager.shouldShowFamilySetup {
                     // NEW: Family setup flow (add profiles + link devices)
-                    OnboardingCoordinator {
-                        onboardingManager.completeFamilySetup()
-                    }
+                    OnboardingCoordinator(
+                        onComplete: {
+                            onboardingManager.completeFamilySetup()
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedNameEntry = false
+                        }
+                    )
                 } else if onboardingManager.shouldShowAgeSelection {
                     // Get user role from saved responses
                     let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
