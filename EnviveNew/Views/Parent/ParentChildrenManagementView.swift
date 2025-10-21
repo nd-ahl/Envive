@@ -1,11 +1,12 @@
 import SwiftUI
 import Charts
+import Combine
 
 // MARK: - Parent Children Management View
 
 struct ParentChildrenManagementView: View {
     @StateObject private var viewModel: ChildrenManagementViewModel
-    @State private var selectedChild: ChildProfile?
+    @State private var selectedChild: ChildInfo?
 
     init() {
         _viewModel = StateObject(wrappedValue: ChildrenManagementViewModel(
@@ -98,7 +99,7 @@ struct ParentChildrenManagementView: View {
 // MARK: - Child Selector Card
 
 struct ChildSelectorCard: View {
-    let child: ChildProfile
+    let child: ChildInfo
     let isSelected: Bool
     let onTap: () -> Void
 
@@ -151,7 +152,7 @@ struct ChildSelectorCard: View {
 // MARK: - Child Detail View
 
 struct ChildDetailView: View {
-    let child: ChildProfile
+    let child: ChildInfo
     @ObservedObject var viewModel: ChildrenManagementViewModel
     @State private var selectedTimeRange: TimeRange = .week
 
@@ -179,14 +180,14 @@ struct ChildDetailView: View {
                 .font(.headline)
 
             HStack(spacing: 12) {
-                StatCard(
+                ChildStatCard(
                     title: "Credibility",
                     value: "\(viewModel.getCredibility(for: child.id))%",
                     icon: "star.fill",
                     color: credibilityColor(for: viewModel.getCredibility(for: child.id))
                 )
 
-                StatCard(
+                ChildStatCard(
                     title: "Screen Time",
                     value: "\(viewModel.getTotalScreenTime(for: child.id)) min",
                     icon: "clock.fill",
@@ -195,14 +196,14 @@ struct ChildDetailView: View {
             }
 
             HStack(spacing: 12) {
-                StatCard(
+                ChildStatCard(
                     title: "Tasks Complete",
                     value: "\(viewModel.getCompletedTasksCount(for: child.id))",
                     icon: "checkmark.circle.fill",
                     color: .green
                 )
 
-                StatCard(
+                ChildStatCard(
                     title: "Tasks Pending",
                     value: "\(viewModel.getPendingTasksCount(for: child.id))",
                     icon: "clock.badge.exclamationmark.fill",
@@ -367,9 +368,9 @@ struct ChildDetailView: View {
     }
 }
 
-// MARK: - Stat Card
+// MARK: - Child Stat Card
 
-struct StatCard: View {
+struct ChildStatCard: View {
     let title: String
     let value: String
     let icon: String
@@ -525,7 +526,7 @@ struct SimplifiedBarChart: View {
 
 // MARK: - Supporting Models
 
-struct ChildProfile: Identifiable {
+struct ChildInfo: Identifiable {
     let id: UUID
     let name: String
     let profilePhotoFileName: String?
@@ -592,7 +593,7 @@ enum TimeRange {
 
 @MainActor
 class ChildrenManagementViewModel: ObservableObject {
-    @Published var children: [ChildProfile] = []
+    @Published var children: [ChildInfo] = []
 
     private let taskService: TaskService
     private let xpService: XPService
@@ -611,10 +612,10 @@ class ChildrenManagementViewModel: ObservableObject {
         let child1Profile = deviceModeManager.getProfile(byMode: .child1)
         let child2Profile = deviceModeManager.getProfile(byMode: .child2)
 
-        var loadedChildren: [ChildProfile] = []
+        var loadedChildren: [ChildInfo] = []
 
         if let child1 = child1Profile {
-            loadedChildren.append(ChildProfile(
+            loadedChildren.append(ChildInfo(
                 id: child1.id,
                 name: child1.name,
                 profilePhotoFileName: child1.profilePhotoFileName
@@ -622,7 +623,7 @@ class ChildrenManagementViewModel: ObservableObject {
         }
 
         if let child2 = child2Profile {
-            loadedChildren.append(ChildProfile(
+            loadedChildren.append(ChildInfo(
                 id: child2.id,
                 name: child2.name,
                 profilePhotoFileName: child2.profilePhotoFileName
@@ -668,11 +669,11 @@ class ChildrenManagementViewModel: ObservableObject {
 
     func getAverageCompletionTime(for childId: UUID) -> Int {
         let tasks = taskService.getChildTasks(childId: childId, status: .approved)
-        let tasksWithTime = tasks.filter { $0.timeSpentMinutes > 0 }
+        let tasksWithTime = tasks.filter { ($0.completionTimeMinutes ?? 0) > 0 }
 
         guard !tasksWithTime.isEmpty else { return 0 }
 
-        let total = tasksWithTime.reduce(0) { $0 + $1.timeSpentMinutes }
+        let total = tasksWithTime.reduce(0) { $0 + ($1.completionTimeMinutes ?? 0) }
         return total / tasksWithTime.count
     }
 
@@ -743,7 +744,7 @@ class ChildrenManagementViewModel: ObservableObject {
             if task.status == .declined, let declinedAt = task.reviewedAt {
                 logs.append(ActivityLog(
                     title: "Task declined: \(task.title)",
-                    subtitle: task.declineReason,
+                    subtitle: task.parentNotes,
                     timestamp: declinedAt,
                     type: .taskDeclined
                 ))
