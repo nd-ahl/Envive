@@ -534,10 +534,42 @@ struct ParentProfileView: View {
                         Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
                             .foregroundColor(.orange)
                     }
+
+                    Button(action: {
+                        // Force cleanup of test data
+                        TestDataCleanupService.shared.forceCleanup()
+
+                        // Show alert that cleanup is complete
+                        let alert = UIAlertController(
+                            title: "Test Data Cleaned",
+                            message: "All legacy test data has been removed. The app will close.",
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                            // Close the app
+                            exit(0)
+                        })
+
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootVC = windowScene.windows.first?.rootViewController {
+                            rootVC.present(alert, animated: true)
+                        }
+                    }) {
+                        Label("Clean Test Data", systemImage: "trash")
+                            .foregroundColor(.red)
+                    }
+
+                    Button(action: {
+                        // Show all stored keys for debugging
+                        TestDataCleanupService.shared.printAllStoredKeys()
+                    }) {
+                        Label("Print Debug Keys", systemImage: "info.circle")
+                            .foregroundColor(.blue)
+                    }
                 } header: {
                     Text("Debug & Testing")
                 } footer: {
-                    Text("Reset onboarding to see the welcome screen again")
+                    Text("Reset onboarding or clean test data. These actions will restart the app.")
                         .font(.caption)
                 }
             }

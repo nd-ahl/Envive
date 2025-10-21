@@ -23,6 +23,11 @@ struct EnviveNewApp: App {
     @State private var isCreatingHousehold = false
     @State private var showingSignIn = false
 
+    init() {
+        // Clean up legacy test data on first launch after beta deployment
+        TestDataCleanupService.shared.performCleanupIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {

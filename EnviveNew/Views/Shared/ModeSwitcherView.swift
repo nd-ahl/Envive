@@ -23,9 +23,9 @@ struct ModeSwitcherView: View {
         let child1Profile = deviceModeManager.getProfile(byMode: .child1)
         let child2Profile = deviceModeManager.getProfile(byMode: .child2)
 
-        _parentName = State(initialValue: parentProfile?.name ?? "Parent")
-        _child1Name = State(initialValue: child1Profile?.name ?? "Sarah")
-        _child2Name = State(initialValue: child2Profile?.name ?? "Jake")
+        _parentName = State(initialValue: parentProfile?.name ?? "")
+        _child1Name = State(initialValue: child1Profile?.name ?? "")
+        _child2Name = State(initialValue: child2Profile?.name ?? "")
     }
 
     var body: some View {
@@ -132,7 +132,7 @@ struct ModeSwitcherView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    TextField("e.g., Sarah", text: $child1Name)
+                    TextField("Enter child's name", text: $child1Name)
                         .textFieldStyle(.roundedBorder)
                         .autocapitalization(.words)
                 }
@@ -143,7 +143,7 @@ struct ModeSwitcherView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    TextField("e.g., Jake", text: $child2Name)
+                    TextField("Enter child's name", text: $child2Name)
                         .textFieldStyle(.roundedBorder)
                         .autocapitalization(.words)
                 }

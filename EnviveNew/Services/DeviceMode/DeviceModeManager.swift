@@ -71,24 +71,23 @@ class LocalDeviceModeManager: DeviceModeManager, ObservableObject {
         self.storage = storage
 
         // Load or create consistent test child IDs for single-device testing
-        // Test Child 1 (Sarah)
+        // These are used for household-scoped testing on a single device
         if let savedIdString: String = storage.load(forKey: testChild1IdKey),
            let savedId = UUID(uuidString: savedIdString) {
             self.testChild1Id = savedId
         } else {
             self.testChild1Id = UUID()
             storage.save(self.testChild1Id.uuidString, forKey: testChild1IdKey)
-            print("🆔 Created test child 1 ID (Sarah): \(self.testChild1Id)")
+            print("🆔 Created test child 1 ID: \(self.testChild1Id)")
         }
 
-        // Test Child 2 (Jake)
         if let savedIdString: String = storage.load(forKey: testChild2IdKey),
            let savedId = UUID(uuidString: savedIdString) {
             self.testChild2Id = savedId
         } else {
             self.testChild2Id = UUID()
             storage.save(self.testChild2Id.uuidString, forKey: testChild2IdKey)
-            print("🆔 Created test child 2 ID (Jake): \(self.testChild2Id)")
+            print("🆔 Created test child 2 ID: \(self.testChild2Id)")
         }
 
         // Load current mode from storage, default to parent
@@ -102,27 +101,9 @@ class LocalDeviceModeManager: DeviceModeManager, ObservableObject {
         // Load current profile from storage
         self.currentProfile = storage.load(forKey: profileKey)
 
-        // Create default profile if none exists
-        if self.currentProfile == nil {
-            let defaultName: String
-            switch currentMode {
-            case .parent:
-                defaultName = "Parent"
-            case .child1:
-                defaultName = "Sarah"
-            case .child2:
-                defaultName = "Jake"
-            }
-
-            let defaultProfile = UserProfile(
-                name: defaultName,
-                mode: currentMode
-            )
-            self.currentProfile = defaultProfile
-            storage.save(defaultProfile, forKey: profileKey)
-            // Save to profiles dictionary for cross-mode access
-            saveProfileToStorage(defaultProfile)
-        }
+        // Note: Profiles are now created through onboarding flow
+        // No default profiles are created automatically
+        print("📱 DeviceModeManager initialized in \(currentMode.displayName) mode")
     }
 
     func switchMode(to mode: DeviceMode, profile: UserProfile) {
