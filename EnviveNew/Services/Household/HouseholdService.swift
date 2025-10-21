@@ -318,4 +318,37 @@ class HouseholdService: ObservableObject {
 
         return profiles
     }
+
+    /// Get ALL profiles (both parent and child) for a household by invite code
+    func getAllProfilesByInviteCode(_ inviteCode: String) async throws -> [Profile] {
+        print("🔍 Searching for household with invite code: \(inviteCode)")
+
+        // Get household by invite code
+        let household: Household = try await supabase
+            .from("households")
+            .select()
+            .eq("invite_code", value: inviteCode)
+            .single()
+            .execute()
+            .value
+
+        print("✅ Found household: \(household.name) (ID: \(household.id))")
+        print("🔍 Searching for ALL profiles in household: \(household.id)")
+
+        // Get ALL profiles in this household (both parent and child)
+        let profiles: [Profile] = try await supabase
+            .from("profiles")
+            .select()
+            .eq("household_id", value: household.id)
+            .order("role", ascending: false) // Parents first, then children
+            .execute()
+            .value
+
+        print("✅ Found \(profiles.count) profile(s):")
+        for profile in profiles {
+            print("  - Name: \(profile.fullName ?? "Unknown"), Role: \(profile.role), ID: \(profile.id)")
+        }
+
+        return profiles
+    }
 }

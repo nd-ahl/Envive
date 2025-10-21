@@ -1,9 +1,9 @@
 import SwiftUI
 
-// MARK: - Child Profile Selector View
+// MARK: - Parent Profile Selector View
 
-/// Screen where child selects which profile is theirs from household
-struct ChildProfileSelectorView: View {
+/// Screen where parent selects which profile to use (can select ANY role - parent or child)
+struct ParentProfileSelectorView: View {
     let inviteCode: String
     let onProfileSelected: (Profile) -> Void
     let onBack: () -> Void
@@ -15,12 +15,12 @@ struct ChildProfileSelectorView: View {
     @State private var showContent = false
     @State private var errorMessage: String?
 
-    private var childProfiles: [Profile] {
-        allProfiles.filter { $0.role == "child" }
-    }
-
     private var parentProfiles: [Profile] {
         allProfiles.filter { $0.role == "parent" }
+    }
+
+    private var childProfiles: [Profile] {
+        allProfiles.filter { $0.role == "child" }
     }
 
     var body: some View {
@@ -66,7 +66,7 @@ struct ChildProfileSelectorView: View {
                         headerSection
 
                         // Profile cards
-                        if childProfiles.isEmpty {
+                        if allProfiles.isEmpty {
                             emptyStateSection
                         } else {
                             profileCardsSection
@@ -95,7 +95,7 @@ struct ChildProfileSelectorView: View {
             }
         }
         .onAppear {
-            loadChildProfiles()
+            loadAllProfiles()
         }
     }
 
@@ -103,19 +103,19 @@ struct ChildProfileSelectorView: View {
 
     private var headerSection: some View {
         VStack(spacing: 20) {
-            Text("👶")
+            Text("👨‍👩‍👧‍👦")
                 .font(.system(size: 70))
                 .scaleEffect(showContent ? 1.0 : 0.5)
                 .opacity(showContent ? 1.0 : 0)
 
             VStack(spacing: 12) {
-                Text("Who are you?")
+                Text("Select Your Profile")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .opacity(showContent ? 1.0 : 0)
 
-                Text("Select your profile from your siblings")
+                Text("Choose your profile to continue")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
                     .multilineTextAlignment(.center)
@@ -129,39 +129,39 @@ struct ChildProfileSelectorView: View {
     private var profileCardsSection: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Parent profiles section (visible but disabled)
+                // Parent profiles section
                 if !parentProfiles.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Parent")
+                        Text("Parents")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white.opacity(0.7))
                             .padding(.horizontal, 4)
 
                         ForEach(parentProfiles) { profile in
-                            ChildProfileSelectionCard(
+                            ParentProfileSelectionCard(
                                 profile: profile,
-                                isSelected: false,
-                                isDisabled: true
+                                isSelected: selectedProfile?.id == profile.id
                             ) {
-                                // Parent profiles are not selectable for children
+                                withAnimation(.spring(response: 0.3)) {
+                                    selectedProfile = profile
+                                }
                             }
                         }
                     }
                 }
 
-                // Child profiles section (selectable)
+                // Child profiles section
                 if !childProfiles.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(parentProfiles.isEmpty ? "Profiles" : "Siblings")
+                        Text("Children")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white.opacity(0.7))
                             .padding(.horizontal, 4)
 
                         ForEach(childProfiles) { profile in
-                            ChildProfileSelectionCard(
+                            ParentProfileSelectionCard(
                                 profile: profile,
-                                isSelected: selectedProfile?.id == profile.id,
-                                isDisabled: false
+                                isSelected: selectedProfile?.id == profile.id
                             ) {
                                 withAnimation(.spring(response: 0.3)) {
                                     selectedProfile = profile
@@ -188,7 +188,7 @@ struct ChildProfileSelectorView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(.white.opacity(0.8))
 
-            Text("Ask your parent to create a profile for you")
+            Text("Create profiles to get started")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -202,7 +202,7 @@ struct ChildProfileSelectorView: View {
     private var continueButton: some View {
         Button(action: handleContinue) {
             HStack(spacing: 10) {
-                Text("Continue")
+                Text("Continue as \(selectedProfile?.fullName ?? "...")")
                     .font(.system(size: 18, weight: .bold))
                 Image(systemName: "arrow.right.circle.fill")
                     .font(.system(size: 20))
@@ -228,7 +228,7 @@ struct ChildProfileSelectorView: View {
 
     // MARK: - Actions
 
-    private func loadChildProfiles() {
+    private func loadAllProfiles() {
         Task {
             do {
                 // Get ALL profiles for this household (parent and child)
@@ -258,12 +258,11 @@ struct ChildProfileSelectorView: View {
     }
 }
 
-// MARK: - Child Profile Selection Card
+// MARK: - Parent Profile Selection Card
 
-private struct ChildProfileSelectionCard: View {
+private struct ParentProfileSelectionCard: View {
     let profile: Profile
     let isSelected: Bool
-    let isDisabled: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -280,7 +279,6 @@ private struct ChildProfileSelectionCard: View {
                     }
                     .frame(width: 60, height: 60)
                     .clipShape(Circle())
-                    .opacity(isDisabled ? 0.5 : 1.0)
                 } else {
                     avatarPlaceholder
                 }
@@ -307,36 +305,39 @@ private struct ChildProfileSelectionCard: View {
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(.white.opacity(0.8))
                     }
+
+                    // Role badge
+                    Text(profile.role == "parent" ? "Parent Role" : "Child Role")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(profile.role == "parent" ? Color.blue : Color.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.9))
+                        .cornerRadius(8)
                 }
 
                 Spacer()
 
-                // Selection indicator or lock
-                if isDisabled {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.white.opacity(0.5))
-                } else if isSelected {
+                // Selection indicator
+                if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 32))
                         .foregroundColor(.white)
                 }
             }
             .padding(20)
-            .background(isDisabled ? Color.white.opacity(0.08) : (isSelected ? Color.white.opacity(0.3) : Color.white.opacity(0.15)))
+            .background(isSelected ? Color.white.opacity(0.3) : Color.white.opacity(0.15))
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.white : (isDisabled ? Color.white.opacity(0.3) : Color.clear), lineWidth: 2)
+                    .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
             )
-            .opacity(isDisabled ? 0.6 : 1.0)
         }
-        .disabled(isDisabled)
     }
 
     private var avatarPlaceholder: some View {
         Circle()
-            .fill(Color.white.opacity(isDisabled ? 0.15 : 0.3))
+            .fill(Color.white.opacity(0.3))
             .frame(width: 60, height: 60)
             .overlay(
                 Text((profile.fullName ?? "?").prefix(1).uppercased())
@@ -348,9 +349,9 @@ private struct ChildProfileSelectionCard: View {
 
 // MARK: - Preview
 
-struct ChildProfileSelectorView_Previews: PreviewProvider {
+struct ParentProfileSelectorView_Previews: PreviewProvider {
     static var previews: some View {
-        ChildProfileSelectorView(
+        ParentProfileSelectorView(
             inviteCode: "123456",
             onProfileSelected: { _ in },
             onBack: {}

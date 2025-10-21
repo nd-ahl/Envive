@@ -97,8 +97,12 @@ struct EnviveNewApp: App {
                         }
                     )
                 } else if onboardingManager.shouldShowSignIn {
+                    // Get user role to determine which flow to show
+                    let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+                    let userRole = roleString == "child" ? UserRole.child : UserRole.parent
+
                     if isCreatingHousehold {
-                        // Show sign in/sign up for creating household
+                        // Show sign in/sign up for creating household (parent only)
                         SignInView(
                             isCreatingHousehold: true,
                             onComplete: {
@@ -109,15 +113,28 @@ struct EnviveNewApp: App {
                             }
                         )
                     } else {
-                        // Show join household flow for children
-                        ChildOnboardingCoordinator(
-                            onComplete: {
-                                onboardingManager.completeSignIn()
-                            },
-                            onBack: {
-                                onboardingManager.hasCompletedHouseholdSelection = false
-                            }
-                        )
+                        // Show join household flow based on user role
+                        if userRole == .parent {
+                            // Parent joining existing household
+                            ParentOnboardingCoordinator(
+                                onComplete: {
+                                    onboardingManager.completeSignIn()
+                                },
+                                onBack: {
+                                    onboardingManager.hasCompletedHouseholdSelection = false
+                                }
+                            )
+                        } else {
+                            // Child joining existing household
+                            ChildOnboardingCoordinator(
+                                onComplete: {
+                                    onboardingManager.completeSignIn()
+                                },
+                                onBack: {
+                                    onboardingManager.hasCompletedHouseholdSelection = false
+                                }
+                            )
+                        }
                     }
                 } else if onboardingManager.shouldShowNameEntry {
                     // NEW: Parent name entry
