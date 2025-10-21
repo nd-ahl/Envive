@@ -5140,9 +5140,7 @@ struct ProfileView: View {
                         }
                     }
                 }
-            }
 
-            Section("Legal") {
                 Button(action: {
                     if let url = URL(string: "https://nd-ahl.github.io/Envive/privacy-policy") {
                         UIApplication.shared.open(url)
@@ -5152,7 +5150,6 @@ struct ProfileView: View {
                         Image(systemName: "hand.raised.fill")
                             .foregroundColor(.blue)
                         Text("Privacy Policy")
-                            .foregroundColor(.primary)
                         Spacer()
                         Image(systemName: "arrow.up.forward")
                             .font(.caption)
@@ -5169,7 +5166,6 @@ struct ProfileView: View {
                         Image(systemName: "doc.text.fill")
                             .foregroundColor(.blue)
                         Text("Terms of Service")
-                            .foregroundColor(.primary)
                         Spacer()
                         Image(systemName: "arrow.up.forward")
                             .font(.caption)
