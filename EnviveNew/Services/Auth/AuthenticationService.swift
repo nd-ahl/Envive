@@ -60,11 +60,37 @@ class AuthenticationService: ObservableObject {
             self.isAuthenticated = true
         }
 
-        // The profile was auto-created by the database trigger
-        // Wait a moment for the trigger to complete, then load the profile
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        let userId = user.id.uuidString
+        let roleString = role == .parent ? "parent" : "child"
 
-        return try await loadProfile(userId: user.id.uuidString)
+        // Try to load existing profile, or create one if it doesn't exist
+        do {
+            // Wait a moment for the database trigger to complete
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+            return try await loadProfile(userId: userId)
+        } catch {
+            // Profile doesn't exist - create it manually
+            print("⚠️ Profile not found for sign-up, creating manually...")
+
+            let newProfile = Profile(
+                id: userId,
+                email: email,
+                fullName: fullName.isEmpty ? nil : fullName,
+                role: roleString,
+                householdId: nil,
+                age: nil,
+                photoUrl: nil
+            )
+
+            // Insert profile into database
+            try await supabase
+                .from("profiles")
+                .insert(newProfile)
+                .execute()
+
+            // Now load it
+            return try await loadProfile(userId: userId)
+        }
     }
 
     /// Sign in with email and password
@@ -110,7 +136,6 @@ class AuthenticationService: ObservableObject {
         .joined(separator: " ")
 
         // Sign in with Supabase using Apple token
-        // The database trigger will automatically create the profile
         let session = try await supabase.auth.signInWithIdToken(
             credentials: .init(
                 provider: .apple,
@@ -122,11 +147,35 @@ class AuthenticationService: ObservableObject {
             self.isAuthenticated = true
         }
 
-        // The profile was auto-created by the database trigger
-        // Wait a moment for the trigger to complete, then load the profile
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        let userId = session.user.id.uuidString
+        let email = session.user.email ?? ""
 
-        return try await loadProfile(userId: session.user.id.uuidString)
+        // Try to load existing profile, or create one if it doesn't exist
+        do {
+            return try await loadProfile(userId: userId)
+        } catch {
+            // Profile doesn't exist - create it manually
+            print("⚠️ Profile not found for Apple sign-in, creating manually...")
+
+            let newProfile = Profile(
+                id: userId,
+                email: email,
+                fullName: fullName.isEmpty ? nil : fullName,
+                role: "parent", // Default to parent for new sign-ups
+                householdId: nil,
+                age: nil,
+                photoUrl: nil
+            )
+
+            // Insert profile into database
+            try await supabase
+                .from("profiles")
+                .insert(newProfile)
+                .execute()
+
+            // Now load it
+            return try await loadProfile(userId: userId)
+        }
     }
 
     // MARK: - Profile Management
