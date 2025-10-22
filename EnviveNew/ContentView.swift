@@ -5432,6 +5432,13 @@ struct ContentView: View {
 
     /// Determines the correct child ID based on the current device mode
     private var currentChildId: UUID {
+        // Use actual child ID from current profile, not test IDs
+        // This ensures tasks are saved and retrieved with the correct child UUID
+        if let profileId = deviceModeManager.currentProfile?.id {
+            return profileId
+        }
+
+        // Fallback to test child IDs only if profile not available
         switch deviceModeManager.currentMode {
         case .parent:
             return deviceModeManager.getTestChild1Id()  // Shouldn't happen in child view, but default to child 1
@@ -6504,6 +6511,13 @@ struct EnhancedHomeView: View {
 
     /// Determines the correct child ID based on the current device mode
     private var currentChildId: UUID {
+        // Use actual child ID from current profile, not test IDs
+        // This ensures tasks are saved and retrieved with the correct child UUID
+        if let profileId = deviceModeManager.currentProfile?.id {
+            return profileId
+        }
+
+        // Fallback to test child IDs only if profile not available
         switch deviceModeManager.currentMode {
         case .parent:
             return deviceModeManager.getTestChild1Id()  // Shouldn't happen in child view, but default to child 1
@@ -6781,8 +6795,8 @@ struct EnhancedHomeView: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
 
-                    // Friends Activity Card
-                    if !model.friendActivities.isEmpty {
+                    // Friends Activity Card - only show if user has friends
+                    if !model.friends.isEmpty && !model.friendActivities.isEmpty {
                         VStack(spacing: 12) {
                             HStack {
                                 Text("Friends Activity")

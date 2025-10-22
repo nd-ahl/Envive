@@ -17,9 +17,13 @@ class HouseholdContext: ObservableObject {
     // All children in current household
     @Published private(set) var householdChildren: [UserProfile] = []
 
+    // Current child ID when in child mode (for task filtering)
+    @Published private(set) var currentChildId: UUID?
+
     private let storage: StorageService
     private let householdIdKey = "current_household_id"
     private let parentIdKey = "current_parent_id"
+    private let childIdKey = "current_child_id"
 
     private init() {
         self.storage = DependencyContainer.shared.storage
@@ -81,7 +85,27 @@ class HouseholdContext: ObservableObject {
 
     /// Check if a child belongs to the current household
     func isChildInHousehold(_ childId: UUID) -> Bool {
+        // If we're currently in child mode and this is the current child, allow it
+        if let currentChild = currentChildId, currentChild == childId {
+            return true
+        }
+
+        // Otherwise check the household children list
         return householdChildren.contains { $0.id == childId }
+    }
+
+    /// Set current child ID when switching to child mode
+    func setCurrentChild(_ childId: UUID) {
+        currentChildId = childId
+        storage.save(childId.uuidString, forKey: childIdKey)
+        print("👶 Set current child ID: \(childId)")
+    }
+
+    /// Clear current child ID when switching to parent mode
+    func clearCurrentChild() {
+        currentChildId = nil
+        storage.remove(forKey: childIdKey)
+        print("🧹 Cleared current child ID")
     }
 
     /// Get child profile by ID (only if in current household)

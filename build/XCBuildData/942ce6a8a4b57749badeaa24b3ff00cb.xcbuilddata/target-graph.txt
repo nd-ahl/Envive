@@ -1,8 +1,0 @@
-Target dependency graph (4 targets)
-Target 'EnviveNew' in project 'EnviveNew'
-➜ Explicit dependency on target 'ShieldConfigurationExtension' in project 'EnviveNew'
-➜ Explicit dependency on target 'DeviceActivityMonitorExtension' in project 'EnviveNew'
-➜ Explicit dependency on target 'EnviveNewWidgetsExtension' in project 'EnviveNew'
-Target 'EnviveNewWidgetsExtension' in project 'EnviveNew' (no dependencies)
-Target 'DeviceActivityMonitorExtension' in project 'EnviveNew' (no dependencies)
-Target 'ShieldConfigurationExtension' in project 'EnviveNew' (no dependencies)

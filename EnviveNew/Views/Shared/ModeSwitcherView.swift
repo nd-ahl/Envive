@@ -4,31 +4,41 @@ import SwiftUI
 
 /// A view that allows switching between Parent and Child modes
 /// For single-device testing during development
-/// NOW WITH HOUSEHOLD SCOPING: Only shows children from current parent's household
+/// NOW WITH SUPABASE: Fetches children from Supabase database
 struct ModeSwitcherView: View {
     @ObservedObject var deviceModeManager: LocalDeviceModeManager
+    @ObservedObject var householdService = HouseholdService.shared
+    @ObservedObject var authService = AuthenticationService.shared
     @ObservedObject var householdContext = HouseholdContext.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedMode: DeviceMode
     @State private var parentName: String = ""
-    @State private var child1Name: String = ""
-    @State private var child2Name: String = ""
+    @State private var selectedChildId: String? = nil
     @State private var showingConfirmation = false
-    @State private var availableChildren: [UserProfile] = []
+    @State private var availableChildren: [Profile] = [] // Supabase Profile, not UserProfile
+    @State private var isLoadingChildren = false
+    @State private var savedParentName: String = "" // Store parent name when switching to child
 
     init(deviceModeManager: LocalDeviceModeManager) {
         self.deviceModeManager = deviceModeManager
         _selectedMode = State(initialValue: deviceModeManager.currentMode)
 
-        // Load existing profile names for all modes if available
-        let parentProfile = deviceModeManager.getProfile(byMode: .parent)
-        let child1Profile = deviceModeManager.getProfile(byMode: .child1)
-        let child2Profile = deviceModeManager.getProfile(byMode: .child2)
+        // Load parent name from actual authenticated profile (best source)
+        let authName = AuthenticationService.shared.currentProfile?.fullName ?? ""
 
-        _parentName = State(initialValue: parentProfile?.name ?? "")
-        _child1Name = State(initialValue: child1Profile?.name ?? "")
-        _child2Name = State(initialValue: child2Profile?.name ?? "")
+        // Fallback to device manager or onboarding
+        let parentProfile = deviceModeManager.getProfile(byMode: .parent)
+        let savedName = parentProfile?.name ?? ""
+        let onboardingName = OnboardingManager.shared.parentName ?? ""
+
+        // Priority: AuthenticationService > DeviceManager > OnboardingManager
+        let finalName = !authName.isEmpty ? authName : (!savedName.isEmpty ? savedName : onboardingName)
+
+        _parentName = State(initialValue: finalName)
+        _savedParentName = State(initialValue: finalName)
+
+        print("🎯 ModeSwitcher initialized with parent name: '\(finalName)' (from auth: '\(authName)', saved: '\(savedName)', onboarding: '\(onboardingName)')")
     }
 
     var body: some View {
@@ -39,15 +49,19 @@ struct ModeSwitcherView: View {
                     headerSection
 
                     // Household Info
-                    if householdContext.isParent() {
+                    if deviceModeManager.isParentMode() {
                         householdInfoSection
                     }
 
                     // Mode Selection
                     modeSelectionSection
 
-                    // Name Input
-                    nameInputSection
+                    // Child or Parent Selection
+                    if selectedMode == .parent {
+                        parentInputSection
+                    } else {
+                        childSelectionSection
+                    }
 
                     // Info Card
                     infoCard
@@ -68,6 +82,26 @@ struct ModeSwitcherView: View {
             }
             .onAppear {
                 loadAvailableChildren()
+
+                // Use actual parent name from AuthenticationService first
+                let actualParentName = authService.currentProfile?.fullName ?? ""
+
+                if !actualParentName.isEmpty {
+                    // Use the real parent name from auth
+                    savedParentName = actualParentName
+                    if parentName.isEmpty || deviceModeManager.isChildMode() {
+                        parentName = actualParentName
+                    }
+                } else if let savedName = UserDefaults.standard.string(forKey: "savedParentName"),
+                          !savedName.isEmpty {
+                    // Fallback to UserDefaults
+                    savedParentName = savedName
+                    if deviceModeManager.isChildMode() && selectedMode == .parent {
+                        parentName = savedName
+                    } else if parentName.isEmpty {
+                        parentName = savedName
+                    }
+                }
             }
             .alert("Mode Switched!", isPresented: $showingConfirmation) {
                 Button("OK") {
@@ -110,8 +144,17 @@ struct ModeSwitcherView: View {
                     .font(.headline)
             }
 
-            if availableChildren.isEmpty {
-                Text("No children in household yet. Create child profiles to see them here.")
+            if isLoadingChildren {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading children...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            } else if availableChildren.isEmpty {
+                Text("No children in household yet. Create child profiles during onboarding to see them here.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.vertical, 4)
@@ -124,8 +167,13 @@ struct ModeSwitcherView: View {
                     HStack {
                         Image(systemName: "person.circle.fill")
                             .foregroundColor(.green)
-                        Text(child.name)
+                        Text(child.fullName ?? "Unknown")
                             .font(.subheadline)
+                        if let age = child.age {
+                            Text("(age \(age))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .padding(.vertical, 2)
                 }
@@ -143,73 +191,183 @@ struct ModeSwitcherView: View {
             Text("Select Mode")
                 .font(.headline)
 
-            // Only show modes that are valid for current household
-            ForEach(availableModes, id: \.self) { mode in
-                ModeSelectionCard(
-                    mode: mode,
-                    isSelected: selectedMode == mode,
-                    onSelect: {
-                        selectedMode = mode
+            // Parent mode button
+            Button(action: {
+                selectedMode = .parent
+                selectedChildId = nil
+
+                // Restore saved parent name when selecting parent mode
+                if parentName.isEmpty && !savedParentName.isEmpty {
+                    parentName = savedParentName
+                }
+            }) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(selectedMode == .parent ? Color.blue : Color(.systemGray5))
+                            .frame(width: 50, height: 50)
+
+                        Image(systemName: "person.2.fill")
+                            .font(.title3)
+                            .foregroundColor(selectedMode == .parent ? .white : .primary)
                     }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Parent")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Text("Manage tasks, approve completions, and monitor children")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    if selectedMode == .parent {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding()
+                .background(selectedMode == .parent ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(selectedMode == .parent ? Color.blue : Color.clear, lineWidth: 2)
                 )
             }
+            .buttonStyle(.plain)
+
+            // Child mode button
+            Button(action: {
+                selectedMode = .child1
+                if !availableChildren.isEmpty && selectedChildId == nil {
+                    selectedChildId = availableChildren[0].id
+                }
+            }) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(selectedMode == .child1 ? Color.blue : Color(.systemGray5))
+                            .frame(width: 50, height: 50)
+
+                        Image(systemName: "person.fill")
+                            .font(.title3)
+                            .foregroundColor(selectedMode == .child1 ? .white : .primary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Child")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Text("Complete tasks and earn screen time")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    if selectedMode == .child1 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding()
+                .background(selectedMode == .child1 ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(selectedMode == .child1 ? Color.blue : Color.clear, lineWidth: 2)
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    private var availableModes: [DeviceMode] {
-        // Parent mode is always available
-        var modes: [DeviceMode] = [.parent]
+    // MARK: - Parent Input Section
 
-        // Add child modes only if children exist in household
-        if availableChildren.count > 0 {
-            modes.append(.child1)
-        }
-        if availableChildren.count > 1 {
-            modes.append(.child2)
-        }
-
-        return modes
-    }
-
-    // MARK: - Name Input Section
-
-    private var nameInputSection: some View {
+    private var parentInputSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Enter Name")
+            Text("Parent Name")
                 .font(.headline)
 
-            switch selectedMode {
-            case .parent:
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Parent Name")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+            TextField("e.g., Mom, Dad, John", text: $parentName)
+                .textFieldStyle(.roundedBorder)
+                .autocapitalization(.words)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
 
-                    TextField("e.g., Mom, Dad, John", text: $parentName)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.words)
+    // MARK: - Child Selection Section
+
+    private var childSelectionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Select Child")
+                .font(.headline)
+
+            if isLoadingChildren {
+                HStack {
+                    ProgressView()
+                    Text("Loading children...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-
-            case .child1:
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Child 1 Name")
-                        .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding()
+            } else if availableChildren.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .font(.system(size: 40))
                         .foregroundColor(.secondary)
 
-                    TextField("Enter child's name", text: $child1Name)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.words)
+                    Text("No children available")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    Text("Add children during onboarding to switch to child mode.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
+                .frame(maxWidth: .infinity)
+                .padding()
+            } else {
+                ForEach(availableChildren) { child in
+                    Button(action: {
+                        selectedChildId = child.id
+                    }) {
+                        HStack {
+                            Image(systemName: selectedChildId == child.id ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundColor(selectedChildId == child.id ? .blue : .gray)
 
-            case .child2:
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Child 2 Name")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(child.fullName ?? "Unknown")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.primary)
 
-                    TextField("Enter child's name", text: $child2Name)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.words)
+                                if let age = child.age {
+                                    Text("Age \(age)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            Spacer()
+                        }
+                        .padding()
+                        .background(selectedChildId == child.id ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
                 }
             }
         }
@@ -265,141 +423,120 @@ struct ModeSwitcherView: View {
     // MARK: - Computed Properties
 
     private var canSwitch: Bool {
-        let name: String
-        switch selectedMode {
-        case .parent:
-            name = parentName
-        case .child1:
-            name = child1Name
-        case .child2:
-            name = child2Name
+        if selectedMode == .parent {
+            return !parentName.trimmingCharacters(in: .whitespaces).isEmpty
+        } else {
+            // For child mode, must have a child selected
+            return selectedChildId != nil
         }
-
-        return !name.trimmingCharacters(in: .whitespaces).isEmpty &&
-               (selectedMode != deviceModeManager.currentMode ||
-                name != deviceModeManager.currentProfile?.name)
     }
 
     // MARK: - Actions
 
     private func handleModeSwitch() {
-        let name: String
-        switch selectedMode {
-        case .parent:
-            name = parentName
-        case .child1:
-            name = child1Name
-        case .child2:
-            name = child2Name
+        if selectedMode == .parent {
+            // Use actual parent name from AuthenticationService if available
+            let actualParentName = authService.currentProfile?.fullName ?? ""
+            let trimmedName = !actualParentName.isEmpty ? actualParentName : parentName.trimmingCharacters(in: .whitespaces)
+
+            // Get existing parent profile to preserve photo
+            let existingParentProfile = deviceModeManager.getProfile(byMode: .parent)
+            let parentId = authService.currentProfile.flatMap { UUID(uuidString: $0.id) } ?? UUID()
+
+            let parentProfile = UserProfile(
+                id: parentId,
+                name: trimmedName,
+                mode: .parent,
+                age: nil,
+                parentId: nil,
+                profilePhotoFileName: existingParentProfile?.profilePhotoFileName
+            )
+
+            deviceModeManager.switchMode(to: .parent, profile: parentProfile)
+
+            // Clear current child ID from HouseholdContext
+            householdContext.clearCurrentChild()
+
+            // Save parent name for future switches
+            savedParentName = trimmedName
+            UserDefaults.standard.set(trimmedName, forKey: "savedParentName")
+
+            // Update UserDefaults for ProfileView
+            UserDefaults.standard.set(trimmedName, forKey: "userName")
+
+            print("🔄 Switched to Parent mode: \(trimmedName), Photo: \(existingParentProfile?.profilePhotoFileName ?? "none")")
+        } else if let childId = selectedChildId,
+                  let child = availableChildren.first(where: { $0.id == childId }) {
+            // Before switching to child, save current parent name
+            let actualParentName = authService.currentProfile?.fullName ?? ""
+            if !actualParentName.isEmpty {
+                savedParentName = actualParentName
+                UserDefaults.standard.set(actualParentName, forKey: "savedParentName")
+            } else if !savedParentName.isEmpty {
+                UserDefaults.standard.set(savedParentName, forKey: "savedParentName")
+            } else if !parentName.trimmingCharacters(in: .whitespaces).isEmpty {
+                savedParentName = parentName.trimmingCharacters(in: .whitespaces)
+                UserDefaults.standard.set(savedParentName, forKey: "savedParentName")
+            }
+
+            // Switch to child mode
+            let childName = child.fullName ?? "Child"
+            let childAge = child.age ?? 0
+            let childUUID = UUID(uuidString: child.id) ?? UUID()
+
+            // Get existing child profile to preserve photo
+            let existingChildProfile = deviceModeManager.getProfile(byId: childUUID)
+
+            let childProfile = UserProfile(
+                id: childUUID,
+                name: childName,
+                mode: .child1,
+                age: childAge,
+                parentId: authService.currentProfile.flatMap { UUID(uuidString: $0.id) },
+                profilePhotoFileName: existingChildProfile?.profilePhotoFileName
+            )
+
+            deviceModeManager.switchMode(to: .child1, profile: childProfile)
+
+            // Set current child ID in HouseholdContext for task filtering
+            householdContext.setCurrentChild(childUUID)
+
+            // Update UserDefaults for ProfileView to show child's name and age
+            UserDefaults.standard.set(childName, forKey: "userName")
+            UserDefaults.standard.set(childAge, forKey: "userAge")
+
+            print("🔄 Switched to Child mode: \(childName), Age: \(childAge), ID: \(childUUID), Photo: \(existingChildProfile?.profilePhotoFileName ?? "none")")
         }
 
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-
-        // Load existing profile for this mode, or create new one
-        var profile: UserProfile
-        if let existingProfile = deviceModeManager.getProfile(byMode: selectedMode) {
-            // Use existing profile but update the name if changed
-            profile = UserProfile(
-                id: existingProfile.id,
-                name: trimmedName,
-                mode: selectedMode,
-                age: existingProfile.age,
-                parentId: existingProfile.parentId,
-                profilePhotoFileName: existingProfile.profilePhotoFileName
-            )
-            print("🔄 Loaded existing \(selectedMode.displayName) profile with ID: \(profile.id)")
-        } else {
-            // Create new profile
-            profile = UserProfile(
-                name: trimmedName,
-                mode: selectedMode
-            )
-            print("🆕 Created new \(selectedMode.displayName) profile with ID: \(profile.id)")
-        }
-
-        // Switch mode
-        deviceModeManager.switchMode(to: selectedMode, profile: profile)
+        // Post notification to update UI
+        NotificationCenter.default.post(name: NSNotification.Name("DeviceModeChanged"), object: nil)
 
         // Show confirmation
         showingConfirmation = true
     }
 
     private func loadAvailableChildren() {
-        // Load children from household context
-        availableChildren = householdContext.householdChildren
+        isLoadingChildren = true
 
-        print("👶 Loaded \(availableChildren.count) children from household")
+        Task {
+            do {
+                // Fetch children from Supabase
+                let children = try await householdService.getMyChildren()
 
-        // If no household context, try to load from device manager
-        if availableChildren.isEmpty && householdContext.currentParentId == nil {
-            // Legacy fallback: load all children from device manager
-            var tempChildren: [UserProfile] = []
+                await MainActor.run {
+                    availableChildren = children
+                    isLoadingChildren = false
+                }
 
-            if let child1 = deviceModeManager.getProfile(byMode: .child1) {
-                tempChildren.append(child1)
+                print("👶 Loaded \(children.count) children from Supabase")
+            } catch {
+                print("❌ Error loading children: \(error.localizedDescription)")
+                await MainActor.run {
+                    availableChildren = []
+                    isLoadingChildren = false
+                }
             }
-
-            if let child2 = deviceModeManager.getProfile(byMode: .child2) {
-                tempChildren.append(child2)
-            }
-
-            availableChildren = tempChildren
-            print("⚠️  Using legacy mode - loaded \(tempChildren.count) children from device manager")
         }
-    }
-}
-
-// MARK: - Mode Selection Card
-
-struct ModeSelectionCard: View {
-    let mode: DeviceMode
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 16) {
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(isSelected ? Color.blue : Color(.systemGray5))
-                        .frame(width: 50, height: 50)
-
-                    Image(systemName: mode.icon)
-                        .font(.title3)
-                        .foregroundColor(isSelected ? .white : .primary)
-                }
-
-                // Info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(mode.displayName)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-
-                    Text(mode.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer()
-
-                // Selection indicator
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                }
-            }
-            .padding()
-            .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
-            )
-        }
-        .buttonStyle(.plain)
     }
 }
 

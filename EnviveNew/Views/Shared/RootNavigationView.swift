@@ -55,6 +55,13 @@ struct RootNavigationView: View {
 
     /// The current child ID based on which child mode is active
     private var currentChildId: UUID {
+        // Use actual child ID from current profile, not test IDs
+        // This ensures tasks are saved and retrieved with the correct child UUID
+        if let profileId = deviceModeManager.currentProfile?.id {
+            return profileId
+        }
+
+        // Fallback to test child IDs only if profile not available
         switch currentEffectiveMode {
         case .parent:
             return deviceModeManager.getTestChild1Id()  // Shouldn't happen, but default to child 1
@@ -471,7 +478,7 @@ struct ParentProfileView: View {
                 }
 
                 Section {
-                    NavigationLink(destination: Text("Family Settings")) {
+                    NavigationLink(destination: ManageFamilyView()) {
                         Label("Manage Family", systemImage: "person.2")
                     }
 

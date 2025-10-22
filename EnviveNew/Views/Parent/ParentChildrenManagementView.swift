@@ -222,8 +222,13 @@ struct ChildDetailView: View {
     private var screenTimeChartSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Screen Time Usage")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Screen Time Earned")
+                        .font(.headline)
+                    Text("Minutes earned from approved tasks")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
 
@@ -243,6 +248,13 @@ struct ChildDetailView: View {
                             y: .value("Minutes", dataPoint.minutes)
                         )
                         .foregroundStyle(Color.blue.gradient)
+                        .annotation(position: .top) {
+                            if dataPoint.minutes > 0 {
+                                Text("\(dataPoint.minutes)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
                 .frame(height: 200)
@@ -256,7 +268,12 @@ struct ChildDetailView: View {
                 .chartYAxis {
                     AxisMarks { value in
                         AxisGridLine()
-                        AxisValueLabel()
+                        AxisValueLabel {
+                            if let minutes = value.as(Int.self) {
+                                Text("\(minutes) min")
+                                    .font(.caption)
+                            }
+                        }
                     }
                 }
             } else {
@@ -634,7 +651,15 @@ class ChildrenManagementViewModel: ObservableObject {
     }
 
     func getTotalScreenTime(for childId: UUID) -> Int {
-        return xpService.getBalance(userId: childId)?.currentXP ?? 0
+        // Get raw XP balance
+        let rawXP = xpService.getBalance(userId: childId)?.currentXP ?? 0
+
+        // Convert to screen time minutes using credibility multiplier
+        let credibility = credibilityService.getCredibilityScore(childId: childId)
+        let minutes = credibilityService.calculateXPToMinutes(xpAmount: rawXP, childId: childId)
+
+        print("📊 Child \(childId) - Raw XP: \(rawXP), Credibility: \(credibility)%, Minutes: \(minutes)")
+        return minutes
     }
 
     func getCompletedTasksCount(for childId: UUID) -> Int {
@@ -643,10 +668,15 @@ class ChildrenManagementViewModel: ObservableObject {
     }
 
     func getPendingTasksCount(for childId: UUID) -> Int {
-        let assigned = taskService.getChildTasks(childId: childId, status: .assigned).count
-        let inProgress = taskService.getChildTasks(childId: childId, status: .inProgress).count
-        let pendingReview = taskService.getChildTasks(childId: childId, status: .pendingReview).count
-        return assigned + inProgress + pendingReview
+        // Only count tasks that are actively pending (not approved or declined)
+        let assigned = taskService.getChildTasks(childId: childId, status: .assigned)
+        let inProgress = taskService.getChildTasks(childId: childId, status: .inProgress)
+        let pendingReview = taskService.getChildTasks(childId: childId, status: .pendingReview)
+
+        let total = assigned.count + inProgress.count + pendingReview.count
+        print("📊 Pending tasks for child \(childId): Assigned=\(assigned.count), InProgress=\(inProgress.count), PendingReview=\(pendingReview.count), Total=\(total)")
+
+        return total
     }
 
     func getApprovedTasksCount(for childId: UUID, days: Int) -> Int {
@@ -677,18 +707,31 @@ class ChildrenManagementViewModel: ObservableObject {
         let days = range == .week ? 7 : 30
         var dataPoints: [ScreenTimeDataPoint] = []
 
-        for dayOffset in 0..<days {
-            let date = Calendar.current.date(byAdding: .day, value: -dayOffset, to: Date()) ?? Date()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
 
-            // Get tasks completed on this day
-            let tasksOnDay = taskService.getChildTasks(childId: childId, status: .approved).filter { task in
-                guard let completedAt = task.completedAt else { return false }
-                return Calendar.current.isDate(completedAt, inSameDayAs: date)
+        for dayOffset in 0..<days {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+
+            // Get all tasks approved on this day (when parent approved, not when child completed)
+            let allApprovedTasks = taskService.getChildTasks(childId: childId, status: .approved)
+            let tasksApprovedOnDay = allApprovedTasks.filter { task in
+                guard let reviewedAt = task.reviewedAt else { return false }
+                return calendar.isDate(reviewedAt, inSameDayAs: date)
             }
 
-            let minutesEarned = tasksOnDay.reduce(0) { $0 + $1.assignedLevel.baseXP }
+            // Calculate total minutes earned (using actual XP awarded with credibility multiplier)
+            let minutesEarned = tasksApprovedOnDay.reduce(0) { total, task in
+                total + (task.xpAwarded ?? task.assignedLevel.baseXP)
+            }
 
             dataPoints.append(ScreenTimeDataPoint(date: date, minutes: minutesEarned))
+
+            if minutesEarned > 0 {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .short
+                print("📊 \(formatter.string(from: date)): \(tasksApprovedOnDay.count) tasks approved, \(minutesEarned) minutes earned")
+            }
         }
 
         return dataPoints.reversed()

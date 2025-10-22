@@ -195,13 +195,53 @@ struct ParentDashboardView: View {
             Text("Children Overview")
                 .font(.headline)
 
-            ForEach(viewModel.children, id: \.id) { child in
-                ChildOverviewCard(
-                    childName: child.name,
-                    credibility: child.credibility,
-                    xpBalance: child.xpBalance,
-                    pendingCount: child.pendingCount
-                )
+            if viewModel.isLoadingChildren {
+                // Loading state
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading children...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(40)
+                    Spacer()
+                }
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+            } else if viewModel.children.isEmpty {
+                // Empty state
+                VStack(spacing: 16) {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+
+                    Text("No Children Yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+
+                    Text("Add children to your household to start assigning tasks")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(40)
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+            } else {
+                // Children list
+                ForEach(viewModel.children, id: \.id) { child in
+                    ChildOverviewCard(
+                        childName: child.name,
+                        credibility: child.credibility,
+                        xpBalance: child.xpBalance,
+                        pendingCount: child.pendingCount
+                    )
+                }
             }
         }
     }
@@ -347,12 +387,14 @@ struct ChildSummary: Identifiable, Equatable {
 class ParentDashboardViewModel: ObservableObject {
     @Published var pendingApprovals: [TaskAssignment] = []
     @Published var children: [ChildSummary] = []
+    @Published var isLoadingChildren = false
 
     let taskService: TaskService
     let credibilityService: CredibilityService
     let xpService: XPService
     let parentId: UUID
     private let householdContext = HouseholdContext.shared
+    private let householdService = HouseholdService.shared
 
     init(taskService: TaskService, credibilityService: CredibilityService, xpService: XPService, parentId: UUID) {
         self.taskService = taskService
@@ -365,25 +407,51 @@ class ParentDashboardViewModel: ObservableObject {
         // Load pending approvals (already filtered by TaskService using household context)
         pendingApprovals = taskService.getPendingApprovals()
 
-        // Load children from household context (household-scoped)
-        let householdChildren = householdContext.householdChildren
+        // Load children from Supabase asynchronously
+        Task {
+            await loadChildrenFromSupabase()
+        }
+    }
 
-        print("📋 Parent dashboard loading children: \(householdChildren.count) in household")
-
-        // Create child summaries for each child in household
-        children = householdChildren.map { child in
-            ChildSummary(
-                id: child.id,
-                name: child.name,
-                credibility: credibilityService.getCredibilityScore(childId: child.id),
-                xpBalance: xpService.getBalance(userId: child.id)?.currentXP ?? 0,
-                pendingCount: pendingApprovals.filter { $0.childId == child.id }.count
-            )
+    private func loadChildrenFromSupabase() async {
+        await MainActor.run {
+            isLoadingChildren = true
         }
 
-        print("📋 Parent dashboard loaded.")
-        print("📋 Children: \(children.map { $0.name }.joined(separator: ", "))")
-        print("📋 Pending approvals: \(pendingApprovals.count)")
+        do {
+            // Fetch children from Supabase for current household
+            let childProfiles = try await householdService.getMyChildren()
+
+            print("📋 Parent dashboard loaded \(childProfiles.count) children from Supabase")
+
+            // Create child summaries
+            let childSummaries = childProfiles.map { profile in
+                let childId = UUID(uuidString: profile.id) ?? UUID()
+                return ChildSummary(
+                    id: childId,
+                    name: profile.fullName ?? "Child",
+                    credibility: credibilityService.getCredibilityScore(childId: childId),
+                    xpBalance: xpService.getBalance(userId: childId)?.currentXP ?? 0,
+                    pendingCount: pendingApprovals.filter { $0.childId == childId }.count
+                )
+            }
+
+            await MainActor.run {
+                self.children = childSummaries
+                self.isLoadingChildren = false
+            }
+
+            print("📋 Parent dashboard loaded.")
+            print("📋 Children: \(children.map { $0.name }.joined(separator: ", "))")
+            print("📋 Pending approvals: \(pendingApprovals.count)")
+
+        } catch {
+            print("❌ Error loading children from Supabase: \(error.localizedDescription)")
+            await MainActor.run {
+                self.children = []
+                self.isLoadingChildren = false
+            }
+        }
     }
 
     func getChildName(_ childId: UUID) -> String {

@@ -382,25 +382,34 @@ class TaskHistoryViewModel: ObservableObject {
             allTasks = taskService.getChildTasks(childId: childId, status: nil)
                 .filter { $0.status == .approved || $0.status == .declined }
                 .sorted { ($0.reviewedAt ?? Date.distantPast) > ($1.reviewedAt ?? Date.distantPast) }
+
+            print("📜 Child view - loaded \(allTasks.count) completed tasks for child \(childId)")
         } else {
-            // Parent view: load all completed tasks
+            // Parent view: load all completed tasks for all children in household
             allTasks = []
 
-            // Get all pending tasks to find all child IDs
-            let allKnownTasks = taskService.getPendingApprovals()
-            let childIds = Set(allKnownTasks.map { $0.childId })
+            // Get all children from household context
+            let householdContext = HouseholdContext.shared
+            let householdChildren = householdContext.householdChildren
+
+            print("📜 Parent view - loading task history for \(householdChildren.count) children in household")
 
             // Load completed tasks for each child
-            for childId in childIds {
-                let childTasks = taskService.getChildTasks(childId: childId, status: nil)
+            for child in householdChildren {
+                let childTasks = taskService.getChildTasks(childId: child.id, status: nil)
                     .filter { $0.status == .approved || $0.status == .declined }
+
                 allTasks.append(contentsOf: childTasks)
 
-                // Store child name (in production, fetch from user service)
-                childrenNames[childId] = "Test Child"
+                // Store child name
+                childrenNames[child.id] = child.name
+
+                print("📜 Loaded \(childTasks.count) completed tasks for \(child.name) (ID: \(child.id))")
             }
 
             allTasks.sort { ($0.reviewedAt ?? Date.distantPast) > ($1.reviewedAt ?? Date.distantPast) }
+
+            print("📜 Total task history: \(allTasks.count) tasks across all children")
         }
 
         // Calculate stats
@@ -408,7 +417,7 @@ class TaskHistoryViewModel: ObservableObject {
         declinedCount = allTasks.filter { $0.status == .declined }.count
         totalXPEarned = allTasks.filter { $0.status == .approved }.compactMap { $0.xpAwarded }.reduce(0, +)
 
-        print("📜 Task history loaded: \(allTasks.count) tasks (Approved: \(approvedCount), Declined: \(declinedCount))")
+        print("📜 Task history stats: \(allTasks.count) total | Approved: \(approvedCount) | Declined: \(declinedCount) | Total XP: \(totalXPEarned)")
     }
 
     func getChildName(_ childId: UUID) -> String {

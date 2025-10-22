@@ -261,14 +261,12 @@ class HouseholdService: ObservableObject {
 
         print("✅ Child profile inserted into profiles table")
 
-        // Add to household_members
-        try await addMemberToHousehold(
-            householdId: householdId,
-            userId: childId,
-            role: "child"
-        )
-
-        print("✅ Child added to household_members table")
+        // NOTE: We do NOT add child profiles to household_members table
+        // because children don't have auth.users entries (they sign in with name/age, not email/password).
+        // The household_members table has a foreign key constraint on user_id -> auth.users(id),
+        // which would fail for child profiles that only exist in the profiles table.
+        // Instead, the household relationship is tracked via profiles.household_id.
+        print("ℹ️  Child linked to household via profiles.household_id (skipping household_members)")
 
         return childId
     }
@@ -442,5 +440,49 @@ class HouseholdService: ObservableObject {
         }
 
         print("✅ Fixed \(fixedCount) profile(s)")
+    }
+
+    // MARK: - Fetch Children for Current User
+
+    /// Get children for the current logged-in parent
+    /// This is used by ParentDashboardView to fetch children from Supabase
+    func getMyChildren() async throws -> [Profile] {
+        // Get current user's profile from AuthenticationService
+        guard let currentProfile = AuthenticationService.shared.currentProfile else {
+            throw NSError(domain: "HouseholdService", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "No authenticated user"
+            ])
+        }
+
+        guard let householdId = currentProfile.householdId else {
+            print("⚠️ Current user has no household_id - returning empty children list")
+            return [] // Not in a household yet
+        }
+
+        // Verify user is a parent
+        guard currentProfile.role == "parent" else {
+            throw NSError(domain: "HouseholdService", code: -2, userInfo: [
+                NSLocalizedDescriptionKey: "Only parents can view children"
+            ])
+        }
+
+        print("🔍 Fetching children for household: \(householdId)")
+
+        // Fetch children in the household
+        let profiles: [Profile] = try await supabase
+            .from("profiles")
+            .select()
+            .eq("household_id", value: householdId)
+            .eq("role", value: "child")
+            .order("full_name", ascending: true)
+            .execute()
+            .value
+
+        print("✅ Found \(profiles.count) child profile(s)")
+        for profile in profiles {
+            print("   - \(profile.fullName ?? "Unknown"), Age: \(profile.age ?? 0), ID: \(profile.id)")
+        }
+
+        return profiles
     }
 }
