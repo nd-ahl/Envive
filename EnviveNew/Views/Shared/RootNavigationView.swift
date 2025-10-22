@@ -563,10 +563,25 @@ struct ParentProfileView: View {
                         Label("Print Debug Keys", systemImage: "info.circle")
                             .foregroundColor(.blue)
                     }
+
+                    Button(action: {
+                        // Fix profile household IDs
+                        Task {
+                            do {
+                                try await HouseholdService.shared.fixProfileHouseholdIds()
+                                print("✅ Profile household IDs fixed successfully")
+                            } catch {
+                                print("❌ Failed to fix profile household IDs: \(error)")
+                            }
+                        }
+                    }) {
+                        Label("Fix Profile Household IDs", systemImage: "wrench.and.screwdriver")
+                            .foregroundColor(.orange)
+                    }
                 } header: {
                     Text("Debug & Testing")
                 } footer: {
-                    Text("Reset onboarding or clean test data. These actions will restart the app.")
+                    Text("Reset onboarding, clean test data, or fix profile household IDs. Check console for results.")
                         .font(.caption)
                 }
             }

@@ -336,7 +336,7 @@ class HouseholdService: ObservableObject {
         print("🔍 Searching for ALL profiles in household: \(household.id)")
 
         // Get ALL profiles in this household (both parent and child)
-        let profiles: [Profile] = try await supabase
+        var profiles: [Profile] = try await supabase
             .from("profiles")
             .select()
             .eq("household_id", value: household.id)
@@ -344,11 +344,90 @@ class HouseholdService: ObservableObject {
             .execute()
             .value
 
-        print("✅ Found \(profiles.count) profile(s):")
+        print("✅ Found \(profiles.count) profile(s) directly:")
         for profile in profiles {
-            print("  - Name: \(profile.fullName ?? "Unknown"), Role: \(profile.role), ID: \(profile.id)")
+            print("  - Name: \(profile.fullName ?? "Unknown"), Role: \(profile.role), ID: \(profile.id), HouseholdID: \(profile.householdId ?? "nil")")
         }
 
+        // FALLBACK: If no profiles found via household_id, check household_members table
+        // This handles cases where profiles haven't been updated with household_id yet
+        if profiles.isEmpty {
+            print("⚠️ No profiles found via household_id, checking household_members table...")
+
+            // Get member IDs from household_members
+            let members: [HouseholdMember] = try await supabase
+                .from("household_members")
+                .select()
+                .eq("household_id", value: household.id)
+                .execute()
+                .value
+
+            print("📋 Found \(members.count) household member(s) in household_members table")
+
+            // Get profiles for each member
+            for member in members {
+                do {
+                    let profile: Profile = try await supabase
+                        .from("profiles")
+                        .select()
+                        .eq("id", value: member.userId)
+                        .single()
+                        .execute()
+                        .value
+
+                    profiles.append(profile)
+                    print("  ✓ Loaded profile: \(profile.fullName ?? "Unknown"), Role: \(profile.role)")
+
+                    // FIX: Update profile with household_id if missing
+                    if profile.householdId == nil || profile.householdId != household.id {
+                        print("  🔧 Fixing profile household_id for: \(profile.fullName ?? "Unknown")")
+                        try await updateUserHousehold(userId: profile.id, householdId: household.id)
+                    }
+                } catch {
+                    print("  ❌ Failed to load profile for member: \(member.userId)")
+                }
+            }
+
+            // Sort profiles: parents first, then children
+            profiles.sort { ($0.role == "parent" && $1.role != "parent") }
+        }
+
+        print("✅ Total profiles returned: \(profiles.count)")
         return profiles
+    }
+
+    /// Fix profiles that are missing household_id by checking household_members
+    func fixProfileHouseholdIds() async throws {
+        print("🔧 Starting profile household_id fix...")
+
+        // Get all household members
+        let allMembers: [HouseholdMember] = try await supabase
+            .from("household_members")
+            .select()
+            .execute()
+            .value
+
+        print("📋 Found \(allMembers.count) total household members")
+
+        var fixedCount = 0
+        for member in allMembers {
+            // Get profile
+            let profile: Profile = try await supabase
+                .from("profiles")
+                .select()
+                .eq("id", value: member.userId)
+                .single()
+                .execute()
+                .value
+
+            // Check if household_id is missing or incorrect
+            if profile.householdId == nil || profile.householdId != member.householdId {
+                print("  🔧 Fixing: \(profile.fullName ?? "Unknown") - setting household_id to \(member.householdId)")
+                try await updateUserHousehold(userId: profile.id, householdId: member.householdId)
+                fixedCount += 1
+            }
+        }
+
+        print("✅ Fixed \(fixedCount) profile(s)")
     }
 }
