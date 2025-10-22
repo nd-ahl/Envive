@@ -2,13 +2,15 @@ import SwiftUI
 
 // MARK: - Parent Onboarding Coordinator
 
-/// Manages the parent onboarding flow: enter code → select profile (can select ANY role)
+/// Manages the parent onboarding flow: enter code → authenticate → select profile
+/// SECURITY: Requires email/password authentication before accessing parent roles
 struct ParentOnboardingCoordinator: View {
     let onComplete: () -> Void
     let onBack: () -> Void
 
     @State private var currentStep: ParentOnboardingStep = .enterCode
     @State private var inviteCode: String = ""
+    @State private var authenticatedProfile: Profile?
 
     var body: some View {
         Group {
@@ -18,10 +20,26 @@ struct ParentOnboardingCoordinator: View {
                     onCodeEntered: { code in
                         inviteCode = code
                         withAnimation {
-                            currentStep = .selectProfile
+                            currentStep = .authenticate
                         }
                     },
                     onBack: onBack
+                )
+
+            case .authenticate:
+                ParentAuthenticationView(
+                    inviteCode: inviteCode,
+                    onAuthenticated: { profile in
+                        authenticatedProfile = profile
+                        withAnimation {
+                            currentStep = .selectProfile
+                        }
+                    },
+                    onBack: {
+                        withAnimation {
+                            currentStep = .enterCode
+                        }
+                    }
                 )
 
             case .selectProfile:
@@ -33,7 +51,7 @@ struct ParentOnboardingCoordinator: View {
                     },
                     onBack: {
                         withAnimation {
-                            currentStep = .enterCode
+                            currentStep = .authenticate
                         }
                     }
                 )
@@ -97,6 +115,7 @@ struct ParentOnboardingCoordinator: View {
 
 private enum ParentOnboardingStep {
     case enterCode
+    case authenticate
     case selectProfile
 }
 

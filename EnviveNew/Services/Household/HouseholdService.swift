@@ -163,6 +163,19 @@ class HouseholdService: ObservableObject {
         return code
     }
 
+    /// Get household by invite code
+    func getHouseholdByInviteCode(_ code: String) async throws -> Household {
+        let household: Household = try await supabase
+            .from("households")
+            .select()
+            .eq("invite_code", value: code)
+            .single()
+            .execute()
+            .value
+
+        return household
+    }
+
     /// Verify if an invite code is valid
     func verifyInviteCode(_ code: String) async throws -> Bool {
         do {
