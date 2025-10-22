@@ -1,9 +1,10 @@
 import SwiftUI
+import AuthenticationServices
 
 // MARK: - Parent Authentication View
 
 /// Secure authentication screen for parent role access
-/// Requires email + password verification before allowing parent role selection
+/// Requires email + password or Apple ID verification before allowing parent role selection
 struct ParentAuthenticationView: View {
     let inviteCode: String
     let onAuthenticated: (Profile) -> Void
@@ -76,6 +77,34 @@ struct ParentAuthenticationView: View {
 
                     // Sign in button
                     signInButton
+
+                    // Divider
+                    HStack {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                        Text("OR")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 12)
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                    }
+                    .padding(.vertical, -10)
+                    .opacity(showContent ? 1.0 : 0)
+
+                    // Apple Sign In button
+                    SignInWithAppleButton(
+                        onRequest: { request in
+                            request.requestedScopes = [.fullName, .email]
+                        },
+                        onCompletion: handleAppleSignIn
+                    )
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 55)
+                    .cornerRadius(14)
+                    .opacity(showContent ? 1.0 : 0)
                 }
                 .padding(.horizontal, 32)
 
@@ -231,7 +260,7 @@ struct ParentAuthenticationView: View {
                     .foregroundColor(.white.opacity(0.8))
             }
 
-            Text("Your credentials are encrypted and verified against your household account. Children cannot access parent roles without valid email and password.")
+            Text("Your credentials are encrypted and verified against your household account. Children cannot access parent roles without valid parent credentials.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -317,6 +346,78 @@ struct ParentAuthenticationView: View {
                     errorMessage = "Invalid email or password. Please try again."
                 }
             }
+        }
+    }
+
+    private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            isLoading = true
+            errorMessage = nil
+
+            Task {
+                do {
+                    // Sign in with Apple
+                    let profile = try await authService.signInWithApple(authorization: authorization)
+
+                    // SECURITY CHECK 1: Verify user is a parent
+                    guard profile.role == "parent" else {
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "This account is not a parent account. Parents must use the Apple ID they signed up with."
+                        }
+                        // Sign out the child account
+                        try? await authService.signOut()
+                        return
+                    }
+
+                    // SECURITY CHECK 2: Verify user belongs to this household
+                    guard let userHouseholdId = profile.householdId else {
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "This account is not associated with any household. Please contact support."
+                        }
+                        try? await authService.signOut()
+                        return
+                    }
+
+                    // Get household by invite code
+                    let household = try await householdService.getHouseholdByInviteCode(inviteCode)
+
+                    // SECURITY CHECK 3: Verify household ID matches
+                    guard userHouseholdId == household.id else {
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "This account belongs to a different household (code: \(household.inviteCode)). Please use the correct Apple ID for household \(inviteCode)."
+                        }
+                        try? await authService.signOut()
+                        return
+                    }
+
+                    // ✅ All security checks passed
+                    print("✅ Parent authentication via Apple successful")
+                    print("  - Email: \(profile.email ?? "unknown")")
+                    print("  - Name: \(profile.fullName ?? "unknown")")
+                    print("  - Household: \(household.name)")
+                    print("  - Role: \(profile.role)")
+
+                    await MainActor.run {
+                        isLoading = false
+                        onAuthenticated(profile)
+                    }
+
+                } catch {
+                    print("❌ Apple authentication failed: \(error.localizedDescription)")
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "Apple sign in failed. Please try again."
+                    }
+                }
+            }
+
+        case .failure(let error):
+            errorMessage = "Apple sign in cancelled"
+            print("❌ Apple sign in error: \(error.localizedDescription)")
         }
     }
 }
