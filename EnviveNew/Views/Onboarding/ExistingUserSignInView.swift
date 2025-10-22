@@ -73,41 +73,45 @@ struct ExistingUserSignInView: View {
                 VStack(spacing: 20) {
                     // Email field
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("", text: $email)
-                            .textContentType(.emailAddress)
-                            .autocapitalization(.none)
-                            .keyboardType(.emailAddress)
-                            .padding()
-                            .background(Color(UIColor.systemBackground))
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                            )
-                            .placeholder(when: email.isEmpty) {
+                        ZStack(alignment: .leading) {
+                            if email.isEmpty {
                                 Text("Email")
                                     .foregroundColor(Color(UIColor.placeholderText))
                                     .padding(.leading, 16)
                             }
+                            TextField("", text: $email)
+                                .textContentType(.emailAddress)
+                                .autocapitalization(.none)
+                                .keyboardType(.emailAddress)
+                                .padding()
+                        }
+                        .background(Color(UIColor.systemBackground))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        )
                     }
                     .opacity(showContent ? 1.0 : 0)
 
                     // Password field with forgot password
                     VStack(alignment: .leading, spacing: 8) {
-                        SecureField("", text: $password)
-                            .textContentType(.password)
-                            .padding()
-                            .background(Color(UIColor.systemBackground))
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                            )
-                            .placeholder(when: password.isEmpty) {
+                        ZStack(alignment: .leading) {
+                            if password.isEmpty {
                                 Text("Password")
                                     .foregroundColor(Color(UIColor.placeholderText))
                                     .padding(.leading, 16)
                             }
+                            SecureField("", text: $password)
+                                .textContentType(.password)
+                                .padding()
+                        }
+                        .background(Color(UIColor.systemBackground))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        )
 
                         // Forgot Password button
                         Button(action: {
