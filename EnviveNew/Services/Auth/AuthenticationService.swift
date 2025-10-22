@@ -78,8 +78,10 @@ class AuthenticationService: ObservableObject {
                 fullName: fullName.isEmpty ? nil : fullName,
                 role: roleString,
                 householdId: nil,
+                avatarUrl: nil,
                 age: nil,
-                photoUrl: nil
+                createdAt: Date(),
+                updatedAt: Date()
             )
 
             // Insert profile into database
@@ -163,8 +165,10 @@ class AuthenticationService: ObservableObject {
                 fullName: fullName.isEmpty ? nil : fullName,
                 role: "parent", // Default to parent for new sign-ups
                 householdId: nil,
+                avatarUrl: nil,
                 age: nil,
-                photoUrl: nil
+                createdAt: Date(),
+                updatedAt: Date()
             )
 
             // Insert profile into database
