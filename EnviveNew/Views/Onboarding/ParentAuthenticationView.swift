@@ -295,22 +295,23 @@ struct ParentAuthenticationView: View {
 
                 // SECURITY CHECK 1: Verify user is a parent
                 guard profile.role == "parent" else {
+                    // Sign out WITHOUT clearing onboarding data
+                    try? await authService.signOutWithoutClearingOnboarding()
                     await MainActor.run {
                         isLoading = false
                         errorMessage = "This account is not a parent account. Parents must use the email address they signed up with."
                     }
-                    // Sign out the child account
-                    try? await authService.signOut()
                     return
                 }
 
                 // SECURITY CHECK 2: Verify user belongs to this household
                 guard let userHouseholdId = profile.householdId else {
+                    // Sign out WITHOUT clearing onboarding data
+                    try? await authService.signOutWithoutClearingOnboarding()
                     await MainActor.run {
                         isLoading = false
                         errorMessage = "This account is not associated with any household. Please contact support."
                     }
-                    try? await authService.signOut()
                     return
                 }
 
@@ -319,11 +320,12 @@ struct ParentAuthenticationView: View {
 
                 // SECURITY CHECK 3: Verify household ID matches
                 guard userHouseholdId == household.id else {
+                    // Sign out WITHOUT clearing onboarding data
+                    try? await authService.signOutWithoutClearingOnboarding()
                     await MainActor.run {
                         isLoading = false
                         errorMessage = "This account belongs to a different household (code: \(household.inviteCode)). Please enter the correct email for household \(inviteCode)."
                     }
-                    try? await authService.signOut()
                     return
                 }
 
@@ -362,22 +364,23 @@ struct ParentAuthenticationView: View {
 
                     // SECURITY CHECK 1: Verify user is a parent
                     guard profile.role == "parent" else {
+                        // Sign out WITHOUT clearing onboarding data
+                        try? await authService.signOutWithoutClearingOnboarding()
                         await MainActor.run {
                             isLoading = false
                             errorMessage = "This account is not a parent account. Parents must use the Apple ID they signed up with."
                         }
-                        // Sign out the child account
-                        try? await authService.signOut()
                         return
                     }
 
                     // SECURITY CHECK 2: Verify user belongs to this household
                     guard let userHouseholdId = profile.householdId else {
+                        // Sign out WITHOUT clearing onboarding data
+                        try? await authService.signOutWithoutClearingOnboarding()
                         await MainActor.run {
                             isLoading = false
                             errorMessage = "This account is not associated with any household. Please contact support."
                         }
-                        try? await authService.signOut()
                         return
                     }
 
@@ -386,11 +389,12 @@ struct ParentAuthenticationView: View {
 
                     // SECURITY CHECK 3: Verify household ID matches
                     guard userHouseholdId == household.id else {
+                        // Sign out WITHOUT clearing onboarding data
+                        try? await authService.signOutWithoutClearingOnboarding()
                         await MainActor.run {
                             isLoading = false
                             errorMessage = "This account belongs to a different household (code: \(household.inviteCode)). Please use the correct Apple ID for household \(inviteCode)."
                         }
-                        try? await authService.signOut()
                         return
                     }
 

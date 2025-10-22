@@ -213,6 +213,18 @@ class AuthenticationService: ObservableObject {
         clearAllUserData()
     }
 
+    /// Sign out WITHOUT clearing onboarding data
+    /// Used during authentication verification when security checks fail
+    func signOutWithoutClearingOnboarding() async throws {
+        try await supabase.auth.signOut()
+
+        await MainActor.run {
+            self.isAuthenticated = false
+            self.currentProfile = nil
+        }
+        // DO NOT call clearAllUserData() - preserve onboarding progress
+    }
+
     // MARK: - Data Cleanup
 
     /// Public method to manually clear all user data (useful for testing or fresh starts)
