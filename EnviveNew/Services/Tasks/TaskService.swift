@@ -28,6 +28,9 @@ protocol TaskService {
 
     // Notification tracking
     func markDeclineAsViewed(assignmentId: UUID) -> Bool
+
+    // Test utilities
+    func deleteAllAssignments()
 }
 
 // MARK: - Task Service Approval Result
@@ -217,6 +220,9 @@ class TaskServiceImpl: TaskService {
 
         repository.saveAssignment(assignment)
 
+        // Play approval sound
+        SoundEffectsManager.shared.playTaskApproved(xpAmount: xpAwarded)
+
         // TODO: Send notification to child
 
         return TaskServiceApprovalResult(
@@ -277,6 +283,9 @@ class TaskServiceImpl: TaskService {
 
         repository.saveAssignment(assignment)
 
+        // Play approval sound
+        SoundEffectsManager.shared.playTaskApproved(xpAmount: xpAwarded)
+
         // TODO: Send notification to child
 
         let originalLevel = assignment.assignedLevel.rawValue
@@ -328,6 +337,9 @@ class TaskServiceImpl: TaskService {
 
         repository.saveAssignment(assignment)
 
+        // Play decline sound
+        SoundEffectsManager.shared.playTaskDeclined()
+
         // TODO: Send notification to child
 
         return TaskServiceDeclineResult(
@@ -371,5 +383,13 @@ class TaskServiceImpl: TaskService {
         repository.saveAssignment(assignment)
         print("✅ Marked decline as viewed for task: \(assignment.title)")
         return true
+    }
+
+    // MARK: - Test Utilities
+
+    func deleteAllAssignments() {
+        if let repo = repository as? TaskRepositoryImpl {
+            repo.deleteAllAssignments()
+        }
     }
 }

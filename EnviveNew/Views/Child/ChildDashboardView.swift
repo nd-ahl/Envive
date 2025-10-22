@@ -213,9 +213,10 @@ struct ChildDashboardView: View {
                 checkForDeclines()
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
-                // Check for declines when app becomes active
+                // Reload all data when app becomes active
                 if newPhase == .active {
-                    print("🔔 App became active - checking for declines")
+                    print("🔔 App became active - reloading child dashboard data")
+                    viewModel.loadData()
                     checkForDeclines()
                 }
             }
@@ -670,6 +671,7 @@ class ChildDashboardViewModel: ObservableObject {
     let taskService: TaskService
     let xpService: XPService
     let credibilityService: CredibilityService
+    let screenTimeManager: ScreenTimeRewardManager
     let childId: UUID
 
     init(
@@ -682,10 +684,24 @@ class ChildDashboardViewModel: ObservableObject {
         self.xpService = xpService
         self.credibilityService = credibilityService
         self.childId = childId
+
+        print("🆕 ChildDashboardViewModel CREATED for child ID: \(childId)")
+
+        // Initialize ScreenTimeRewardManager with child-specific storage and XP sync
+        self.screenTimeManager = ScreenTimeRewardManager(
+            credibilityManager: CredibilityManager(),
+            childId: childId,
+            xpService: xpService,
+            credibilityService: credibilityService
+        )
     }
 
     func loadData() {
         print("👶 Child dashboard loading for child ID: \(childId)")
+
+        // Sync screen time balance from XPService first
+        // This ensures the latest earned XP from tasks is reflected
+        screenTimeManager.syncFromXPService()
 
         // Load tasks for this child
         let allTasks = taskService.getChildTasks(childId: childId, status: nil)
@@ -697,22 +713,14 @@ class ChildDashboardViewModel: ObservableObject {
 
         print("👶 Assigned: \(assignedTasks.count), In Progress: \(inProgressTasks.count), Pending Review: \(pendingReviewTasks.count)")
 
-        // Load XP balance and convert to screen time minutes
-        let rawXP: Int
-        if let balance = xpService.getBalance(userId: childId) {
-            rawXP = balance.currentXP
-        } else {
-            rawXP = 0
-        }
-
         // Load credibility
         credibility = credibilityService.getCredibilityScore(childId: childId)
 
-        // Convert XP to minutes using credibility multiplier
-        // This ensures consistency with home screen and session system
-        xpBalance = credibilityService.calculateXPToMinutes(xpAmount: rawXP, childId: childId)
+        // Load screen time balance from ScreenTimeRewardManager (the source of truth for available screen time)
+        // This ensures the balance shown matches what's available for starting sessions
+        xpBalance = screenTimeManager.earnedMinutes
 
-        print("👶 XP: \(rawXP) → Minutes: \(xpBalance) (credibility: \(credibility)%)")
+        print("👶 Screen Time Balance: \(xpBalance) minutes (credibility: \(credibility)%)")
 
         // Count completed tasks
         completedTasksCount = allTasks.filter {
@@ -1202,6 +1210,7 @@ struct ChildTaskDetailView: View {
 
             // Play haptic and audio feedback
             HapticFeedbackManager.shared.taskStarted()
+            SoundEffectsManager.shared.play(.taskStarted, withHaptic: .medium)
 
             // Save start time to persistent storage
             TaskTimerManager.shared.setStartTime(Date(), for: assignment.id)
@@ -1240,6 +1249,7 @@ struct ChildTaskDetailView: View {
 
             // Play rewarding haptic and audio feedback
             HapticFeedbackManager.shared.taskCompleted()
+            SoundEffectsManager.shared.playTaskComplete()
 
             // Remove start time from persistent storage
             TaskTimerManager.shared.removeStartTime(for: assignment.id)
@@ -1247,7 +1257,8 @@ struct ChildTaskDetailView: View {
         } else {
             print("❌ Failed to complete task")
 
-            // Play error haptic
+            // Play error haptic and sound
+            SoundEffectsManager.shared.play(.error, withHaptic: .error)
             HapticFeedbackManager.shared.error()
         }
     }

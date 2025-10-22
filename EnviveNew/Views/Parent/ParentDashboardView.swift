@@ -11,6 +11,8 @@ struct ParentDashboardView: View {
     @State private var showingChildSelector = false
     @State private var showingAssignTask = false
     @State private var selectedChildrenForAssignment: [ChildSummary] = []
+    @State private var showingResetConfirmation = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore, notificationManager: NotificationManager) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -38,6 +40,24 @@ struct ParentDashboardView: View {
                 .padding()
             }
             .navigationTitle("Parent Dashboard")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingResetConfirmation = true
+                    }) {
+                        Image(systemName: "trash.circle.fill")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .alert("Reset All Test Data", isPresented: $showingResetConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    viewModel.resetAllChildData()
+                }
+            } message: {
+                Text("This will delete all tasks, reset all children's XP to 0, and set credibility to 100. This action cannot be undone.")
+            }
             .onAppear {
                 viewModel.loadData()
             }
@@ -62,6 +82,9 @@ struct ParentDashboardView: View {
             .sheet(isPresented: $showingAssignTask, onDismiss: {
                 // Clear selection after AssignTask sheet dismisses
                 selectedChildrenForAssignment = []
+                // Refresh data to show newly assigned tasks
+                print("📋 AssignTask sheet dismissed - reloading parent dashboard")
+                viewModel.loadData()
             }) {
                 if !selectedChildrenForAssignment.isEmpty {
                     AssignTaskView(
@@ -70,6 +93,13 @@ struct ParentDashboardView: View {
                         selectedChildren: selectedChildrenForAssignment,
                         notificationManager: notificationManager
                     )
+                }
+            }
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // Reload data when app becomes active
+                if newPhase == .active {
+                    print("🔔 App became active - reloading parent dashboard data")
+                    viewModel.loadData()
                 }
             }
         }
@@ -147,6 +177,7 @@ struct ParentDashboardView: View {
             HStack(spacing: 12) {
                 // Assign Task Button
                 Button(action: {
+                    SoundEffectsManager.shared.play(.buttonTap, withHaptic: .light)
                     showingChildSelector = true
                 }) {
                     HStack {
@@ -456,5 +487,39 @@ class ParentDashboardViewModel: ObservableObject {
 
     func getChildName(_ childId: UUID) -> String {
         return children.first(where: { $0.id == childId })?.name ?? "Child"
+    }
+
+    // MARK: - Test Utilities
+
+    func resetAllChildData() {
+        print("🗑️ Resetting all child data...")
+
+        // Get all children IDs
+        let childIds = children.map { $0.id }
+
+        // Reset data for each child
+        for childId in childIds {
+            // Reset XP balance
+            xpService.resetBalance(userId: childId)
+            xpService.deleteAllTransactions(userId: childId)
+
+            // Reset credibility
+            credibilityService.resetCredibility(childId: childId)
+        }
+
+        // Delete all task assignments
+        taskService.deleteAllAssignments()
+
+        // Also clear ScreenTimeRewardManager storage for all children
+        for childId in childIds {
+            UserDefaults.standard.removeObject(forKey: "earnedScreenTimeMinutes_\(childId.uuidString)")
+            UserDefaults.standard.removeObject(forKey: "currentStreak_\(childId.uuidString)")
+            UserDefaults.standard.removeObject(forKey: "lastTaskCompletionDate_\(childId.uuidString)")
+        }
+
+        print("✅ Reset complete - all tasks deleted, XP set to 0, credibility set to 100")
+
+        // Reload data to reflect changes
+        loadData()
     }
 }

@@ -11,6 +11,10 @@ protocol XPRepository {
     func getRecentTransactions(userId: UUID, days: Int) -> [XPTransaction]
     func getTotalEarnedToday(userId: UUID) -> Int
     func getTotalRedeemedToday(userId: UUID) -> Int
+
+    // Test utilities
+    func resetBalance(userId: UUID)
+    func deleteAllTransactions(userId: UUID)
 }
 
 // MARK: - XP Repository Implementation
@@ -91,6 +95,20 @@ final class XPRepositoryImpl: XPRepository {
         return todayTransactions
             .filter { $0.type == .redeemed }
             .reduce(0) { $0 + $1.amount }
+    }
+
+    // MARK: - Test Utilities
+
+    func resetBalance(userId: UUID) {
+        let balance = XPBalance(userId: userId)
+        saveBalance(balance)
+        print("🗑️ Reset XP balance to 0 for user: \(userId)")
+    }
+
+    func deleteAllTransactions(userId: UUID) {
+        let key = transactionsKey(for: userId)
+        storage.save([] as [XPTransaction], forKey: key)
+        print("🗑️ Deleted all XP transactions for user: \(userId)")
     }
 
     // MARK: - Private Helpers

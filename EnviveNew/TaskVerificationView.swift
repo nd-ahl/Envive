@@ -174,6 +174,9 @@ class TaskVerificationManager: ObservableObject {
                 earningRate: xpService.earningRatePercentage(score: currentCredibility)
             )
 
+            // Play satisfying approval sound with XP amount
+            SoundEffectsManager.shared.playTaskApproved(xpAmount: earnedXP)
+
             print("✅ Approved task: \(verification.taskTitle) - Earned \(earnedXP) XP")
         }
     }
@@ -192,6 +195,9 @@ class TaskVerificationManager: ObservableObject {
                 reviewerId: verification.reviewerId ?? UUID(),
                 notes: notes
             )
+
+            // Play decline sound
+            SoundEffectsManager.shared.playTaskDeclined()
 
             print("❌ Rejected task: \(verification.taskTitle)")
         }

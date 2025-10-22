@@ -81,6 +81,11 @@ class HouseholdContext: ObservableObject {
         print("👶 Updated household children: \(children.count) profiles")
     }
 
+    /// Reload household children from Supabase (public method)
+    func reloadHouseholdChildren() {
+        loadHouseholdChildren()
+    }
+
     // MARK: - Data Validation
 
     /// Check if a child belongs to the current household
@@ -135,27 +140,59 @@ class HouseholdContext: ObservableObject {
     // MARK: - Private Helpers
 
     private func loadHouseholdChildren() {
-        // Load children from DeviceModeManager
-        let deviceManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+        // Load children from Supabase via HouseholdService
+        // This ensures we get ALL children in the household, not just test profiles
+        Task {
+            do {
+                let householdService = HouseholdService.shared
+                let childProfiles = try await householdService.getMyChildren()
 
-        var children: [UserProfile] = []
+                // Convert Profile to UserProfile
+                let children = childProfiles.map { profile in
+                    UserProfile(
+                        id: UUID(uuidString: profile.id) ?? UUID(),
+                        name: profile.fullName ?? "Child",
+                        mode: .child1, // Mode doesn't matter for data isolation, only ID matters
+                        age: profile.age,
+                        parentId: currentParentId,
+                        profilePhotoFileName: nil // TODO: Map from avatar_url if needed
+                    )
+                }
 
-        // Load child profiles from device manager
-        if let child1 = deviceManager.getProfile(byMode: .child1) {
-            // Only add if they have the same parent (household scoping)
-            if let parentId = currentParentId, child1.parentId == parentId {
-                children.append(child1)
+                await MainActor.run {
+                    householdChildren = children
+                    print("📦 Loaded \(children.count) children from Supabase for household")
+                    for child in children {
+                        print("  - \(child.name) (ID: \(child.id))")
+                    }
+                }
+            } catch {
+                print("❌ Failed to load household children from Supabase: \(error)")
+
+                // Fallback to DeviceModeManager for backward compatibility
+                let deviceManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+
+                var children: [UserProfile] = []
+
+                // Load child profiles from device manager as fallback
+                if let child1 = deviceManager.getProfile(byMode: .child1) {
+                    if let parentId = currentParentId, child1.parentId == parentId {
+                        children.append(child1)
+                    }
+                }
+
+                if let child2 = deviceManager.getProfile(byMode: .child2) {
+                    if let parentId = currentParentId, child2.parentId == parentId {
+                        children.append(child2)
+                    }
+                }
+
+                await MainActor.run {
+                    householdChildren = children
+                    print("📦 Loaded \(children.count) children from DeviceModeManager (fallback)")
+                }
             }
         }
-
-        if let child2 = deviceManager.getProfile(byMode: .child2) {
-            if let parentId = currentParentId, child2.parentId == parentId {
-                children.append(child2)
-            }
-        }
-
-        householdChildren = children
-        print("📦 Loaded \(children.count) children for household")
     }
 }
 

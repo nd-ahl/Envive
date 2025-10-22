@@ -1536,14 +1536,41 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     private var pausedTime: Date?
 
-    // Streak tracking
-    @Published var currentStreak: Int = UserDefaults.standard.integer(forKey: "currentStreak")
+    // Child ID for data isolation
+    var childId: UUID? {
+        didSet {
+            if childId != oldValue {
+                print("👶 EnhancedScreenTimeModel: Child ID changed to \(childId?.uuidString ?? "nil")")
+                loadChildSpecificData()
+            }
+        }
+    }
+
+    // Streak tracking (child-specific)
+    @Published var currentStreak: Int = 0
     @Published var hasCompletedTaskToday: Bool = false
     @Published var shouldShowStreakFireAnimation: Bool = false
     @Published var justIncrementedStreak: Bool = false
+
+    private var lastTaskCompletionDateKey: String {
+        guard let childId = childId else { return "lastTaskCompletionDate" }
+        return "lastTaskCompletionDate_\(childId.uuidString)"
+    }
+
+    private var currentStreakKey: String {
+        guard let childId = childId else { return "currentStreak" }
+        return "currentStreak_\(childId.uuidString)"
+    }
+
     var lastTaskCompletionDate: Date? {
-        get { UserDefaults.standard.object(forKey: "lastTaskCompletionDate") as? Date }
-        set { UserDefaults.standard.set(newValue, forKey: "lastTaskCompletionDate") }
+        get { UserDefaults.standard.object(forKey: lastTaskCompletionDateKey) as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: lastTaskCompletionDateKey) }
+    }
+
+    /// Load child-specific data when child ID changes
+    private func loadChildSpecificData() {
+        currentStreak = UserDefaults.standard.integer(forKey: currentStreakKey)
+        print("📂 Loaded streak for child \(childId?.uuidString ?? "nil"): \(currentStreak)")
     }
 
     // Social Features
@@ -1937,7 +1964,7 @@ class EnhancedScreenTimeModel: ObservableObject {
         // Update stored values
         lastTaskCompletionDate = now
         hasCompletedTaskToday = true
-        UserDefaults.standard.set(currentStreak, forKey: "currentStreak")
+        UserDefaults.standard.set(currentStreak, forKey: currentStreakKey)
 
         // Trigger fire animation in views
         if shouldShowFireAnimation {
@@ -1953,7 +1980,7 @@ class EnhancedScreenTimeModel: ObservableObject {
 
     func resetStreak() {
         currentStreak = 0
-        UserDefaults.standard.set(0, forKey: "currentStreak")
+        UserDefaults.standard.set(0, forKey: currentStreakKey)
         lastTaskCompletionDate = nil
         hasCompletedTaskToday = false
     }
@@ -5459,6 +5486,7 @@ struct ContentView: View {
                     childId: currentChildId
                 )
             )
+                .id(currentChildId) // Force view to recreate when child changes
                 .tabItem {
                     Image(systemName: "house.fill")
                     Text("Home")
@@ -5495,6 +5523,7 @@ struct ContentView: View {
                 appSelectionStore: model.appSelectionStore,
                 notificationManager: model.notificationManager
             )
+                .id("parent-dashboard") // Ensure fresh state when mode changes
                 .tabItem {
                     Image(systemName: "checkmark.seal.fill")
                     Text("Task Approvals")
@@ -5526,11 +5555,24 @@ struct ContentView: View {
                 .tag(7)
         }
         .onAppear {
+            // Set child ID for data isolation
+            if deviceModeManager.isChildMode() {
+                model.childId = currentChildId
+                print("👶 Set model childId to: \(currentChildId)")
+            }
+
             // Request permissions
             model.notificationManager.requestPermission()
 
             // Clear badge when app opens
             model.notificationManager.clearBadge()
+        }
+        .onChange(of: deviceModeManager.currentProfile?.id) { oldId, newId in
+            // Update model childId when profile changes
+            if deviceModeManager.isChildMode(), let newId = newId {
+                model.childId = newId
+                print("👶 Updated model childId to: \(newId)")
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

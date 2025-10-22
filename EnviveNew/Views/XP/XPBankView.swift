@@ -281,6 +281,8 @@ private class MockXPService: XPService {
     }
     func awardXP(userId: UUID, timeMinutes: Int, taskId: UUID, credibilityScore: Int) -> Int { 30 }
     func grantXPDirect(userId: UUID, amount: Int, reason: String) -> Bool { true }
+    func resetBalance(userId: UUID) {}
+    func deleteAllTransactions(userId: UUID) {}
 }
 
 private class MockCredibilityService: CredibilityService {
@@ -320,4 +322,5 @@ private class MockCredibilityService: CredibilityService {
         )
     }
     func applyTimeBasedDecay(childId: UUID) {}
+    func resetCredibility(childId: UUID) {}
 }

@@ -30,11 +30,41 @@ class ScreenTimeRewardManager: ObservableObject {
     private var currentActivity: Any? // Will hold Activity<ScreenTimeActivityAttributes> on iOS 16.1+
 
     private let userDefaults = UserDefaults.standard
-    private let earnedMinutesKey = "earnedScreenTimeMinutes"
+    private let earnedMinutesKeyPrefix = "earnedScreenTimeMinutes_"
 
-    init(credibilityManager: CredibilityManager = CredibilityManager()) {
+    // Child ID for data isolation
+    private var childId: UUID?
+
+    // XP Service for syncing with task rewards
+    private let xpService: XPService?
+    private let credibilityService: CredibilityService?
+
+    init(
+        credibilityManager: CredibilityManager = CredibilityManager(),
+        childId: UUID? = nil,
+        xpService: XPService? = nil,
+        credibilityService: CredibilityService? = nil
+    ) {
         self.credibilityManager = credibilityManager
+        self.childId = childId
+        self.xpService = xpService
+        self.credibilityService = credibilityService
         loadEarnedMinutes()
+    }
+
+    /// Set the child ID for data isolation (must be called when switching children)
+    func setChildId(_ id: UUID) {
+        childId = id
+        loadEarnedMinutes()
+    }
+
+    /// Get the storage key for the current child
+    private func earnedMinutesKey() -> String {
+        guard let childId = childId else {
+            // Fallback to global key if no child ID is set (backward compatibility)
+            return "earnedScreenTimeMinutes"
+        }
+        return "\(earnedMinutesKeyPrefix)\(childId.uuidString)"
     }
 
     func redeemXPForScreenTime(xpAmount: Int) -> Int {
@@ -100,9 +130,18 @@ class ScreenTimeRewardManager: ObservableObject {
             self.activeSessionMinutes = durationMinutes
             self.remainingSessionMinutes = durationMinutes
 
-            // Remove used minutes
+            // Remove used minutes from local storage
             self.earnedMinutes -= durationMinutes
             self.saveEarnedMinutes()
+
+            // Also deduct from XPService if available
+            if let childId = self.childId,
+               let xpService = self.xpService,
+               let credibilityService = self.credibilityService {
+                let credibility = credibilityService.getCredibilityScore(childId: childId)
+                _ = xpService.redeemXP(amount: durationMinutes, userId: childId, credibilityScore: credibility)
+                print("💳 Deducted \(durationMinutes) XP from XPService for screen time session")
+            }
 
             // Start the device activity session (this will trigger the monitor extension to unblock apps)
             self.scheduler.startScreenTimeSession(durationMinutes: durationMinutes)
@@ -158,11 +197,49 @@ class ScreenTimeRewardManager: ObservableObject {
     }
 
     private func saveEarnedMinutes() {
-        userDefaults.set(earnedMinutes, forKey: earnedMinutesKey)
+        userDefaults.set(earnedMinutes, forKey: earnedMinutesKey())
+        print("💾 Saved \(earnedMinutes) earned minutes for child: \(childId?.uuidString ?? "global")")
     }
 
     private func loadEarnedMinutes() {
-        earnedMinutes = userDefaults.integer(forKey: earnedMinutesKey)
+        // Try to sync from XPService if available
+        if let childId = childId,
+           let xpService = xpService,
+           let credibilityService = credibilityService {
+            syncFromXPService()
+        } else {
+            // Fall back to UserDefaults storage
+            earnedMinutes = userDefaults.integer(forKey: earnedMinutesKey())
+            print("📂 Loaded \(earnedMinutes) earned minutes from UserDefaults for child: \(childId?.uuidString ?? "global")")
+        }
+    }
+
+    /// Sync earned minutes from XPService
+    /// This ensures screen time balance matches the XP earned from tasks
+    func syncFromXPService() {
+        guard let childId = childId,
+              let xpService = xpService,
+              let credibilityService = credibilityService else {
+            print("⚠️ Cannot sync from XPService - missing required services")
+            return
+        }
+
+        // Get raw XP from XPService
+        let rawXP: Int
+        if let balance = xpService.getBalance(userId: childId) {
+            rawXP = balance.currentXP
+        } else {
+            rawXP = 0
+        }
+
+        // Convert XP to screen time minutes using credibility
+        let minutesFromXP = credibilityService.calculateXPToMinutes(xpAmount: rawXP, childId: childId)
+
+        // Update earned minutes
+        earnedMinutes = minutesFromXP
+        saveEarnedMinutes()
+
+        print("🔄 Synced from XPService: \(rawXP) XP → \(minutesFromXP) minutes for child: \(childId)")
     }
 
     // MARK: - Convenience Properties

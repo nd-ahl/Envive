@@ -336,4 +336,10 @@ final class CredibilityServiceImpl: CredibilityService {
         repository.saveLastUploadDate(now, childId: childId)
         repository.saveDailyStreak(dailyStreak, childId: childId)
     }
+
+    // MARK: - Test Utilities
+
+    func resetCredibility(childId: UUID) {
+        repository.resetCredibility(childId: childId)
+    }
 }

@@ -21,6 +21,9 @@ protocol TaskRepository {
 
     // Bulk operations
     func getAssignmentsForAllChildren() -> [UUID: [TaskAssignment]]  // [childId: assignments]
+
+    // Test utilities
+    func deleteAllAssignments()
 }
 
 // MARK: - Task Repository Implementation
@@ -85,8 +88,14 @@ class TaskRepositoryImpl: TaskRepository {
     // MARK: - Task Assignments
 
     func getAssignments(forChild childId: UUID) -> [TaskAssignment] {
-        return getAllAssignments().filter { $0.childId == childId }
-            .sorted { $0.createdAt > $1.createdAt }  // Newest first
+        let allAssignments = getAllAssignments()
+        let filteredAssignments = allAssignments.filter { $0.childId == childId }
+        print("📦 TaskRepository.getAssignments: Filtering \(allAssignments.count) total assignments for childId: \(childId)")
+        print("📦 Found \(filteredAssignments.count) assignments for this child")
+        for assignment in filteredAssignments {
+            print("   - Task: '\(assignment.title)', childId: \(assignment.childId), status: \(assignment.status)")
+        }
+        return filteredAssignments.sorted { $0.createdAt > $1.createdAt }  // Newest first
     }
 
     func getAssignments(forChild childId: UUID, status: TaskAssignmentStatus) -> [TaskAssignment] {
@@ -139,6 +148,14 @@ class TaskRepositoryImpl: TaskRepository {
         }
 
         return result
+    }
+
+    // MARK: - Test Utilities
+
+    func deleteAllAssignments() {
+        storage.save([] as [TaskAssignment], forKey: assignmentsKey)
+        assignmentsCache = []
+        print("🗑️ Deleted all task assignments")
     }
 
     // MARK: - Private Helpers

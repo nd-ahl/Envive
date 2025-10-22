@@ -508,6 +508,9 @@ struct ModeSwitcherView: View {
             print("🔄 Switched to Child mode: \(childName), Age: \(childAge), ID: \(childUUID), Photo: \(existingChildProfile?.profilePhotoFileName ?? "none")")
         }
 
+        // Reload household children to ensure task filtering works correctly
+        householdContext.reloadHouseholdChildren()
+
         // Post notification to update UI
         NotificationCenter.default.post(name: NSNotification.Name("DeviceModeChanged"), object: nil)
 

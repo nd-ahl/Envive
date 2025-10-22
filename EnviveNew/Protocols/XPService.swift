@@ -32,6 +32,10 @@ protocol XPService {
 
     /// Grant XP directly (for emergency grants, bypasses credibility)
     func grantXPDirect(userId: UUID, amount: Int, reason: String) -> Bool
+
+    // Test utilities
+    func resetBalance(userId: UUID)
+    func deleteAllTransactions(userId: UUID)
 }
 
 // MARK: - Daily XP Stats

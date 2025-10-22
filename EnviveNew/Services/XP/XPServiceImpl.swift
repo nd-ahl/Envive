@@ -202,4 +202,18 @@ final class XPServiceImpl: XPService {
 
         return true
     }
+
+    // MARK: - Test Utilities
+
+    func resetBalance(userId: UUID) {
+        if let repo = repository as? XPRepositoryImpl {
+            repo.resetBalance(userId: userId)
+        }
+    }
+
+    func deleteAllTransactions(userId: UUID) {
+        if let repo = repository as? XPRepositoryImpl {
+            repo.deleteAllTransactions(userId: userId)
+        }
+    }
 }

@@ -105,4 +105,17 @@ final class CredibilityRepository {
     func loadDailyStreak(childId: UUID) -> Int {
         storage.loadInt(forKey: dailyStreakKey(for: childId), defaultValue: 0)
     }
+
+    // MARK: - Test Utilities
+
+    func resetCredibility(childId: UUID) {
+        saveScore(100, childId: childId)
+        storage.save([] as [CredibilityHistoryEvent], forKey: historyKey(for: childId))
+        storage.saveInt(0, forKey: consecutiveTasksKey(for: childId))
+        storage.saveBool(false, forKey: hasBonusKey(for: childId))
+        storage.remove(forKey: bonusExpiryKey(for: childId))
+        storage.remove(forKey: lastUploadDateKey(for: childId))
+        storage.saveInt(0, forKey: dailyStreakKey(for: childId))
+        print("🗑️ Reset credibility to 100 for child: \(childId)")
+    }
 }

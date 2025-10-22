@@ -23,4 +23,7 @@ protocol CredibilityService {
     func getCurrentTier(childId: UUID) -> CredibilityTier
     func getCredibilityStatus(childId: UUID) -> CredibilityStatus
     func applyTimeBasedDecay(childId: UUID)
+
+    // Test utilities
+    func resetCredibility(childId: UUID)
 }
