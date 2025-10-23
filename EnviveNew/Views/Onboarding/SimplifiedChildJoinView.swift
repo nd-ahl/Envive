@@ -89,6 +89,7 @@ struct SimplifiedChildJoinView: View {
                     .multilineTextAlignment(.center)
                     .textCase(.uppercase)
                     .autocapitalization(.allCharacters)
+                    .foregroundColor(.black) // Ensure text is always black on white background
                     .padding(20)
                     .background(Color.white)
                     .cornerRadius(12)

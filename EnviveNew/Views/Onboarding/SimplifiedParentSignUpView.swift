@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AuthenticationServices
+import Supabase
 
 struct SimplifiedParentSignUpView: View {
     let onComplete: () -> Void
@@ -24,6 +25,11 @@ struct SimplifiedParentSignUpView: View {
     @State private var errorMessage = ""
     @State private var isLoading = false
     @State private var showingSignIn = false
+
+    // Name prompt state
+    @State private var showingNamePrompt = false
+    @State private var parentName = ""
+    @State private var tempProfileAfterAppleSignup: Profile? = nil
 
     var body: some View {
         ZStack {
@@ -85,6 +91,9 @@ struct SimplifiedParentSignUpView: View {
                     showingSignIn = false
                 }
             )
+        }
+        .sheet(isPresented: $showingNamePrompt) {
+            namePromptView
         }
     }
 
@@ -361,51 +370,8 @@ struct SimplifiedParentSignUpView: View {
                     // Sign in with Apple through Supabase
                     let profile = try await authService.signInWithApple(authorization: authorization)
 
-                    // Extract name if available
-                    var householdName = "\(profile.email ?? "User")'s Family"
-                    if let fullName = appleIDCredential.fullName {
-                        let name = [fullName.givenName, fullName.familyName]
-                            .compactMap { $0 }
-                            .joined(separator: " ")
-
-                        if !name.isEmpty {
-                            householdName = "\(name) Family"
-                            UserDefaults.standard.set(householdName, forKey: "familyName")
-                        }
-                    }
-
                     // Check if this is an existing user with household already set up
                     let isExistingUser = profile.householdId != nil
-
-                    // If new user, create a household for them
-                    if !isExistingUser {
-                        print("🏠 Creating household for new Apple sign-in user...")
-
-                        // Wait a moment to ensure profile is fully committed to database
-                        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
-                        // Verify profile exists in database before creating household
-                        do {
-                            _ = try await authService.refreshCurrentProfile()
-                            print("✅ Profile verified in database")
-                        } catch {
-                            print("⚠️ Profile not yet in database, waiting...")
-                            try await Task.sleep(nanoseconds: 1_000_000_000) // 1 more second
-                            _ = try await authService.refreshCurrentProfile()
-                        }
-
-                        let household = try await householdService.createHousehold(
-                            name: householdName,
-                            createdBy: profile.id
-                        )
-                        print("✅ Household created: \(household.name) (ID: \(household.id))")
-
-                        // Refresh profile to get updated household_id
-                        try await authService.refreshCurrentProfile()
-                    }
-
-                    // Link device to profile so user can see their data
-                    linkDeviceToProfile(authService.currentProfile ?? profile)
 
                     await MainActor.run {
                         isLoading = false
@@ -413,12 +379,18 @@ struct SimplifiedParentSignUpView: View {
                         // If existing user with household, skip family setup and complete onboarding
                         if isExistingUser {
                             print("✅ Existing user detected - skipping family setup")
+
+                            // Link device to profile
+                            linkDeviceToProfile(authService.currentProfile ?? profile)
+
                             OnboardingManager.shared.completeSignIn()
                             OnboardingManager.shared.completeFamilySetup()
                             OnboardingManager.shared.completeOnboarding()
                         } else {
-                            // New user - continue with normal flow (will go to family setup)
-                            onComplete()
+                            // New user - show name prompt instead of using email
+                            print("🆕 New Apple user - showing name prompt")
+                            tempProfileAfterAppleSignup = profile
+                            showingNamePrompt = true
                         }
                     }
                 } catch {
@@ -457,6 +429,138 @@ struct SimplifiedParentSignUpView: View {
 
         print("✅ Parent signed in - device linked to profile: \(userProfile.name)")
     }
+
+    // MARK: - Name Prompt View
+
+    private var namePromptView: some View {
+        NavigationStack {
+            ZStack {
+                // Gradient background
+                LinearGradient(
+                    colors: [
+                        Color.blue.opacity(0.7),
+                        Color.purple.opacity(0.5)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 28) {
+                    Spacer()
+
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.white)
+
+                        Text("What's your name?")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundColor(.white)
+
+                        Text("This will be displayed in your profile and settings")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                    }
+
+                    // Name input
+                    VStack(spacing: 16) {
+                        TextField("Your Name", text: $parentName)
+                            .textFieldStyle(CustomTextFieldStyle())
+                            .autocapitalization(.words)
+                            .padding(.horizontal, 40)
+                    }
+
+                    Spacer()
+
+                    // Continue Button
+                    VStack(spacing: 14) {
+                        Button(action: handleNameSubmit) {
+                            HStack {
+                                if isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                                } else {
+                                    Text("Continue")
+                                        .font(.system(size: 18, weight: .bold))
+                                }
+                            }
+                            .foregroundColor(parentName.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray : Color.blue.opacity(0.9))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(Color.white)
+                            .cornerRadius(14)
+                        }
+                        .disabled(parentName.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 50)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func handleNameSubmit() {
+        guard let profile = tempProfileAfterAppleSignup else {
+            errorMessage = "Session error. Please try again."
+            showingError = true
+            showingNamePrompt = false
+            return
+        }
+
+        isLoading = true
+
+        Task {
+            do {
+                let trimmedName = parentName.trimmingCharacters(in: .whitespaces)
+
+                // Update profile full_name in Supabase
+                let supabase = SupabaseService.shared.client
+                try await supabase
+                    .from("profiles")
+                    .update(["full_name": trimmedName])
+                    .eq("id", value: profile.id)
+                    .execute()
+
+                // Refresh the current profile to get the updated name
+                try await authService.refreshCurrentProfile()
+
+                // Save name to UserDefaults for settings display
+                UserDefaults.standard.set(trimmedName, forKey: "parentName")
+
+                // Create household with the entered name
+                let householdName = "\(trimmedName) Family"
+                let household = try await householdService.createHousehold(
+                    name: householdName,
+                    createdBy: profile.id
+                )
+                print("✅ Household created: \(household.name) (ID: \(household.id))")
+
+                // Refresh profile to get updated household_id
+                try await authService.refreshCurrentProfile()
+
+                // Link device to profile so user can see their data
+                linkDeviceToProfile(authService.currentProfile ?? profile)
+
+                await MainActor.run {
+                    isLoading = false
+                    showingNamePrompt = false
+                    tempProfileAfterAppleSignup = nil
+
+                    // Continue with normal flow (will go to family setup)
+                    onComplete()
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Failed to save name: \(error.localizedDescription)"
+                    showingError = true
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Custom Text Field Style
@@ -472,5 +576,6 @@ struct CustomTextFieldStyle: TextFieldStyle {
                     .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
             )
             .font(.system(size: 16, weight: .regular))
+            .foregroundColor(.black) // Ensure text is always black on white background
     }
 }
