@@ -14,34 +14,36 @@ struct FriendlyWelcomeView: View {
     @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
-        ZStack {
-            // Modern gradient background with subtle sophistication
-            LinearGradient(
-                colors: gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                // Modern gradient background with subtle sophistication
+                LinearGradient(
+                    colors: gradientColors,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     // Top spacing
                     Spacer()
-                        .frame(height: 80)
+                        .frame(height: max(40, geometry.safeAreaInsets.top + 20))
 
                     // Logo and title
                     logoSection
-                        .padding(.bottom, 60)
+                        .padding(.bottom, 50)
 
                     // Benefits cards
                     benefitsSection
-                        .padding(.bottom, 40)
+                        .padding(.horizontal, 28)
 
-                    // Continue button
+                    Spacer()
+
+                    // Continue button - always visible at bottom
                     continueButton
-                        .padding(.bottom, 50)
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, max(30, geometry.safeAreaInsets.bottom + 20))
                 }
-                .padding(.horizontal, 28)
             }
         }
         .onAppear {
@@ -63,19 +65,19 @@ struct FriendlyWelcomeView: View {
     // MARK: - Logo Section
 
     private var logoSection: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 24) {
             // App icon with modern styling
             ZStack {
                 // Outer glow
                 Circle()
                     .fill(Color.white.opacity(0.15))
-                    .frame(width: 140, height: 140)
+                    .frame(width: 130, height: 130)
                     .blur(radius: 20)
 
                 // Main circle
                 Circle()
                     .fill(Color.white.opacity(0.25))
-                    .frame(width: 110, height: 110)
+                    .frame(width: 100, height: 100)
                     .overlay(
                         Circle()
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
@@ -83,25 +85,25 @@ struct FriendlyWelcomeView: View {
 
                 // Icon
                 Image(systemName: "house.fill")
-                    .font(.system(size: 48, weight: .medium))
+                    .font(.system(size: 44, weight: .medium))
                     .foregroundColor(.white)
             }
             .scaleEffect(showContent ? 1.0 : 0.3)
             .opacity(showContent ? 1.0 : 0)
 
             // Title and tagline
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 Text("Envive")
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .tracking(0.5)
 
                 Text("Helping Families Build Better Habits")
-                    .font(.system(size: 19, weight: .medium, design: .rounded))
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.92))
                     .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .padding(.horizontal, 20)
+                    .lineSpacing(3)
+                    .padding(.horizontal, 30)
             }
             .scaleEffect(showContent ? 1.0 : 0.85)
             .opacity(showContent ? 1.0 : 0)
@@ -111,11 +113,11 @@ struct FriendlyWelcomeView: View {
     // MARK: - Benefits Section
 
     private var benefitsSection: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             benefitCard(
                 icon: "checkmark.seal.fill",
                 title: "Parents Assign Tasks",
-                subtitle: "Set up chores and responsibilities with ease",
+                subtitle: "Set up chores and responsibilities",
                 delay: 0.1
             )
 
@@ -136,27 +138,27 @@ struct FriendlyWelcomeView: View {
     }
 
     private func benefitCard(icon: String, title: String, subtitle: String, delay: Double) -> some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 16) {
             // Icon container
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.white.opacity(0.2))
-                    .frame(width: 56, height: 56)
+                    .frame(width: 50, height: 50)
 
                 Image(systemName: icon)
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundColor(.white)
             }
 
             // Text content
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .tracking(0.2)
 
                 Text(subtitle)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white.opacity(0.85))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -164,13 +166,13 @@ struct FriendlyWelcomeView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
         .background(
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Color.white.opacity(0.18))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
+                    RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.white.opacity(0.25), lineWidth: 1)
                 )
         )
@@ -194,7 +196,7 @@ struct FriendlyWelcomeView: View {
             }
             .foregroundColor(Color(red: 0.45, green: 0.5, blue: 0.95))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
+            .padding(.vertical, 18)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.white)

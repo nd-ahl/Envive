@@ -1,5 +1,7 @@
 import SwiftUI
 import AuthenticationServices
+import Auth
+import Supabase
 
 // MARK: - Existing User Sign In View
 
@@ -338,7 +340,8 @@ struct ExistingUserSignInView: View {
 
         do {
             // Sign in with Apple to create auth user
-            let session = try await authService.supabase.auth.signInWithIdToken(
+            let supabase = SupabaseService.shared.client
+            let session = try await supabase.auth.signInWithIdToken(
                 credentials: .init(
                     provider: .apple,
                     idToken: tokenString
@@ -380,15 +383,17 @@ struct ExistingUserSignInView: View {
                 updatedAt: Date()
             )
 
-            try await authService.supabase
+            try await supabase
                 .from("profiles")
                 .insert(newProfile)
                 .execute()
 
             print("✅ Created new profile with Apple ID: \(fullName)")
 
-            // Load the profile to get the full data
-            let loadedProfile = try await authService.loadProfile(userId: userId)
+            // Update authService with the new profile
+            await MainActor.run {
+                authService.currentProfile = newProfile
+            }
 
             // If parent, create household
             if role == .parent {
@@ -396,10 +401,22 @@ struct ExistingUserSignInView: View {
                     name: "\(fullName)'s Family",
                     createdBy: userId
                 )
-                print("✅ Household created: \(household.name)")
+                print("✅ Household created: \(household.name) (ID: \(household.id))")
+
+                // CRITICAL FIX: Wait a moment for database to update
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
 
                 // Refresh profile to get household_id
                 try await authService.refreshCurrentProfile()
+
+                // Verify household_id was updated
+                if authService.currentProfile?.householdId == nil {
+                    print("⚠️ WARNING: Profile household_id is still nil after refresh, retrying...")
+                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                    try await authService.refreshCurrentProfile()
+                }
+
+                print("✅ Profile household_id: \(authService.currentProfile?.householdId ?? "nil")")
             }
 
             await MainActor.run {
@@ -438,9 +455,9 @@ struct ExistingUserSignInView: View {
         // Set device mode
         let deviceMode: DeviceMode = profile.role == "parent" ? .parent : .child1
         deviceModeManager.switchMode(to: deviceMode, profile: userProfile)
-        DeviceModeService.shared.setDeviceMode(deviceMode)
+        _ = DeviceModeService.shared.setDeviceMode(deviceMode)
 
-        print("✅ Device linked to profile: \(userProfile.name) (\(profile.role ?? "unknown"))")
+        print("✅ Device linked to profile: \(userProfile.name) (\(profile.role))")
     }
 }
 

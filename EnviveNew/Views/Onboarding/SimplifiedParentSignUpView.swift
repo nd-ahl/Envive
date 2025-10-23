@@ -8,6 +8,7 @@
 import SwiftUI
 import AuthenticationServices
 import Supabase
+import Auth
 
 struct SimplifiedParentSignUpView: View {
     let onComplete: () -> Void
@@ -34,6 +35,10 @@ struct SimplifiedParentSignUpView: View {
     // Email verification state
     @State private var showingEmailVerification = false
     @State private var signUpEmail = ""
+
+    // Password setup state
+    @State private var showingPasswordSetup = false
+    @State private var passwordSetupEmail = ""
 
     var body: some View {
         ZStack {
@@ -104,6 +109,13 @@ struct SimplifiedParentSignUpView: View {
                 showingEmailVerification = false
                 // Navigate to sign-in
                 showingSignIn = true
+            }
+        }
+        .fullScreenCover(isPresented: $showingPasswordSetup) {
+            PasswordSetupView(userEmail: passwordSetupEmail) {
+                showingPasswordSetup = false
+                // Continue with onboarding
+                onComplete()
             }
         }
     }
@@ -286,6 +298,29 @@ struct SimplifiedParentSignUpView: View {
         password.count >= 6
     }
 
+    // MARK: - Helper Functions
+
+    /// Generate a grammatically correct family name with possessive form
+    private func makeGrammaticalFamilyName(from name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            return "Family"
+        }
+
+        // Check if name already ends with "Family" or similar
+        let lowercased = trimmed.lowercased()
+        if lowercased.hasSuffix("family") || lowercased.hasSuffix("household") {
+            return trimmed
+        }
+
+        // Add possessive apostrophe
+        if trimmed.hasSuffix("s") {
+            return "\(trimmed)' Family"
+        } else {
+            return "\(trimmed)'s Family"
+        }
+    }
+
     // MARK: - Actions
 
     private func handleCreateAccount() {
@@ -326,13 +361,25 @@ struct SimplifiedParentSignUpView: View {
                     }
 
                     let household = try await householdService.createHousehold(
-                        name: familyName.isEmpty ? "\(email)'s Family" : familyName,
+                        name: makeGrammaticalFamilyName(from: familyName),
                         createdBy: profile.id
                     )
                     print("✅ Household created: \(household.name) (ID: \(household.id))")
 
+                    // CRITICAL FIX: Wait a moment for database to update
+                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
                     // Refresh profile to get updated household_id
                     try await authService.refreshCurrentProfile()
+
+                    // Verify household_id was updated
+                    if authService.currentProfile?.householdId == nil {
+                        print("⚠️ WARNING: Profile household_id is still nil after refresh, retrying...")
+                        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                        try await authService.refreshCurrentProfile()
+                    }
+
+                    print("✅ Profile household_id: \(authService.currentProfile?.householdId ?? "nil")")
                 }
 
                 // Link device to profile so user can see their data
@@ -373,16 +420,7 @@ struct SimplifiedParentSignUpView: View {
 
             Task {
                 do {
-                    guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-                        throw NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid credential"])
-                    }
-
-                    guard let idToken = appleIDCredential.identityToken,
-                          let idTokenString = String(data: idToken, encoding: .utf8) else {
-                        throw NSError(domain: "AppleSignIn", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to get token"])
-                    }
-
-                    // Sign in with Apple through Supabase
+                    // Try to sign in with existing account
                     let profile = try await authService.signInWithApple(authorization: authorization)
 
                     // Check if this is an existing user with household already set up
@@ -409,10 +447,16 @@ struct SimplifiedParentSignUpView: View {
                         }
                     }
                 } catch {
-                    await MainActor.run {
-                        isLoading = false
-                        errorMessage = "Apple Sign In failed: \(error.localizedDescription)"
-                        showingError = true
+                    // CRITICAL FIX: If profile not found, create account seamlessly
+                    if let authError = error as? AuthError, authError == .profileNotFound {
+                        print("🆕 No account found - creating new account with Apple ID")
+                        await createAccountWithApple(authorization)
+                    } else {
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "Apple Sign In failed: \(error.localizedDescription)"
+                            showingError = true
+                        }
                     }
                 }
             }
@@ -447,7 +491,7 @@ struct SimplifiedParentSignUpView: View {
 
         // Set device mode to parent
         deviceModeManager.switchMode(to: .parent, profile: userProfile)
-        deviceModeService.setDeviceMode(.parent)
+        _ = deviceModeService.setDeviceMode(.parent)
 
         // CRITICAL FIX: Save parent's name to UserDefaults so it displays in UI
         UserDefaults.standard.set(parentName, forKey: "userName")
@@ -565,15 +609,26 @@ struct SimplifiedParentSignUpView: View {
                 UserDefaults.standard.set(trimmedName, forKey: "parentName")
 
                 // Create household with the entered name
-                let householdName = "\(trimmedName) Family"
                 let household = try await householdService.createHousehold(
-                    name: householdName,
+                    name: makeGrammaticalFamilyName(from: trimmedName),
                     createdBy: profile.id
                 )
                 print("✅ Household created: \(household.name) (ID: \(household.id))")
 
+                // CRITICAL FIX: Wait a moment for database to update
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
                 // Refresh profile to get updated household_id
                 try await authService.refreshCurrentProfile()
+
+                // Verify household_id was updated
+                if authService.currentProfile?.householdId == nil {
+                    print("⚠️ WARNING: Profile household_id is still nil after refresh, retrying...")
+                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                    try await authService.refreshCurrentProfile()
+                }
+
+                print("✅ Profile household_id: \(authService.currentProfile?.householdId ?? "nil")")
 
                 // Link device to profile so user can see their data
                 linkDeviceToProfile(authService.currentProfile ?? profile)
@@ -592,6 +647,100 @@ struct SimplifiedParentSignUpView: View {
                     errorMessage = "Failed to save name: \(error.localizedDescription)"
                     showingError = true
                 }
+            }
+        }
+    }
+
+    /// Create a new account using Apple ID when no profile exists
+    private func createAccountWithApple(_ authorization: ASAuthorization) async {
+        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            await MainActor.run {
+                isLoading = false
+                errorMessage = "Failed to get Apple credentials"
+                showingError = true
+            }
+            return
+        }
+
+        guard let identityToken = appleIDCredential.identityToken,
+              let tokenString = String(data: identityToken, encoding: .utf8) else {
+            await MainActor.run {
+                isLoading = false
+                errorMessage = "Failed to process Apple sign in"
+                showingError = true
+            }
+            return
+        }
+
+        do {
+            // Sign in with Apple to create auth user
+            let supabase = SupabaseService.shared.client
+            let session = try await supabase.auth.signInWithIdToken(
+                credentials: .init(
+                    provider: .apple,
+                    idToken: tokenString
+                )
+            )
+
+            await MainActor.run {
+                authService.isAuthenticated = true
+            }
+
+            let userId = session.user.id.uuidString
+
+            // Extract name from Apple ID credential (only available on first sign-in)
+            var fullName = "User"
+            if let givenName = appleIDCredential.fullName?.givenName,
+               let familyName = appleIDCredential.fullName?.familyName {
+                fullName = "\(givenName) \(familyName)".trimmingCharacters(in: .whitespaces)
+            } else if let givenName = appleIDCredential.fullName?.givenName {
+                fullName = givenName
+            }
+
+            // Get email or use Apple's private relay email
+            let email = appleIDCredential.email ?? session.user.email ?? "apple-user@icloud.com"
+
+            // Parent role (this is the parent sign-up view)
+            let roleString = "parent"
+
+            // Create profile in database
+            let newProfile = Profile(
+                id: userId,
+                email: email,
+                fullName: fullName.isEmpty ? nil : fullName,
+                role: roleString,
+                householdId: nil,
+                avatarUrl: nil,
+                age: nil,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+
+            try await supabase
+                .from("profiles")
+                .insert(newProfile)
+                .execute()
+
+            print("✅ Created new profile with Apple ID: \(fullName)")
+
+            // Update authService with the new profile
+            await MainActor.run {
+                authService.currentProfile = newProfile
+            }
+
+            // Show name prompt to allow user to customize their name
+            await MainActor.run {
+                isLoading = false
+                tempProfileAfterAppleSignup = newProfile
+                showingNamePrompt = true
+            }
+
+        } catch {
+            await MainActor.run {
+                isLoading = false
+                errorMessage = "Failed to create account: \(error.localizedDescription)"
+                showingError = true
+                print("❌ Failed to create Apple account: \(error)")
             }
         }
     }

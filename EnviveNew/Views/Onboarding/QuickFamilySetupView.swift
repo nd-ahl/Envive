@@ -9,6 +9,7 @@ import SwiftUI
 
 struct QuickFamilySetupView: View {
     let onComplete: () -> Void
+    let onBack: (() -> Void)?
 
     @StateObject private var authService = AuthenticationService.shared
     @StateObject private var householdService = HouseholdService.shared
@@ -39,8 +40,26 @@ struct QuickFamilySetupView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 28) {
-                Spacer()
-                    .frame(height: 40)
+                // Back button
+                if let onBack = onBack {
+                    HStack {
+                        Button(action: onBack) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("Back")
+                                    .font(.system(size: 17, weight: .medium))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .padding(.leading, 20)
+                        .padding(.top, 20)
+                        Spacer()
+                    }
+                } else {
+                    Spacer()
+                        .frame(height: 40)
+                }
 
                 // Header
                 headerSection
@@ -251,7 +270,7 @@ struct QuickFamilySetupView: View {
 
                 guard let householdId = currentProfile.householdId else {
                     throw NSError(domain: "QuickFamilySetup", code: -2, userInfo: [
-                        NSLocalizedDescriptionKey: "No household found for user. Please try signing out and back in."
+                        NSLocalizedDescriptionKey: "No household found. You may not have an account yet. Please go back and create an account first, or sign out and try again."
                     ])
                 }
 

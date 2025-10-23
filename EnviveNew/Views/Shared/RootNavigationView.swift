@@ -345,130 +345,115 @@ struct ParentProfileView: View {
                     Text("Profile")
                 }
 
-                // Household invite code section
-                if let household = householdService.currentHousehold {
-                    Section {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Household Invite Code")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                // Family section - different for parents and children
+                if let household = householdService.currentHousehold,
+                   let profile = deviceModeManager.currentProfile {
 
+                    if profile.mode == .parent {
+                        // PARENT VIEW: Show invite code
+                        Section {
+                            // Family Name
                             HStack {
+                                Text("Family Name")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text(household.name)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            // Invite Code
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Household Invite Code")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+
                                 Text(household.inviteCode)
                                     .font(.system(size: 32, weight: .bold, design: .rounded))
                                     .tracking(4)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 4)
 
-                                Spacer()
-
-                                Button(action: {
-                                    copyInviteCode(household.inviteCode)
-                                }) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.title3)
+                                HStack(spacing: 12) {
+                                    Button(action: {
+                                        copyInviteCode(household.inviteCode)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "doc.on.doc")
+                                            Text("Copy Code")
+                                        }
+                                        .font(.subheadline)
                                         .foregroundColor(.blue)
-                                }
-                            }
-
-                            HStack(spacing: 12) {
-                                Button(action: {
-                                    copyInviteCode(household.inviteCode)
-                                }) {
-                                    HStack {
-                                        Image(systemName: "doc.on.doc")
-                                        Text("Copy Code")
                                     }
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
-                                }
 
-                                Button(action: {
-                                    shareInviteCode(household.inviteCode, householdName: household.name)
-                                }) {
-                                    HStack {
-                                        Image(systemName: "square.and.arrow.up")
-                                        Text("Share")
-                                    }
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
-                                }
-                            }
-                        }
-                        .padding(.vertical, 8)
-
-                        if showCopiedMessage {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("Code copied to clipboard!")
-                                    .font(.subheadline)
-                            }
-                        }
-                    } header: {
-                        Text("Family")
-                    } footer: {
-                        Text("Share this code with family members to add them to your household")
-                    }
-                } else if let inviteCode = UserDefaults.standard.string(forKey: "householdCode") {
-                    Section {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Household Invite Code")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-
-                            HStack {
-                                Text(inviteCode)
-                                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                                    .tracking(4)
-
-                                Spacer()
-
-                                Button(action: {
-                                    copyInviteCode(inviteCode)
-                                }) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.title3)
+                                    Button(action: {
+                                        shareInviteCode(household.inviteCode, householdName: household.name)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "square.and.arrow.up")
+                                            Text("Share Code")
+                                        }
+                                        .font(.subheadline)
                                         .foregroundColor(.blue)
+                                    }
                                 }
                             }
+                            .padding(.vertical, 8)
 
-                            HStack(spacing: 12) {
-                                Button(action: {
-                                    copyInviteCode(inviteCode)
-                                }) {
-                                    HStack {
-                                        Image(systemName: "doc.on.doc")
-                                        Text("Copy Code")
-                                    }
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
-                                }
-
-                                Button(action: {
-                                    shareInviteCode(inviteCode, householdName: "My Household")
-                                }) {
-                                    HStack {
-                                        Image(systemName: "square.and.arrow.up")
-                                        Text("Share")
-                                    }
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
+                            if showCopiedMessage {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                    Text("Code copied to clipboard!")
+                                        .font(.subheadline)
                                 }
                             }
+                        } header: {
+                            Text("Family")
+                        } footer: {
+                            Text("Share this code with family members to add them to your household")
                         }
-                        .padding(.vertical, 8)
-
-                        if showCopiedMessage {
+                    } else {
+                        // CHILD VIEW: Show family members
+                        Section {
+                            // Family Name
                             HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("Code copied to clipboard!")
-                                    .font(.subheadline)
+                                Text("Family Name")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text(household.name)
+                                    .foregroundColor(.secondary)
                             }
+
+                            // Family Members
+                            ForEach(householdService.householdMembers, id: \.id) { member in
+                                HStack(spacing: 12) {
+                                    Image(systemName: member.role == "parent" ? "person.fill" : "person")
+                                        .foregroundColor(member.role == "parent" ? .blue : .secondary)
+                                        .frame(width: 24)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(member.fullName ?? "Family Member")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.primary)
+
+                                        Text(member.role.capitalized)
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    if member.age != nil {
+                                        Text("Age \(member.age!)")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        } header: {
+                            Text("Family")
                         }
-                    } header: {
-                        Text("Family")
-                    } footer: {
-                        Text("Share this code with family members to add them to your household")
                     }
                 }
 

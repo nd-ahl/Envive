@@ -24,6 +24,8 @@ struct EnviveNewApp: App {
     @StateObject private var authService = AuthenticationService.shared
     @State private var isCreatingHousehold = false
     @State private var showingSignIn = false
+    @State private var needsPasswordSetup = false
+    @State private var userEmailForPassword = ""
 
     init() {
         // Clean up legacy test data on first launch after beta deployment
@@ -76,6 +78,9 @@ struct EnviveNewApp: App {
                         onComplete: {
                             onboardingManager.completeFamilySetup()
                             onboardingManager.completeOnboarding()
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedSignIn = false
                         }
                     )
                 } else if onboardingManager.shouldShowChildJoin {

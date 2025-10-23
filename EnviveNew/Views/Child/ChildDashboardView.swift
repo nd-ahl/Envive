@@ -161,11 +161,6 @@ struct ChildDashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Household Info Card
-                    if let household = householdService.currentHousehold {
-                        householdInfoCard(household: household)
-                    }
-
                     // Stats Overview Card
                     statsOverviewCard
 
@@ -322,39 +317,6 @@ struct ChildDashboardView: View {
             .cornerRadius(12)
             .shadow(color: Color.blue.opacity(0.3), radius: 5, x: 0, y: 3)
         }
-    }
-
-    // MARK: - Household Info Card
-
-    private func householdInfoCard(household: Household) -> some View {
-        HStack(spacing: 12) {
-            // House icon
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.15))
-                    .frame(width: 50, height: 50)
-
-                Image(systemName: "house.fill")
-                    .font(.title3)
-                    .foregroundColor(.blue)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(household.name)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.primary)
-
-                Text("Household Code: \(household.inviteCode)")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
     }
 
     // MARK: - Stats Overview Card
