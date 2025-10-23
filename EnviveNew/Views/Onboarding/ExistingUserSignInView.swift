@@ -244,7 +244,14 @@ struct ExistingUserSignInView: View {
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    errorMessage = "Invalid email or password"
+
+                    // Check if this is a profileNotFound error
+                    if let authError = error as? AuthError, authError == .profileNotFound {
+                        errorMessage = "No account found. Please create an account first."
+                    } else {
+                        errorMessage = "Invalid email or password"
+                    }
+
                     print("❌ Sign in failed: \(error.localizedDescription)")
                 }
             }
@@ -280,7 +287,13 @@ struct ExistingUserSignInView: View {
                     }
                 } catch {
                     await MainActor.run {
-                        errorMessage = "Apple sign in failed"
+                        // Check if this is a profileNotFound error
+                        if let authError = error as? AuthError, authError == .profileNotFound {
+                            errorMessage = "No account found. Please create an account first."
+                        } else {
+                            errorMessage = "Apple sign in failed"
+                        }
+
                         print("❌ Apple sign in error: \(error.localizedDescription)")
                     }
                 }

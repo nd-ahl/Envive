@@ -109,8 +109,24 @@ class AuthenticationService: ObservableObject {
             self.isAuthenticated = true
         }
 
-        // Load profile
-        return try await loadProfile(userId: session.user.id.uuidString)
+        // Load profile - MUST exist for sign-in (don't create new one)
+        do {
+            return try await loadProfile(userId: session.user.id.uuidString)
+        } catch {
+            // Profile doesn't exist - user must create account first
+            print("❌ Sign-in failed: No profile found for user \(session.user.id.uuidString)")
+            print("   User must go through account creation flow first")
+
+            // Sign out the auth user since they don't have a profile
+            try? await supabase.auth.signOut()
+
+            await MainActor.run {
+                self.isAuthenticated = false
+                self.currentProfile = nil
+            }
+
+            throw AuthError.profileNotFound
+        }
     }
 
     // MARK: - Apple Sign In
@@ -129,15 +145,7 @@ class AuthenticationService: ObservableObject {
             throw AuthError.invalidAppleToken
         }
 
-        // Prepare user metadata for the database trigger
-        let fullName = [
-            appleIDCredential.fullName?.givenName,
-            appleIDCredential.fullName?.familyName
-        ]
-        .compactMap { $0 }
-        .joined(separator: " ")
-
-        // Sign in with Supabase using Apple token
+        // Sign in with Supabase using Apple token (no need to extract name for sign-in)
         let session = try await supabase.auth.signInWithIdToken(
             credentials: .init(
                 provider: .apple,
@@ -150,35 +158,24 @@ class AuthenticationService: ObservableObject {
         }
 
         let userId = session.user.id.uuidString
-        let email = session.user.email ?? ""
 
-        // Try to load existing profile, or create one if it doesn't exist
+        // Load profile - MUST exist for sign-in (don't create new one)
         do {
             return try await loadProfile(userId: userId)
         } catch {
-            // Profile doesn't exist - create it manually
-            print("⚠️ Profile not found for Apple sign-in, creating manually...")
+            // Profile doesn't exist - user must create account first
+            print("❌ Apple sign-in failed: No profile found for user \(userId)")
+            print("   User must go through account creation flow first")
 
-            let newProfile = Profile(
-                id: userId,
-                email: email,
-                fullName: fullName.isEmpty ? nil : fullName,
-                role: "parent", // Default to parent for new sign-ups
-                householdId: nil,
-                avatarUrl: nil,
-                age: nil,
-                createdAt: Date(),
-                updatedAt: Date()
-            )
+            // Sign out the auth user since they don't have a profile
+            try? await supabase.auth.signOut()
 
-            // Insert profile into database
-            try await supabase
-                .from("profiles")
-                .insert(newProfile)
-                .execute()
+            await MainActor.run {
+                self.isAuthenticated = false
+                self.currentProfile = nil
+            }
 
-            // Now load it
-            return try await loadProfile(userId: userId)
+            throw AuthError.profileNotFound
         }
     }
 
@@ -355,7 +352,7 @@ enum AuthError: LocalizedError {
         case .invalidAppleToken:
             return "Failed to get Apple ID token."
         case .profileNotFound:
-            return "User profile not found."
+            return "No account found. Please create an account first."
         }
     }
 }
