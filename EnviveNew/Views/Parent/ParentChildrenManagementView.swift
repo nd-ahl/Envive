@@ -525,56 +525,65 @@ struct ActivitySummaryRow: View {
 
 struct CurrentTaskRow: View {
     let task: TaskAssignment
+    @State private var showingTaskOptions = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Status indicator
-            Circle()
-                .fill(statusColor)
-                .frame(width: 12, height: 12)
+        Button(action: {
+            showingTaskOptions = true
+        }) {
+            HStack(spacing: 12) {
+                // Status indicator
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 12, height: 12)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
 
-                HStack(spacing: 8) {
-                    // Status badge
-                    Text(statusText)
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(statusColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(statusColor.opacity(0.15))
-                        .cornerRadius(6)
+                    HStack(spacing: 8) {
+                        // Status badge
+                        Text(statusText)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(statusColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(statusColor.opacity(0.15))
+                            .cornerRadius(6)
 
-                    // Level
-                    Text(task.assignedLevel.displayName)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    // Due date if exists
-                    if let dueDate = task.dueDate {
-                        Text("•")
+                        // Level
+                        Text(task.assignedLevel.displayName)
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        Text("Due \(formatDueDate(dueDate))")
-                            .font(.caption2)
-                            .foregroundColor(task.isOverdue ? .red : .secondary)
+
+                        // Due date if exists
+                        if let dueDate = task.dueDate {
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("Due \(formatDueDate(dueDate))")
+                                .font(.caption2)
+                                .foregroundColor(task.isOverdue ? .red : .secondary)
+                        }
                     }
                 }
+
+                Spacer()
+
+                // Navigate to task details
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
-
-            Spacer()
-
-            // Navigate to task details
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            .padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingTaskOptions) {
+            ParentTaskOptionsView(task: task)
+        }
     }
 
     private var statusColor: Color {
@@ -988,5 +997,178 @@ class ChildrenManagementViewModel: ObservableObject {
 
         // Sort by most recent first
         return logs.sorted { $0.timestamp > $1.timestamp }
+    }
+}
+
+// MARK: - Parent Task Options View
+
+struct ParentTaskOptionsView: View {
+    let task: TaskAssignment
+    @Environment(\.dismiss) private var dismiss
+    private let taskService = DependencyContainer.shared.taskService
+
+    @State private var showingEditSheet = false
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    // Task Info
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(task.title)
+                            .font(.headline)
+
+                        HStack {
+                            Text(task.assignedLevel.displayName)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+
+                            if let dueDate = task.dueDate {
+                                Text("•")
+                                    .foregroundColor(.secondary)
+                                Text("Due \(formatDate(dueDate))")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section {
+                    Button(action: {
+                        showingEditSheet = true
+                    }) {
+                        Label("Edit Task", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive, action: {
+                        showingDeleteConfirmation = true
+                    }) {
+                        Label("Delete Task", systemImage: "trash")
+                    }
+                }
+            }
+            .navigationTitle("Task Options")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showingEditSheet) {
+                ParentTaskEditView(task: task) {
+                    dismiss()
+                }
+            }
+            .alert("Delete Task", isPresented: $showingDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteTask()
+                }
+            } message: {
+                Text("Are you sure you want to delete '\(task.title)'? This action cannot be undone.")
+            }
+        }
+    }
+
+    private func deleteTask() {
+        let success = taskService.deleteTask(assignmentId: task.id)
+        if success {
+            HapticFeedbackManager.shared.success()
+            dismiss()
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Parent Task Edit View
+
+struct ParentTaskEditView: View {
+    let task: TaskAssignment
+    let onComplete: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    private let taskService = DependencyContainer.shared.taskService
+
+    @State private var editedTitle: String
+    @State private var editedLevel: TaskLevel
+    @State private var editedDueDate: Date?
+    @State private var hasDueDate: Bool
+
+    init(task: TaskAssignment, onComplete: @escaping () -> Void) {
+        self.task = task
+        self.onComplete = onComplete
+        _editedTitle = State(initialValue: task.title)
+        _editedLevel = State(initialValue: task.assignedLevel)
+        _editedDueDate = State(initialValue: task.dueDate)
+        _hasDueDate = State(initialValue: task.dueDate != nil)
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Task Details") {
+                    TextField("Task Title", text: $editedTitle)
+
+                    Picker("Difficulty", selection: $editedLevel) {
+                        ForEach([TaskLevel.level1, .level2, .level3, .level4, .level5], id: \.self) { level in
+                            Text(level.displayName).tag(level)
+                        }
+                    }
+                }
+
+                Section("Due Date") {
+                    Toggle("Set Due Date", isOn: $hasDueDate)
+
+                    if hasDueDate {
+                        DatePicker("Due Date", selection: Binding(
+                            get: { editedDueDate ?? Date() },
+                            set: { editedDueDate = $0 }
+                        ), displayedComponents: [.date])
+                    }
+                }
+            }
+            .navigationTitle("Edit Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveChanges()
+                    }
+                    .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func saveChanges() {
+        let finalDueDate = hasDueDate ? editedDueDate : nil
+        let success = taskService.updateTask(
+            assignmentId: task.id,
+            title: editedTitle,
+            level: editedLevel,
+            dueDate: finalDueDate
+        )
+
+        if success {
+            HapticFeedbackManager.shared.success()
+            dismiss()
+            onComplete()
+        }
     }
 }

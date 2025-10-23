@@ -29,6 +29,10 @@ protocol TaskService {
     // Notification tracking
     func markDeclineAsViewed(assignmentId: UUID) -> Bool
 
+    // Task management
+    func deleteTask(assignmentId: UUID) -> Bool
+    func updateTask(assignmentId: UUID, title: String?, level: TaskLevel?, dueDate: Date?) -> Bool
+
     // Test utilities
     func deleteAllAssignments()
 }
@@ -398,6 +402,40 @@ class TaskServiceImpl: TaskService {
         assignment.declineViewedByChild = true
         repository.saveAssignment(assignment)
         print("✅ Marked decline as viewed for task: \(assignment.title)")
+        return true
+    }
+
+    // MARK: - Task Management
+
+    func deleteTask(assignmentId: UUID) -> Bool {
+        guard let assignment = repository.getAssignment(id: assignmentId) else {
+            print("❌ Cannot delete task: assignment not found")
+            return false
+        }
+
+        repository.deleteAssignment(id: assignmentId)
+        print("✅ Deleted task: \(assignment.title) (ID: \(assignmentId))")
+        return true
+    }
+
+    func updateTask(assignmentId: UUID, title: String?, level: TaskLevel?, dueDate: Date?) -> Bool {
+        guard var assignment = repository.getAssignment(id: assignmentId) else {
+            print("❌ Cannot update task: assignment not found")
+            return false
+        }
+
+        // Update fields if provided
+        if let newTitle = title {
+            assignment.title = newTitle
+        }
+        if let newLevel = level {
+            assignment.assignedLevel = newLevel
+        }
+        // Handle due date update (can be nil to remove due date)
+        assignment.dueDate = dueDate
+
+        repository.saveAssignment(assignment)
+        print("✅ Updated task: \(assignment.title)")
         return true
     }
 

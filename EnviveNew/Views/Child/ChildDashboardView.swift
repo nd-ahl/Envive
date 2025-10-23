@@ -787,6 +787,19 @@ struct ChildTaskDetailView: View {
         }
         .navigationTitle("Task Details")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button(role: .destructive, action: {
+                        deleteTask()
+                    }) {
+                        Label("Delete Task", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
         .onAppear {
             // Start timer if task is in progress
             if assignment.status == .inProgress {
@@ -1216,6 +1229,18 @@ struct ChildTaskDetailView: View {
     }
 
     // MARK: - Actions
+
+    private func deleteTask() {
+        let success = taskService.deleteTask(assignmentId: assignment.id)
+        if success {
+            print("✅ Task deleted successfully")
+            HapticFeedbackManager.shared.success()
+            dismiss()
+        } else {
+            print("❌ Failed to delete task")
+            HapticFeedbackManager.shared.error()
+        }
+    }
 
     private func handleStartTask() {
         let success = taskService.startTask(assignmentId: assignment.id)
