@@ -113,7 +113,7 @@ struct LegalAgreementView: View {
                 .padding(20)
             }
             .frame(maxHeight: 400)
-            .background(Color.white)
+            .background(Color(.systemBackground))
             .cornerRadius(16)
             .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 4)
         }
@@ -126,11 +126,11 @@ struct LegalAgreementView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Privacy Policy")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(.primary)
+                .foregroundColor(Color(.label))
 
             Text("Effective Date: January 2025")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.secondaryLabel))
 
             Group {
                 sectionHeader("1. Information We Collect")
@@ -160,11 +160,11 @@ struct LegalAgreementView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Terms of Service")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(.primary)
+                .foregroundColor(Color(.label))
 
             Text("Effective Date: January 2025")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.secondaryLabel))
 
             Group {
                 sectionHeader("1. Acceptance of Terms")
@@ -299,14 +299,14 @@ struct LegalAgreementView: View {
     private func sectionHeader(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 16, weight: .bold))
-            .foregroundColor(.primary)
+            .foregroundColor(Color(.label))
             .padding(.top, 8)
     }
 
     private func bodyText(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 15, weight: .regular))
-            .foregroundColor(.secondary)
+            .foregroundColor(Color(.secondaryLabel))
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
     }
