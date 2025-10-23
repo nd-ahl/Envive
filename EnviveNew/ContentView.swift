@@ -6533,6 +6533,7 @@ struct EnhancedHomeView: View {
 
     // Services
     @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+    @ObservedObject private var authService = AuthenticationService.shared
     private let profilePhotoManager = ProfilePhotoManager.shared
     private let xpService = DependencyContainer.shared.xpService
     private let credibilityService = DependencyContainer.shared.credibilityService
@@ -6540,6 +6541,18 @@ struct EnhancedHomeView: View {
 
     private var currentUserLevel: UserLevel {
         UserLevel(totalXP: totalXPEarned)
+    }
+
+    // CRITICAL FIX: Get display name with proper fallback chain
+    // Priority: DeviceModeManager profile > AuthService profile > UserDefaults > "User"
+    private var displayName: String {
+        if let profile = deviceModeManager.currentProfile {
+            return profile.name
+        } else if let authProfile = authService.currentProfile {
+            return authProfile.fullName ?? authProfile.email ?? userName
+        } else {
+            return userName
+        }
     }
 
     /// Determines the correct child ID based on the current device mode
@@ -6570,7 +6583,7 @@ struct EnhancedHomeView: View {
                             Text("Welcome back,")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                            Text(userName)
+                            Text(displayName)
                                 .font(.title2)
                                 .fontWeight(.bold)
                         }
@@ -6596,7 +6609,7 @@ struct EnhancedHomeView: View {
                                     .fill(Color.purple.opacity(0.3))
                                     .frame(width: 50, height: 50)
                                     .overlay(
-                                        Text(String(userName.prefix(1)))
+                                        Text(String(displayName.prefix(1)))
                                             .font(.title3)
                                             .fontWeight(.semibold)
                                             .foregroundColor(.primary)

@@ -95,29 +95,13 @@ struct RootNavigationView: View {
             }
             .tag(0)
 
-            // Screen Time Manager - Direct access to app controls
-            AppManagementView(appSelectionStore: model.appSelectionStore)
-                .tabItem {
-                    Image(systemName: "hourglass")
-                    Text("Screen Time")
-                }
-                .tag(1)
-
             // Children Overview/Management
             ParentChildrenManagementView()
                 .tabItem {
                     Image(systemName: "person.2.fill")
                     Text("Children")
                 }
-                .tag(2)
-
-            // Activity/Reports - DISABLED per user request
-            // ParentActivityView()
-            //     .tabItem {
-            //         Image(systemName: "chart.bar.fill")
-            //         Text("Activity")
-            //     }
-            //     .tag(3)
+                .tag(1)
 
             // Settings/Profile
             ParentProfileView()
@@ -125,7 +109,7 @@ struct RootNavigationView: View {
                     Image(systemName: "gearshape.fill")
                     Text("Settings")
                 }
-                .tag(3)  // Changed from tag 4 to tag 3
+                .tag(2)
         }
     }
 

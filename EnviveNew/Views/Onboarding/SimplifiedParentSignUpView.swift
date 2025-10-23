@@ -411,13 +411,20 @@ struct SimplifiedParentSignUpView: View {
     // MARK: - Profile Linking
 
     private func linkDeviceToProfile(_ profile: Profile) {
+        // CRITICAL FIX: Clear any stale household data from previous login
+        // This prevents data leakage between households
+        householdService.currentHousehold = nil
+        householdService.householdMembers = []
+        print("🧹 Cleared stale household data")
+
         // Convert Profile to UserProfile and set device mode
         // Convert String ID to UUID (profile.id is from Supabase auth)
         let profileId = UUID(uuidString: profile.id) ?? UUID()
+        let parentName = profile.fullName ?? profile.email ?? "Parent"
 
         let userProfile = UserProfile(
             id: profileId,
-            name: profile.fullName ?? profile.email ?? "Parent",
+            name: parentName,
             mode: .parent,
             age: profile.age,
             profilePhotoFileName: nil // avatarUrl from backend is not yet synced to local file
@@ -427,7 +434,19 @@ struct SimplifiedParentSignUpView: View {
         deviceModeManager.switchMode(to: .parent, profile: userProfile)
         deviceModeService.setDeviceMode(.parent)
 
-        print("✅ Parent signed in - device linked to profile: \(userProfile.name)")
+        // CRITICAL FIX: Save parent's name to UserDefaults so it displays in UI
+        UserDefaults.standard.set(parentName, forKey: "userName")
+        UserDefaults.standard.set(profile.id, forKey: "userId")
+        UserDefaults.standard.set("parent", forKey: "userRole")
+
+        // CRITICAL FIX: Save parent name for mode switcher
+        // This ensures children can switch back to parent mode with correct name
+        UserDefaults.standard.set(parentName, forKey: "savedParentName")
+
+        if let age = profile.age {
+            UserDefaults.standard.set(age, forKey: "userAge")
+        }
+        print("✅ Parent signed in - device linked to profile: \(parentName)")
     }
 
     // MARK: - Name Prompt View
@@ -577,5 +596,35 @@ struct CustomTextFieldStyle: TextFieldStyle {
             )
             .font(.system(size: 16, weight: .regular))
             .foregroundColor(.black) // Ensure text is always black on white background
+            .accentColor(.blue) // Cursor color
+            .modifier(PlaceholderColorModifier())
+    }
+}
+
+// MARK: - Placeholder Color Fix for Dark Mode
+
+struct PlaceholderColorModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                // CRITICAL FIX: Set placeholder text color to gray for visibility on white background
+                // This fixes the white-on-white placeholder text issue in dark mode
+                UITextField.appearance(whenContainedInInstancesOf: [UIHostingController<AnyView>.self]).attributedPlaceholder = nil
+            }
+    }
+}
+
+// MARK: - UITextField Appearance Configuration
+
+extension UITextField {
+    open override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        // Set placeholder color to dark gray for visibility on white TextField background
+        if let placeholder = self.placeholder {
+            self.attributedPlaceholder = NSAttributedString(
+                string: placeholder,
+                attributes: [.foregroundColor: UIColor.darkGray]
+            )
+        }
     }
 }

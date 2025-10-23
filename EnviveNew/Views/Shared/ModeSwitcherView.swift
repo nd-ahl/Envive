@@ -24,21 +24,35 @@ struct ModeSwitcherView: View {
         self.deviceModeManager = deviceModeManager
         _selectedMode = State(initialValue: deviceModeManager.currentMode)
 
-        // Load parent name from actual authenticated profile (best source)
-        let authName = AuthenticationService.shared.currentProfile?.fullName ?? ""
+        // CRITICAL FIX: Load parent name from correct sources
+        // Don't use AuthenticationService if logged in as child!
+        let currentAuthProfile = AuthenticationService.shared.currentProfile
+        let authName: String
 
-        // Fallback to device manager or onboarding
+        if let profile = currentAuthProfile, profile.role == "parent" {
+            // If authenticated as parent, use their name
+            authName = profile.fullName ?? ""
+        } else {
+            // If authenticated as child (or no auth), don't use auth name for parent
+            authName = ""
+        }
+
+        // Fallback chain: SavedParentName > DeviceManager > OnboardingManager
+        let savedName = UserDefaults.standard.string(forKey: "savedParentName") ?? ""
         let parentProfile = deviceModeManager.getProfile(byMode: .parent)
-        let savedName = parentProfile?.name ?? ""
+        let deviceManagerName = parentProfile?.name ?? ""
         let onboardingName = OnboardingManager.shared.parentName ?? ""
 
-        // Priority: AuthenticationService > DeviceManager > OnboardingManager
-        let finalName = !authName.isEmpty ? authName : (!savedName.isEmpty ? savedName : onboardingName)
+        // Priority: Parent from auth > Saved parent name > DeviceManager > OnboardingManager
+        let finalName = !authName.isEmpty ? authName :
+                        (!savedName.isEmpty ? savedName :
+                        (!deviceManagerName.isEmpty ? deviceManagerName : onboardingName))
 
         _parentName = State(initialValue: finalName)
         _savedParentName = State(initialValue: finalName)
 
-        print("🎯 ModeSwitcher initialized with parent name: '\(finalName)' (from auth: '\(authName)', saved: '\(savedName)', onboarding: '\(onboardingName)')")
+        print("🎯 ModeSwitcher initialized with parent name: '\(finalName)'")
+        print("   Sources: auth='\(authName)' (role: \(currentAuthProfile?.role ?? "none")), saved='\(savedName)', device='\(deviceManagerName)', onboarding='\(onboardingName)'")
     }
 
     var body: some View {
@@ -441,20 +455,35 @@ struct ModeSwitcherView: View {
         }
 
         if selectedMode == .parent {
-            // SECURITY: Only allow switching to parent mode if authenticated as parent
+            // TESTING MODE FIX: Allow children to switch to parent mode for single-device testing
+            // In production, this would be more restricted based on device role lock
             if currentAuthProfile.role != "parent" {
-                print("❌ Cannot switch to parent mode: User is not authenticated as parent")
+                print("⚠️ WARNING: Child switching to parent mode (development/testing only)")
                 print("  - Authenticated as: \(currentAuthProfile.fullName ?? "Unknown") (\(currentAuthProfile.role))")
-                return
+                print("  - This is allowed for single-device testing")
             }
 
-            // Use actual parent name from AuthenticationService if available
-            let actualParentName = authService.currentProfile?.fullName ?? ""
-            let trimmedName = !actualParentName.isEmpty ? actualParentName : parentName.trimmingCharacters(in: .whitespaces)
+            // CRITICAL FIX: When switching to parent, use saved parent name, not current auth profile
+            // If authenticated as parent, use their name; otherwise use saved/input name
+            let trimmedName: String
+            if currentAuthProfile.role == "parent" {
+                trimmedName = currentAuthProfile.fullName ?? parentName.trimmingCharacters(in: .whitespaces)
+            } else {
+                // Child is switching to parent mode for testing - use saved parent name
+                trimmedName = parentName.trimmingCharacters(in: .whitespaces)
+            }
 
             // Get existing parent profile to preserve photo
             let existingParentProfile = deviceModeManager.getProfile(byMode: .parent)
-            let parentId = authService.currentProfile.flatMap { UUID(uuidString: $0.id) } ?? UUID()
+
+            // CRITICAL FIX: Use parent's ID if authenticated as parent, otherwise create consistent parent ID
+            let parentId: UUID
+            if currentAuthProfile.role == "parent" {
+                parentId = UUID(uuidString: currentAuthProfile.id) ?? UUID()
+            } else {
+                // For testing: use existing parent profile ID or create one based on household
+                parentId = existingParentProfile?.id ?? UUID()
+            }
 
             let parentProfile = UserProfile(
                 id: parentId,
@@ -467,6 +496,10 @@ struct ModeSwitcherView: View {
 
             deviceModeManager.switchMode(to: .parent, profile: parentProfile)
 
+            // CRITICAL FIX: Update DeviceModeService to match
+            let deviceModeService = DeviceModeService.shared
+            _ = deviceModeService.setDeviceMode(.parent)
+
             // Clear current child ID from HouseholdContext
             householdContext.clearCurrentChild()
 
@@ -474,10 +507,12 @@ struct ModeSwitcherView: View {
             savedParentName = trimmedName
             UserDefaults.standard.set(trimmedName, forKey: "savedParentName")
 
-            // Update UserDefaults for ProfileView
+            // Update UserDefaults for ProfileView and role tracking
             UserDefaults.standard.set(trimmedName, forKey: "userName")
+            UserDefaults.standard.set("parent", forKey: "userRole")
+            UserDefaults.standard.removeObject(forKey: "userAge") // Parents don't have age displayed
 
-            print("🔄 Switched to Parent mode: \(trimmedName), Photo: \(existingParentProfile?.profilePhotoFileName ?? "none")")
+            print("🔄 Switched to Parent mode: \(trimmedName), ID: \(parentId), Photo: \(existingParentProfile?.profilePhotoFileName ?? "none")")
         } else if let childId = selectedChildId,
                   let child = availableChildren.first(where: { $0.id == childId }) {
             // SECURITY: Only allow switching to child mode if:
@@ -524,12 +559,17 @@ struct ModeSwitcherView: View {
 
             deviceModeManager.switchMode(to: .child1, profile: childProfile)
 
+            // CRITICAL FIX: Update DeviceModeService to match
+            let deviceModeService = DeviceModeService.shared
+            _ = deviceModeService.setDeviceMode(.child1)
+
             // Set current child ID in HouseholdContext for task filtering
             householdContext.setCurrentChild(childUUID)
 
             // Update UserDefaults for ProfileView to show child's name and age
             UserDefaults.standard.set(childName, forKey: "userName")
             UserDefaults.standard.set(childAge, forKey: "userAge")
+            UserDefaults.standard.set("child", forKey: "userRole")
 
             print("🔄 Switched to Child mode: \(childName), Age: \(childAge), ID: \(childUUID), Photo: \(existingChildProfile?.profilePhotoFileName ?? "none")")
         }

@@ -5,7 +5,8 @@ import UIKit
 import SwiftUI
 
 class SettingsManager: ObservableObject {
-    private let store = ManagedSettingsStore()
+    // PERFORMANCE FIX: Use shared store to sync with extensions
+    private let store = ManagedSettingsStore(named: ManagedSettingsStore.Name("envive-shared"))
     @Published var isBlocking = false
     @Published var isSafariBlocked = false
 
@@ -25,54 +26,64 @@ class SettingsManager: ObservableObject {
     }
 
     func blockApps(_ selection: FamilyActivitySelection) {
-        // PERFORMANCE FIX: Run asynchronously to prevent UI freeze
-        Task.detached(priority: .userInitiated) { [weak self] in
+        // PERFORMANCE FIX: Run on background thread to prevent UI freeze
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            await MainActor.run {
-                if !selection.applicationTokens.isEmpty {
-                    self.store.shield.applications = selection.applicationTokens
-                }
+            // Apply shields on background thread
+            if !selection.applicationTokens.isEmpty {
+                self.store.shield.applications = selection.applicationTokens
+            }
 
-                if !selection.categoryTokens.isEmpty {
-                    self.store.shield.applicationCategories = .specific(selection.categoryTokens)
-                }
+            if !selection.categoryTokens.isEmpty {
+                self.store.shield.applicationCategories = .specific(selection.categoryTokens)
+            }
 
-                if !selection.webDomainTokens.isEmpty {
-                    self.store.shield.webDomains = selection.webDomainTokens
-                }
+            if !selection.webDomainTokens.isEmpty {
+                self.store.shield.webDomains = selection.webDomainTokens
+            }
 
+            print("✅ Blocked \(selection.applicationTokens.count) apps and \(selection.categoryTokens.count) categories")
+
+            // Update UI state on main thread
+            DispatchQueue.main.async {
                 self.updateBlockingState()
-                print("Blocked \(selection.applicationTokens.count) apps and \(selection.categoryTokens.count) categories")
             }
         }
     }
 
     func unblockApps() {
-        // PERFORMANCE FIX: Run asynchronously to prevent UI freeze
-        Task.detached(priority: .userInitiated) { [weak self] in
+        // PERFORMANCE FIX: Run on background thread to prevent UI freeze
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            await MainActor.run {
-                self.store.shield.applications = nil
-                self.store.shield.applicationCategories = nil
-                self.store.shield.webDomains = nil
+            // Clear shields on background thread
+            self.store.shield.applications = nil
+            self.store.shield.applicationCategories = nil
+            self.store.shield.webDomains = nil
+
+            print("✅ Unblocked all apps")
+
+            // Update UI state on main thread
+            DispatchQueue.main.async {
                 self.updateBlockingState()
-                print("Unblocked all apps")
             }
         }
     }
 
     func clearAllSettings() {
         // PERFORMANCE WARNING: clearAllSettings() is extremely slow (9-10 seconds)
-        // Only use when absolutely necessary. Prefer clearing specific settings.
-        Task.detached(priority: .userInitiated) { [weak self] in
+        // Only use when absolutely necessary. Prefer using unblockApps() instead.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
-            await MainActor.run {
-                self.store.clearAllSettings()
+            print("⚠️ clearAllSettings() called - this takes 9-10 seconds")
+            self.store.clearAllSettings()
+            print("✅ Cleared all managed settings")
+
+            // Update UI state on main thread
+            DispatchQueue.main.async {
                 self.updateBlockingState()
-                print("Cleared all managed settings")
             }
         }
     }

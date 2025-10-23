@@ -444,8 +444,11 @@ class HouseholdService: ObservableObject {
 
     // MARK: - Fetch Children for Current User
 
-    /// Get children for the current logged-in parent
-    /// This is used by ParentDashboardView to fetch children from Supabase
+    /// Get children for the current logged-in user's household
+    /// UPDATED: Works for both parents AND children
+    /// - Parents: Returns all children in their household
+    /// - Children: Returns siblings (other children in the same household)
+    /// This is used by ParentDashboardView and ModeSwitcherView
     func getMyChildren() async throws -> [Profile] {
         // Get current user's profile from AuthenticationService
         guard let currentProfile = AuthenticationService.shared.currentProfile else {
@@ -459,16 +462,11 @@ class HouseholdService: ObservableObject {
             return [] // Not in a household yet
         }
 
-        // Verify user is a parent
-        guard currentProfile.role == "parent" else {
-            throw NSError(domain: "HouseholdService", code: -2, userInfo: [
-                NSLocalizedDescriptionKey: "Only parents can view children"
-            ])
-        }
+        // CRITICAL FIX: Allow both parents AND children to fetch household children
+        // This enables the mode switcher to work correctly when logged in as a child
+        print("🔍 Fetching children for household: \(householdId) (user role: \(currentProfile.role))")
 
-        print("🔍 Fetching children for household: \(householdId)")
-
-        // Fetch children in the household
+        // Fetch all children in the household (including siblings if user is a child)
         let profiles: [Profile] = try await supabase
             .from("profiles")
             .select()
@@ -478,7 +476,7 @@ class HouseholdService: ObservableObject {
             .execute()
             .value
 
-        print("✅ Found \(profiles.count) child profile(s)")
+        print("✅ Found \(profiles.count) child profile(s) in household \(householdId)")
         for profile in profiles {
             print("   - \(profile.fullName ?? "Unknown"), Age: \(profile.age ?? 0), ID: \(profile.id)")
         }

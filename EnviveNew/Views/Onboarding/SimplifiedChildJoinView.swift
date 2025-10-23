@@ -379,6 +379,43 @@ struct SimplifiedChildJoinView: View {
                     print("✅ Logged in as child: \(profile.fullName ?? "Unknown") (ID: \(profile.id))")
                     print("   Household: \(profile.householdId ?? "none")")
 
+                    // CRITICAL FIX: Clear any stale household data from previous login
+                    // This prevents data leakage between households
+                    let householdService = HouseholdService.shared
+                    householdService.currentHousehold = nil
+                    householdService.householdMembers = []
+                    print("🧹 Cleared stale household data")
+
+                    // CRITICAL FIX: Set device mode to child based on the logged-in profile
+                    // This ensures RootNavigationView routes to child dashboard, not parent dashboard
+                    let deviceModeService = DeviceModeService.shared
+                    _ = deviceModeService.setDeviceMode(.child1)
+                    print("🔧 Device mode set to child for profile role: \(profile.role)")
+
+                    // Also update LocalDeviceModeManager with child profile
+                    let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+                    let childName = profile.fullName ?? "Child"
+                    let userProfile = UserProfile(
+                        id: UUID(uuidString: profile.id) ?? UUID(),
+                        name: childName,
+                        mode: .child1,
+                        age: profile.age ?? 10,
+                        parentId: nil,
+                        profilePhotoFileName: nil
+                    )
+                    deviceModeManager.switchMode(to: .child1, profile: userProfile)
+                    print("✅ DeviceModeManager updated with child profile")
+
+                    // CRITICAL FIX: Save child's name to UserDefaults so it displays in UI
+                    // Views like ChildDashboardView use @AppStorage("userName") to display name
+                    UserDefaults.standard.set(childName, forKey: "userName")
+                    if let age = profile.age {
+                        UserDefaults.standard.set(age, forKey: "userAge")
+                    }
+                    UserDefaults.standard.set(profile.id, forKey: "userId")
+                    UserDefaults.standard.set("child", forKey: "userRole")
+                    print("✅ Saved child info to UserDefaults: \(childName)")
+
                     isLoading = false
                     permissionGranted = true
                     print("✅ Screen Time permission granted")
@@ -395,6 +432,40 @@ struct SimplifiedChildJoinView: View {
                     authService.isAuthenticated = true
                     print("✅ Logged in as child: \(profile.fullName ?? "Unknown") (ID: \(profile.id))")
                     print("⚠️ Screen Time permission not granted: \(error.localizedDescription)")
+
+                    // CRITICAL FIX: Clear any stale household data from previous login
+                    let householdService = HouseholdService.shared
+                    householdService.currentHousehold = nil
+                    householdService.householdMembers = []
+                    print("🧹 Cleared stale household data")
+
+                    // CRITICAL FIX: Set device mode to child even if permission denied
+                    let deviceModeService = DeviceModeService.shared
+                    _ = deviceModeService.setDeviceMode(.child1)
+                    print("🔧 Device mode set to child for profile role: \(profile.role)")
+
+                    // Also update LocalDeviceModeManager with child profile
+                    let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+                    let childName = profile.fullName ?? "Child"
+                    let userProfile = UserProfile(
+                        id: UUID(uuidString: profile.id) ?? UUID(),
+                        name: childName,
+                        mode: .child1,
+                        age: profile.age ?? 10,
+                        parentId: nil,
+                        profilePhotoFileName: nil
+                    )
+                    deviceModeManager.switchMode(to: .child1, profile: userProfile)
+                    print("✅ DeviceModeManager updated with child profile")
+
+                    // CRITICAL FIX: Save child's name to UserDefaults so it displays in UI
+                    UserDefaults.standard.set(childName, forKey: "userName")
+                    if let age = profile.age {
+                        UserDefaults.standard.set(age, forKey: "userAge")
+                    }
+                    UserDefaults.standard.set(profile.id, forKey: "userId")
+                    UserDefaults.standard.set("child", forKey: "userRole")
+                    print("✅ Saved child info to UserDefaults: \(childName)")
 
                     isLoading = false
                     permissionGranted = false
