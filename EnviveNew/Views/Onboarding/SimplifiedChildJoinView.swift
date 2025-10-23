@@ -14,11 +14,15 @@ struct SimplifiedChildJoinView: View {
 
     @State private var inviteCode = ""
     @State private var selectedProfile: Profile?
+    @State private var availableProfiles: [Profile] = []
     @State private var step: ChildJoinStep = .enterCode
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showError = false
     @State private var permissionGranted = false
+
+    private let householdService = HouseholdService.shared
+    private let authService = AuthenticationService.shared
 
     enum ChildJoinStep {
         case enterCode
@@ -151,11 +155,23 @@ struct SimplifiedChildJoinView: View {
                     .foregroundColor(.white.opacity(0.9))
             }
 
-            // Profile selection (placeholder - will be populated from household)
-            VStack(spacing: 12) {
-                profileButton(name: "Loading...", age: 0)
+            // Profile selection
+            ScrollView {
+                VStack(spacing: 12) {
+                    if availableProfiles.isEmpty {
+                        Text("No child profiles found in this household")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding()
+                    } else {
+                        ForEach(availableProfiles, id: \.id) { profile in
+                            profileButton(profile: profile)
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
             }
-            .padding(.horizontal, 24)
+            .frame(maxHeight: 400)
 
             Spacer()
 
@@ -173,20 +189,23 @@ struct SimplifiedChildJoinView: View {
         }
     }
 
-    private func profileButton(name: String, age: Int) -> some View {
+    private func profileButton(profile: Profile) -> some View {
         Button(action: {
-            // Handle profile selection
+            selectedProfile = profile
+            print("✅ Selected profile: \(profile.fullName ?? "Unknown") (ID: \(profile.id))")
             step = .permissions
         }) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(name)
+                    Text(profile.fullName ?? "Unknown")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.white)
 
-                    Text("Age \(age)")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
+                    if let age = profile.age {
+                        Text("Age \(age)")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
 
                 Spacer()
@@ -306,23 +325,59 @@ struct SimplifiedChildJoinView: View {
 
     private func handleCodeSubmit() {
         isLoading = true
+        errorMessage = ""
 
-        // TODO: Verify code and fetch household
-        // For now, just move to next step
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            isLoading = false
-            step = .permissions  // Skip profile selection for now
+        Task {
+            do {
+                print("🔑 Verifying invite code: \(inviteCode)")
+
+                // Fetch child profiles from household using invite code
+                let profiles = try await householdService.getChildrenByInviteCode(inviteCode)
+
+                await MainActor.run {
+                    availableProfiles = profiles
+                    isLoading = false
+
+                    if profiles.isEmpty {
+                        errorMessage = "No child profiles found in this household. Ask your parent to create a profile for you first."
+                        showError = true
+                    } else {
+                        print("✅ Found \(profiles.count) child profile(s)")
+                        step = .selectProfile
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMessage = "Invalid invite code. Please check with your parent and try again."
+                    showError = true
+                    print("❌ Error fetching household: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
     private func handlePermissionRequest() {
+        guard let profile = selectedProfile else {
+            errorMessage = "No profile selected. Please go back and select your profile."
+            showError = true
+            return
+        }
+
         isLoading = true
 
         Task {
             do {
+                // Request Screen Time permission
                 try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
 
                 await MainActor.run {
+                    // Sign in as the selected child profile
+                    authService.currentProfile = profile
+                    authService.isAuthenticated = true
+                    print("✅ Logged in as child: \(profile.fullName ?? "Unknown") (ID: \(profile.id))")
+                    print("   Household: \(profile.householdId ?? "none")")
+
                     isLoading = false
                     permissionGranted = true
                     print("✅ Screen Time permission granted")
@@ -334,6 +389,12 @@ struct SimplifiedChildJoinView: View {
                 }
             } catch {
                 await MainActor.run {
+                    // Sign in even if permission denied (can be granted later)
+                    authService.currentProfile = profile
+                    authService.isAuthenticated = true
+                    print("✅ Logged in as child: \(profile.fullName ?? "Unknown") (ID: \(profile.id))")
+                    print("⚠️ Screen Time permission not granted: \(error.localizedDescription)")
+
                     isLoading = false
                     permissionGranted = false
                     errorMessage = "Permission denied. You can grant it later from Settings."

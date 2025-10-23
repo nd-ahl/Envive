@@ -485,4 +485,37 @@ class HouseholdService: ObservableObject {
 
         return profiles
     }
+
+    /// Get child profiles in a household by invite code (for child login flow)
+    func getChildrenByInviteCode(_ inviteCode: String) async throws -> [Profile] {
+        print("🔍 Fetching household by invite code: \(inviteCode)")
+
+        // First, find the household by invite code
+        let household: Household = try await supabase
+            .from("households")
+            .select()
+            .eq("invite_code", value: inviteCode)
+            .single()
+            .execute()
+            .value
+
+        print("✅ Found household: \(household.name), ID: \(household.id)")
+
+        // Fetch all child profiles in that household
+        let profiles: [Profile] = try await supabase
+            .from("profiles")
+            .select()
+            .eq("household_id", value: household.id)
+            .eq("role", value: "child")
+            .order("full_name", ascending: true)
+            .execute()
+            .value
+
+        print("✅ Found \(profiles.count) child profile(s) in household")
+        for profile in profiles {
+            print("   - \(profile.fullName ?? "Unknown"), Age: \(profile.age ?? 0), ID: \(profile.id)")
+        }
+
+        return profiles
+    }
 }
