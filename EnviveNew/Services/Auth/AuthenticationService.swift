@@ -45,13 +45,15 @@ class AuthenticationService: ObservableObject {
         // Only clear data on sign OUT or when existing user signs IN
 
         // Create auth user with metadata for the database trigger
+        // CRITICAL FIX: Add emailRedirectTo to skip email confirmation for development
         let response = try await supabase.auth.signUp(
             email: email,
             password: password,
             data: [
                 "full_name": .string(fullName),
                 "role": .string(role == .parent ? "parent" : "child")
-            ]
+            ],
+            redirectTo: nil  // Skip email confirmation redirect
         )
 
         let user = response.user
@@ -246,6 +248,19 @@ class AuthenticationService: ObservableObject {
     func resetPassword(email: String) async throws {
         try await supabase.auth.resetPasswordForEmail(email)
         print("✅ Password reset email sent to: \(email)")
+    }
+
+    // MARK: - Email Verification
+
+    /// Resend confirmation email to user
+    func resendConfirmationEmail(email: String) async throws {
+        // Supabase automatically resends confirmation when user tries to sign up again with same email
+        // We can use the resend endpoint
+        try await supabase.auth.resend(
+            email: email,
+            type: .signup
+        )
+        print("✅ Confirmation email resent to: \(email)")
     }
 
     // MARK: - Sign Out

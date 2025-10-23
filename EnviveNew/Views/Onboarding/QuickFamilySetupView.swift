@@ -275,10 +275,8 @@ struct QuickFamilySetupView: View {
                 }
 
                 await MainActor.run {
-                    // Mark onboarding steps as complete
-                    OnboardingManager.shared.hasCompletedFamilySetup = true
-                    OnboardingManager.shared.hasCompletedNameEntry = true
-
+                    // CRITICAL FIX: Don't set flags directly - let parent handle it
+                    // This prevents navigation glitches caused by double-setting
                     isLoading = false
                     onComplete()
                 }

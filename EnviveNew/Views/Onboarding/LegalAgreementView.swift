@@ -276,8 +276,9 @@ struct LegalAgreementView: View {
             }
 
             Button(action: {
-                // Mark legal agreement as completed - NEVER SHOW AGAIN
-                OnboardingManager.shared.completeLegalAgreement()
+                // CRITICAL FIX: Only call onAccept() callback
+                // The parent (EnviveNewApp) handles calling completeLegalAgreement()
+                // This prevents double-calling and navigation glitches
                 onAccept()
             }) {
                 Text("Continue")

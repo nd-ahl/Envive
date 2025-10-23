@@ -245,11 +245,17 @@ struct ExistingUserSignInView: View {
                 await MainActor.run {
                     isLoading = false
 
-                    // Check if this is a profileNotFound error
+                    // Check error type and provide helpful messages
+                    let errorDesc = error.localizedDescription.lowercased()
+
                     if let authError = error as? AuthError, authError == .profileNotFound {
                         errorMessage = "No account found. Please create an account first."
-                    } else {
+                    } else if errorDesc.contains("email not confirmed") || errorDesc.contains("email_not_confirmed") {
+                        errorMessage = "Please check your email and confirm your account before signing in. Check your spam folder if you don't see it."
+                    } else if errorDesc.contains("invalid login credentials") || errorDesc.contains("invalid") {
                         errorMessage = "Invalid email or password"
+                    } else {
+                        errorMessage = "Sign in failed. Please try again."
                     }
 
                     print("❌ Sign in failed: \(error.localizedDescription)")
@@ -286,15 +292,23 @@ struct ExistingUserSignInView: View {
                         }
                     }
                 } catch {
-                    await MainActor.run {
-                        // Check if this is a profileNotFound error
-                        if let authError = error as? AuthError, authError == .profileNotFound {
-                            errorMessage = "No account found. Please create an account first."
-                        } else {
-                            errorMessage = "Apple sign in failed"
-                        }
+                    // CRITICAL FIX: If profile not found, create account seamlessly
+                    if let authError = error as? AuthError, authError == .profileNotFound {
+                        print("🆕 No account found - creating new account with Apple ID")
+                        await createAccountWithApple(authorization)
+                    } else {
+                        await MainActor.run {
+                            // Check error type and provide helpful messages
+                            let errorDesc = error.localizedDescription.lowercased()
 
-                        print("❌ Apple sign in error: \(error.localizedDescription)")
+                            if errorDesc.contains("email not confirmed") || errorDesc.contains("email_not_confirmed") {
+                                errorMessage = "Please check your email and confirm your account before signing in. Check your spam folder if you don't see it."
+                            } else {
+                                errorMessage = "Apple sign in failed. Please try again."
+                            }
+
+                            print("❌ Apple sign in error: \(error.localizedDescription)")
+                        }
                     }
                 }
             }
@@ -302,6 +316,107 @@ struct ExistingUserSignInView: View {
         case .failure(let error):
             errorMessage = "Apple sign in cancelled"
             print("❌ Apple sign in error: \(error.localizedDescription)")
+        }
+    }
+
+    /// Create a new account using Apple ID when no profile exists
+    private func createAccountWithApple(_ authorization: ASAuthorization) async {
+        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            await MainActor.run {
+                errorMessage = "Failed to get Apple credentials"
+            }
+            return
+        }
+
+        guard let identityToken = appleIDCredential.identityToken,
+              let tokenString = String(data: identityToken, encoding: .utf8) else {
+            await MainActor.run {
+                errorMessage = "Failed to process Apple sign in"
+            }
+            return
+        }
+
+        do {
+            // Sign in with Apple to create auth user
+            let session = try await authService.supabase.auth.signInWithIdToken(
+                credentials: .init(
+                    provider: .apple,
+                    idToken: tokenString
+                )
+            )
+
+            await MainActor.run {
+                authService.isAuthenticated = true
+            }
+
+            let userId = session.user.id.uuidString
+
+            // Extract name from Apple ID credential (only available on first sign-in)
+            var fullName = "User"
+            if let givenName = appleIDCredential.fullName?.givenName,
+               let familyName = appleIDCredential.fullName?.familyName {
+                fullName = "\(givenName) \(familyName)".trimmingCharacters(in: .whitespaces)
+            } else if let givenName = appleIDCredential.fullName?.givenName {
+                fullName = givenName
+            }
+
+            // Get email or use Apple's private relay email
+            let email = appleIDCredential.email ?? session.user.email ?? "apple-user@icloud.com"
+
+            // Determine role from saved UserDefaults (set during role selection)
+            let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+            let role: UserRole = roleString == "child" ? .child : .parent
+
+            // Create profile in database
+            let newProfile = Profile(
+                id: userId,
+                email: email,
+                fullName: fullName.isEmpty ? nil : fullName,
+                role: roleString,
+                householdId: nil,
+                avatarUrl: nil,
+                age: nil,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+
+            try await authService.supabase
+                .from("profiles")
+                .insert(newProfile)
+                .execute()
+
+            print("✅ Created new profile with Apple ID: \(fullName)")
+
+            // Load the profile to get the full data
+            let loadedProfile = try await authService.loadProfile(userId: userId)
+
+            // If parent, create household
+            if role == .parent {
+                let household = try await HouseholdService.shared.createHousehold(
+                    name: "\(fullName)'s Family",
+                    createdBy: userId
+                )
+                print("✅ Household created: \(household.name)")
+
+                // Refresh profile to get household_id
+                try await authService.refreshCurrentProfile()
+            }
+
+            await MainActor.run {
+                // Link device to profile
+                linkDeviceToProfile(authService.currentProfile ?? newProfile)
+
+                print("✅ New Apple account created successfully")
+
+                // Continue with onboarding flow
+                onComplete()
+            }
+
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to create account: \(error.localizedDescription)"
+                print("❌ Failed to create Apple account: \(error)")
+            }
         }
     }
 

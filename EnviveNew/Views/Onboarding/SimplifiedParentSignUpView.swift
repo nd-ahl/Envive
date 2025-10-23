@@ -31,6 +31,10 @@ struct SimplifiedParentSignUpView: View {
     @State private var parentName = ""
     @State private var tempProfileAfterAppleSignup: Profile? = nil
 
+    // Email verification state
+    @State private var showingEmailVerification = false
+    @State private var signUpEmail = ""
+
     var body: some View {
         ZStack {
             // Gradient background
@@ -94,6 +98,13 @@ struct SimplifiedParentSignUpView: View {
         }
         .sheet(isPresented: $showingNamePrompt) {
             namePromptView
+        }
+        .fullScreenCover(isPresented: $showingEmailVerification) {
+            EmailVerificationView(email: signUpEmail) {
+                showingEmailVerification = false
+                // Navigate to sign-in
+                showingSignIn = true
+            }
         }
     }
 
@@ -330,16 +341,20 @@ struct SimplifiedParentSignUpView: View {
                 await MainActor.run {
                     isLoading = false
 
-                    // If existing user with household, skip family setup and complete onboarding
-                    if isExistingUser {
-                        print("✅ Existing user detected - skipping family setup")
-                        OnboardingManager.shared.completeSignIn()
-                        OnboardingManager.shared.completeFamilySetup()
-                        OnboardingManager.shared.completeOnboarding()
-                    } else {
-                        // New user - continue with normal flow (will go to family setup)
-                        onComplete()
+                    // CRITICAL FIX: Show email verification screen for new users
+                    // User must confirm their email before they can sign in again
+                    signUpEmail = email
+
+                    // CRITICAL FIX: Sign out WITHOUT clearing onboarding data
+                    // This prevents the app from jumping back to the welcome screen
+                    Task {
+                        try? await authService.signOutWithoutClearingOnboarding()
                     }
+
+                    // Show email verification instructions
+                    showingEmailVerification = true
+
+                    print("📧 Account created - user must verify email: \(email)")
                 }
             } catch {
                 await MainActor.run {
@@ -597,34 +612,42 @@ struct CustomTextFieldStyle: TextFieldStyle {
             .font(.system(size: 16, weight: .regular))
             .foregroundColor(.black) // Ensure text is always black on white background
             .accentColor(.blue) // Cursor color
-            .modifier(PlaceholderColorModifier())
+            .introspectTextField()
     }
 }
 
-// MARK: - Placeholder Color Fix for Dark Mode
+// MARK: - TextField Introspection for Placeholder Color
 
-struct PlaceholderColorModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                // CRITICAL FIX: Set placeholder text color to gray for visibility on white background
-                // This fixes the white-on-white placeholder text issue in dark mode
-                UITextField.appearance(whenContainedInInstancesOf: [UIHostingController<AnyView>.self]).attributedPlaceholder = nil
+extension View {
+    func introspectTextField() -> some View {
+        self.background(
+            TextFieldIntrospector()
+        )
+    }
+}
+
+struct TextFieldIntrospector: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isHidden = true
+        view.isUserInteractionEnabled = false
+
+        DispatchQueue.main.async {
+            // CRITICAL FIX: Set placeholder appearance without breaking functionality
+            // Only modify the appearance proxy, don't override UITextField methods
+            if let textField = view.superview?.superview?.subviews.compactMap({ $0 as? UITextField }).first {
+                // Set placeholder color to dark gray for visibility on white background
+                if let placeholder = textField.placeholder {
+                    textField.attributedPlaceholder = NSAttributedString(
+                        string: placeholder,
+                        attributes: [.foregroundColor: UIColor.darkGray]
+                    )
+                }
             }
-    }
-}
-
-// MARK: - UITextField Appearance Configuration
-
-extension UITextField {
-    open override func willMove(toWindow newWindow: UIWindow?) {
-        super.willMove(toWindow: newWindow)
-        // Set placeholder color to dark gray for visibility on white TextField background
-        if let placeholder = self.placeholder {
-            self.attributedPlaceholder = NSAttributedString(
-                string: placeholder,
-                attributes: [.foregroundColor: UIColor.darkGray]
-            )
         }
+
+        return view
     }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }

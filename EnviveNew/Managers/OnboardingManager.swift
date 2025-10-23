@@ -220,6 +220,8 @@ class OnboardingManager: ObservableObject {
         hasCompletedWelcome = true
         hasCompletedQuestions = true
         hasCompletedRoleConfirmation = true
+        hasCompletedRoleSelection = true  // CRITICAL FIX: Include refined flow flags
+        hasCompletedLegalAgreement = true // CRITICAL FIX: Include refined flow flags
         hasCompletedHouseholdSelection = true
         hasCompletedSignIn = true
         hasCompletedNameEntry = true
