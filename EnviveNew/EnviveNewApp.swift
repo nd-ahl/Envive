@@ -8,6 +8,8 @@
 import SwiftUI
 import CoreData
 import FamilyControls
+import Supabase
+import Auth
 
 @main
 struct EnviveNewApp: App {
@@ -248,9 +250,12 @@ struct EnviveNewApp: App {
                         }
                     )
                 } else {
-                    // Main app - legal consent already handled in refined onboarding flow
+                    // Main app with loading screen - refreshes data on every launch
+                    // Legal consent already handled in refined onboarding flow
                     // (Users accept terms in LegalAgreementView during onboarding)
-                    RootNavigationView()
+                    AppLoadingCoordinator {
+                        RootNavigationView()
+                    }
                 }
             }
             .environment(\.managedObjectContext, persistenceController.container.viewContext)

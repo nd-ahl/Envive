@@ -63,6 +63,8 @@ class TaskServiceImpl: TaskService {
     private let xpService: XPService
     private let credibilityService: CredibilityService
     private let householdContext = HouseholdContext.shared
+    private let notificationService = NotificationServiceImpl()
+    private let deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
     private var badgeService: BadgeService?
 
     init(repository: TaskRepository, xpService: XPService, credibilityService: CredibilityService) {
@@ -140,7 +142,15 @@ class TaskServiceImpl: TaskService {
         // Process daily streak when task is uploaded
         credibilityService.processTaskUpload(taskId: assignment.id, childId: assignment.childId)
 
-        // TODO: Send notification to parent
+        // Send notification to parent
+        if let childProfile = deviceModeManager.getProfile(byId: assignment.childId) {
+            let childName = childProfile.name
+            notificationService.sendTaskPendingReviewNotification(
+                childName: childName,
+                taskTitle: assignment.title,
+                xpReward: assignment.assignedLevel.baseXP
+            )
+        }
 
         return true
     }
@@ -157,7 +167,16 @@ class TaskServiceImpl: TaskService {
         )
         repository.saveAssignment(assignment)
 
-        // TODO: Send notification to child
+        // Send notification to child
+        if let childProfile = deviceModeManager.getProfile(byId: childId) {
+            let childName = childProfile.name
+            notificationService.sendTaskAssignedNotification(
+                childName: childName,
+                taskTitle: assignment.title,
+                difficulty: level.displayName,
+                xpReward: level.baseXP
+            )
+        }
 
         return assignment
     }

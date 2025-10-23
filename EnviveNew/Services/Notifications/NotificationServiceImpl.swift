@@ -71,9 +71,29 @@ final class NotificationServiceImpl: NSObject, ObservableObject, UNUserNotificat
             options: []
         )
 
+        let taskAssignedCategory = UNNotificationCategory(
+            identifier: "TASK_ASSIGNED",
+            actions: [
+                UNNotificationAction(identifier: "VIEW_TASK", title: "View Task", options: [.foreground])
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        let taskPendingReviewCategory = UNNotificationCategory(
+            identifier: "TASK_PENDING_REVIEW",
+            actions: [
+                UNNotificationAction(identifier: "REVIEW_TASK", title: "Review Now", options: [.foreground])
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+
         notificationCenter.setNotificationCategories([
             taskCompletedCategory,
-            friendRequestCategory
+            friendRequestCategory,
+            taskAssignedCategory,
+            taskPendingReviewCategory
         ])
     }
 
@@ -214,6 +234,74 @@ final class NotificationServiceImpl: NSObject, ObservableObject, UNUserNotificat
         )
 
         notificationCenter.add(request)
+    }
+
+    // MARK: - Task Notifications
+
+    func sendTaskAssignedNotification(childName: String, taskTitle: String, difficulty: String, xpReward: Int) {
+        guard hasPermission else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "New Task Assigned! 📋"
+        content.body = "\(taskTitle) • \(difficulty) • \(xpReward) XP"
+        content.sound = .default
+        content.categoryIdentifier = "TASK_ASSIGNED"
+        content.badge = 1
+
+        content.userInfo = [
+            "type": "task_assigned",
+            "child": childName,
+            "task": taskTitle,
+            "xp": xpReward
+        ]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: trigger
+        )
+
+        notificationCenter.add(request) { error in
+            if let error = error {
+                print("❌ Error sending task assigned notification: \(error)")
+            } else {
+                print("✅ Task assigned notification sent to \(childName)")
+            }
+        }
+    }
+
+    func sendTaskPendingReviewNotification(childName: String, taskTitle: String, xpReward: Int) {
+        guard hasPermission else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "\(childName) completed a task! ✅"
+        content.body = "\(taskTitle) is pending your approval • \(xpReward) XP"
+        content.sound = .default
+        content.categoryIdentifier = "TASK_PENDING_REVIEW"
+        content.badge = 1
+
+        content.userInfo = [
+            "type": "task_pending_review",
+            "child": childName,
+            "task": taskTitle,
+            "xp": xpReward
+        ]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: trigger
+        )
+
+        notificationCenter.add(request) { error in
+            if let error = error {
+                print("❌ Error sending task pending review notification: \(error)")
+            } else {
+                print("✅ Task pending review notification sent for \(childName)")
+            }
+        }
     }
 
     // MARK: - Badge Management

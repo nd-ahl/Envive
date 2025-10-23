@@ -206,10 +206,10 @@ struct BadgeTierCount: View {
 
     private var tierColor: Color {
         switch tier {
-        case .bronze: return .brown
-        case .silver: return .gray
-        case .gold: return .yellow
-        case .platinum: return .cyan
+        case .bronze: return Color(red: 0.8, green: 0.5, blue: 0.2)  // Rich bronze
+        case .silver: return Color(red: 0.75, green: 0.75, blue: 0.75)  // Shiny silver
+        case .gold: return Color(red: 1.0, green: 0.84, blue: 0.0)  // Bright gold
+        case .platinum: return Color(red: 0.5, green: 0.8, blue: 0.9)  // Bright cyan/platinum
         }
     }
 }
@@ -224,21 +224,85 @@ struct BadgeCard: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Badge Icon
+            // Badge Icon with tier border
             ZStack {
+                // Outer glow for earned badges
+                if isEarned {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [badgeColor.opacity(0.3), badgeColor.opacity(0.1)],
+                                center: .center,
+                                startRadius: 20,
+                                endRadius: 35
+                            )
+                        )
+                        .frame(width: 70, height: 70)
+                }
+
+                // Badge background
                 Circle()
-                    .fill(badgeColor.opacity(isEarned ? 0.2 : 0.05))
+                    .fill(isEarned ? badgeColor.opacity(0.25) : Color(.systemGray6))
                     .frame(width: 60, height: 60)
 
+                // Tier border for earned badges
+                if isEarned {
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [badgeColor, badgeColor.opacity(0.5)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 3
+                        )
+                        .frame(width: 60, height: 60)
+                }
+
+                // Icon
                 Image(systemName: badgeType.icon)
                     .font(.title2)
-                    .foregroundColor(isEarned ? badgeColor : .gray)
+                    .foregroundColor(isEarned ? badgeColor : Color(.systemGray3))
+                    .fontWeight(isEarned ? .bold : .regular)
+
+                // Checkmark overlay for earned badges
+                if isEarned {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .background(
+                                    Circle()
+                                        .fill(.green)
+                                        .frame(width: 18, height: 18)
+                                )
+                                .offset(x: 8, y: 8)
+                        }
+                    }
+                    .frame(width: 60, height: 60)
+                }
+            }
+            .frame(height: 70)
+
+            // Tier indicator
+            HStack(spacing: 4) {
+                Image(systemName: "medal.fill")
+                    .font(.caption2)
+                    .foregroundColor(isEarned ? badgeColor : .secondary)
+                Text(badgeType.tier.displayName)
+                    .font(.caption2)
+                    .fontWeight(isEarned ? .semibold : .regular)
+                    .foregroundColor(isEarned ? badgeColor : .secondary)
             }
 
             // Badge Name
             Text(badgeType.displayName)
                 .font(.caption)
-                .fontWeight(.semibold)
+                .fontWeight(isEarned ? .bold : .medium)
+                .foregroundColor(isEarned ? .primary : .secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .frame(height: 32)
@@ -254,25 +318,38 @@ struct BadgeCard: View {
                         .foregroundColor(.secondary)
                 }
             } else if isEarned {
-                Text("+\(badgeType.bonusXP) XP")
-                    .font(.caption2)
-                    .fontWeight(.medium)
-                    .foregroundColor(.green)
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                        .font(.caption2)
+                        .foregroundColor(.yellow)
+                    Text("+\(badgeType.bonusXP) XP")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.green)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.green.opacity(0.15))
+                .cornerRadius(8)
             }
         }
         .padding(12)
-        .background(Color(.systemBackground))
+        .background(isEarned ? Color(.systemBackground) : Color(.systemGray6).opacity(0.5))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(isEarned ? 0.1 : 0.03), radius: 3)
-        .opacity(isEarned ? 1.0 : 0.6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isEarned ? badgeColor.opacity(0.3) : Color.clear, lineWidth: 2)
+        )
+        .shadow(color: isEarned ? badgeColor.opacity(0.3) : Color.black.opacity(0.05), radius: isEarned ? 8 : 3, x: 0, y: isEarned ? 4 : 1)
+        .scaleEffect(isEarned ? 1.0 : 0.95)
     }
 
     private var badgeColor: Color {
         switch badgeType.tier {
-        case .bronze: return .brown
-        case .silver: return .gray
-        case .gold: return .yellow
-        case .platinum: return .cyan
+        case .bronze: return Color(red: 0.8, green: 0.5, blue: 0.2)  // Rich bronze
+        case .silver: return Color(red: 0.75, green: 0.75, blue: 0.75)  // Shiny silver
+        case .gold: return Color(red: 1.0, green: 0.84, blue: 0.0)  // Bright gold
+        case .platinum: return Color(red: 0.5, green: 0.8, blue: 0.9)  // Bright cyan/platinum
         }
     }
 }

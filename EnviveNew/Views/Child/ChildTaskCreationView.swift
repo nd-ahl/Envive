@@ -3,18 +3,31 @@ import SwiftUI
 // MARK: - Child Task Creation View
 
 /// Main view for children to browse task library and create/claim tasks
+/// Updated to match parent task selector UI with two-step flow
 struct ChildTaskCreationView: View {
     @Environment(\.dismiss) var dismiss
     let childId: UUID
     let taskService: TaskService
 
+    // Task selection state
     @State private var searchText = ""
     @State private var selectedCategory: TaskTemplateCategory? = nil
-    @State private var showClaimSheet = false
-    @State private var showCreateSheet = false
     @State private var selectedTemplate: TaskTemplate? = nil
+    @State private var showingCustomTask: Bool = false
     @State private var allTemplates: [TaskTemplate] = []
     @State private var isLoading = true
+
+    // Task customization (after selection)
+    @State private var selectedLevel: TaskLevel = .level3
+
+    // Custom task fields
+    @State private var customTitle: String = ""
+    @State private var customDescription: String = ""
+    @State private var customCategory: TaskTemplateCategory = .other
+
+    // UI state
+    @State private var showingSuccessAlert = false
+    @State private var claimedTaskTitle: String = ""
 
     private var filteredTemplates: [TaskTemplate] {
         var templates = allTemplates
@@ -36,135 +49,480 @@ struct ChildTaskCreationView: View {
         return templates
     }
 
+    private var canClaim: Bool {
+        if showingCustomTask {
+            return !customTitle.isEmpty && !customDescription.isEmpty
+        } else {
+            return selectedTemplate != nil
+        }
+    }
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
-                // Search Bar
+                if selectedTemplate == nil && !showingCustomTask {
+                    // STEP 1: Task Selection (Search & Browse)
+                    taskSelectionView
+                } else {
+                    // STEP 2: Difficulty Adjustment & Claim
+                    taskConfirmationView
+                }
+            }
+            .navigationTitle("Task Library")
+            .navigationBarTitleDisplayMode(.large)
+            .background(Color(.systemGroupedBackground))
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        if selectedTemplate != nil || showingCustomTask {
+                            // Go back to selection
+                            selectedTemplate = nil
+                            showingCustomTask = false
+                        } else {
+                            dismiss()
+                        }
+                    }
+                }
+
+                if selectedTemplate != nil || showingCustomTask {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Claim Task") {
+                            claimTask()
+                        }
+                        .fontWeight(.bold)
+                        .disabled(!canClaim)
+                    }
+                }
+            }
+            .onAppear {
+                loadTemplates()
+            }
+            .alert("Task Claimed!", isPresented: $showingSuccessAlert) {
+                Button("Done") {
+                    dismiss()
+                }
+                Button("Claim Another") {
+                    resetForm()
+                }
+            } message: {
+                Text("'\(claimedTaskTitle)' has been added to your tasks for \(selectedLevel.baseXP) XP!")
+            }
+        }
+    }
+
+    // MARK: - STEP 1: Task Selection View
+
+    private var taskSelectionView: some View {
+        VStack(spacing: 0) {
+            // Search bar
+            VStack(spacing: 12) {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
+
                     TextField("Search tasks...", text: $searchText)
+                        .textFieldStyle(.plain)
+
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
                 .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
-                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
 
-                // Category Filter (Horizontal Scroll)
+                // Category filter chips with Custom Task option
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        // "All" button
-                        CategoryFilterButton(
-                            title: "All",
+                    HStack(spacing: 8) {
+                        // Custom Task chip - first position, stands out
+                        Button(action: {
+                            showingCustomTask = true
+                            selectedLevel = .level3
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.caption)
+                                Text("Custom")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.purple)
+                            .foregroundColor(.white)
+                            .cornerRadius(20)
+                        }
+                        .buttonStyle(.plain)
+
+                        CategoryChip(
+                            title: "All Tasks",
                             icon: "square.grid.2x2",
-                            isSelected: selectedCategory == nil
+                            isSelected: selectedCategory == nil,
+                            count: allTemplates.count
                         ) {
                             selectedCategory = nil
                         }
 
-                        // Category buttons
                         ForEach(TaskTemplateCategory.allCases) { category in
-                            CategoryFilterButton(
+                            let count = allTemplates.filter { $0.category == category }.count
+                            CategoryChip(
                                 title: category.rawValue,
                                 icon: category.icon,
-                                isSelected: selectedCategory == category
+                                isSelected: selectedCategory == category,
+                                count: count
                             ) {
                                 selectedCategory = category
                             }
                         }
                     }
-                    .padding(.horizontal)
                 }
-                .padding(.bottom, 8)
+            }
+            .padding()
 
-                // Task Count
-                HStack {
-                    Text("\(filteredTemplates.count) tasks")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+            Divider()
 
-                // Task List
-                ScrollView {
-                    if isLoading {
-                        // Loading state
-                        VStack(spacing: 20) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                            Text("Loading tasks...")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.top, 100)
-                    } else {
-                        LazyVStack(spacing: 12) {
+            // Task list
+            ScrollView {
+                if isLoading {
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Loading tasks...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 100)
+                } else {
+                    LazyVStack(spacing: 12) {
+                        if filteredTemplates.isEmpty {
+                            emptySearchView
+                                .padding(.top, 60)
+                        } else {
                             ForEach(filteredTemplates) { template in
-                                TaskTemplateCard(template: template) {
-                                    selectedTemplate = template
-                                    showClaimSheet = true
-                                }
+                                TaskTemplateCard(
+                                    template: template,
+                                    onSelect: {
+                                        selectedTemplate = template
+                                        selectedLevel = template.suggestedLevel
+                                    }
+                                )
                             }
                         }
-                        .padding()
                     }
+                    .padding()
                 }
-            }
-            .navigationTitle("Task Library")
-            .navigationBarTitleDisplayMode(.large)
-            .onAppear {
-                loadTemplates()
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showCreateSheet = true
-                    }) {
-                        Label("Create Custom", systemImage: "plus.circle.fill")
-                    }
-                }
-            }
-            .sheet(isPresented: $showClaimSheet) {
-                if let template = selectedTemplate {
-                    ClaimTaskSheet(
-                        template: template,
-                        childId: childId,
-                        taskService: taskService,
-                        onClaim: {
-                            dismiss()
-                        }
-                    )
-                }
-            }
-            .sheet(isPresented: $showCreateSheet) {
-                CreateCustomTaskSheet(
-                    childId: childId,
-                    taskService: taskService,
-                    onCreate: {
-                        dismiss()
-                    }
-                )
             }
         }
     }
 
-    // MARK: - Load Templates
+    private var emptySearchView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+
+            Text("No tasks found")
+                .font(.headline)
+
+            Text("Try a different search or category")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Button("Clear Search") {
+                searchText = ""
+                selectedCategory = nil
+            }
+            .buttonStyle(.bordered)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - STEP 2: Task Confirmation View
+
+    private var taskConfirmationView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Selected task preview
+                selectedTaskPreview
+
+                // Difficulty adjustment
+                difficultyAdjustmentSection
+
+                // Claim summary
+                claimSummary
+            }
+            .padding()
+        }
+    }
+
+    private var selectedTaskPreview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Selected Task")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button(action: {
+                    selectedTemplate = nil
+                    showingCustomTask = false
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.left")
+                        Text("Change")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+                }
+            }
+
+            if showingCustomTask {
+                VStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Task Name")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        TextField("Enter task name", text: $customTitle)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Description")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        TextEditor(text: $customDescription)
+                            .frame(height: 80)
+                            .padding(8)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Category")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Menu {
+                            ForEach(TaskTemplateCategory.allCases) { category in
+                                Button(action: { customCategory = category }) {
+                                    HStack {
+                                        Text(category.icon)
+                                        Text(category.rawValue)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(customCategory.icon)
+                                Text(customCategory.rawValue)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                            }
+                            .foregroundColor(.primary)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+            } else if let template = selectedTemplate {
+                HStack(spacing: 12) {
+                    Text(template.category.icon)
+                        .font(.title)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(template.title)
+                            .font(.headline)
+
+                        Text(template.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+                }
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+
+    private var difficultyAdjustmentSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Choose Your Level")
+                        .font(.title3)
+                        .fontWeight(.bold)
+
+                    if let template = selectedTemplate {
+                        Text("Suggested: \(template.suggestedLevel.displayName)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+
+            Text("Select the difficulty level for this task. Higher levels earn more screen time!")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // Compact difficulty selector
+            VStack(spacing: 10) {
+                ForEach(TaskLevel.allCases) { level in
+                    CompactDifficultyRow(
+                        level: level,
+                        isSelected: selectedLevel == level,
+                        isSuggested: selectedTemplate?.suggestedLevel == level,
+                        onSelect: { selectedLevel = level }
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+
+    private var claimSummary: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Ready to Claim")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Spacer()
+            }
+
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Task")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(showingCustomTask ? customTitle : (selectedTemplate?.title ?? ""))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                }
+
+                HStack {
+                    Text("Difficulty")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(selectedLevel.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+
+                Divider()
+
+                // XP Reward - Large and prominent
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("You'll Earn")
+                            .font(.headline)
+                        Text("Screen time reward")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(selectedLevel.baseXP)")
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundColor(.green)
+                        Text("XP = \(selectedLevel.baseXP) min")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(Color.green.opacity(0.1))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.green.opacity(0.3), lineWidth: 2)
+        )
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+
+    // MARK: - Actions
+
+    private func claimTask() {
+        let template: TaskTemplate
+
+        if showingCustomTask {
+            // Create custom template
+            template = TaskTemplate(
+                title: customTitle,
+                description: customDescription,
+                category: customCategory,
+                suggestedLevel: selectedLevel,
+                estimatedMinutes: selectedLevel.baseXP,
+                isDefault: false,
+                createdBy: childId
+            )
+        } else if let selected = selectedTemplate {
+            template = selected
+        } else {
+            return
+        }
+
+        // Claim the task (assign to self)
+        let assignment = taskService.claimTask(
+            template: template,
+            childId: childId,
+            level: selectedLevel
+        )
+
+        print("✅ Child claimed task: \(assignment.title) for \(selectedLevel.baseXP) XP")
+
+        // Play haptic feedback
+        HapticFeedbackManager.shared.taskAssigned()
+
+        claimedTaskTitle = template.title
+        showingSuccessAlert = true
+    }
+
+    private func resetForm() {
+        selectedTemplate = nil
+        showingCustomTask = false
+        selectedLevel = .level3
+        customTitle = ""
+        customDescription = ""
+        customCategory = .other
+        searchText = ""
+        selectedCategory = nil
+    }
 
     private func loadTemplates() {
-        // Load templates on main thread to ensure UI updates properly
         DispatchQueue.main.async {
             isLoading = true
-            // Small delay to ensure view is ready
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                // Load templates from repository (includes default + custom)
                 allTemplates = taskService.getAllTemplates()
                 isLoading = false
                 print("✅ Loaded \(allTemplates.count) task templates")
@@ -173,408 +531,14 @@ struct ChildTaskCreationView: View {
     }
 }
 
-// MARK: - Category Filter Button
+// MARK: - Preview
+// Note: CategoryChip, TaskTemplateCard, and CompactDifficultyRow are reused from AssignTaskView.swift
 
-private struct CategoryFilterButton: View {
-    let title: String
-    let icon: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if icon.contains(".") {
-                    // SF Symbol
-                    Image(systemName: icon)
-                        .font(.caption)
-                } else {
-                    // Emoji
-                    Text(icon)
-                        .font(.caption)
-                }
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isSelected ? Color.blue : Color(.systemGray6))
-            .foregroundColor(isSelected ? .white : .primary)
-            .cornerRadius(20)
-        }
-    }
-}
-
-// MARK: - Task Template Card
-
-private struct TaskTemplateCard: View {
-    let template: TaskTemplate
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Icon
-                Text(template.category.icon)
-                    .font(.title2)
-                    .frame(width: 50, height: 50)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(10)
-
-                // Info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(template.title)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.leading)
-
-                    Text(template.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
-                    HStack(spacing: 8) {
-                        // Suggested Level
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.caption2)
-                            Text(template.suggestedLevel.displayName)
-                                .font(.caption2)
-                        }
-                        .foregroundColor(.orange)
-
-                        // Time estimate
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .font(.caption2)
-                            Text("~\(template.estimatedMinutes) min")
-                                .font(.caption2)
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
-        }
-    }
-}
-
-// MARK: - Claim Task Sheet
-
-struct ClaimTaskSheet: View {
-    @Environment(\.dismiss) var dismiss
-    let template: TaskTemplate
-    let childId: UUID
-    let taskService: TaskService
-    let onClaim: () -> Void
-
-    @State private var selectedLevel: TaskLevel
-    @State private var showSuccessAlert = false
-    @State private var isViewReady = false
-
-    init(template: TaskTemplate, childId: UUID, taskService: TaskService, onClaim: @escaping () -> Void) {
-        self.template = template
-        self.childId = childId
-        self.taskService = taskService
-        self.onClaim = onClaim
-        _selectedLevel = State(initialValue: template.suggestedLevel)
-    }
-
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                if isViewReady {
-                    VStack(spacing: 24) {
-                    // Task Header
-                    VStack(spacing: 12) {
-                        Text(template.category.icon)
-                            .font(.system(size: 60))
-
-                        Text(template.title)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .multilineTextAlignment(.center)
-
-                        Text(template.category.rawValue)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-
-                        Text(template.description)
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
-                    .padding()
-
-                    Divider()
-
-                    // Task Info
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Task Details", systemImage: "info.circle.fill")
-                            .font(.headline)
-
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Estimated Time")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("~\(template.estimatedMinutes) min")
-                                    .font(.body)
-                                    .fontWeight(.medium)
-                            }
-
-                            Spacer()
-
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text("Suggested Level")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text(template.suggestedLevel.displayName)
-                                    .font(.body)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal)
-
-                    Divider()
-
-                    // Level Selection
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Choose Your Level", systemImage: "star.fill")
-                            .font(.headline)
-
-                        Text("Select the difficulty level for this task. This determines the screen time you'll earn.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Picker("Level", selection: $selectedLevel) {
-                            ForEach(TaskLevel.allCases) { level in
-                                Text(level.displayName).tag(level)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        // XP Preview
-                        HStack {
-                            Text("You'll earn:")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("\(selectedLevel.baseXP) minutes")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(.green)
-                        }
-                        .padding()
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(8)
-                    }
-                    .padding(.horizontal)
-
-                    Spacer(minLength: 40)
-                }
-                .padding(.vertical)
-                } else {
-                    // Loading state
-                    VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Loading task details...")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.top, 100)
-                }
-            }
-            .navigationTitle("Claim Task")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    isViewReady = true
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Add to My Tasks") {
-                        claimTask()
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-            .alert("Task Added!", isPresented: $showSuccessAlert) {
-                Button("OK") {
-                    // Dismiss the claim sheet first
-                    dismiss()
-                    // Then call onClaim to dismiss the parent view
-                    // Small delay to ensure smooth animation
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        onClaim()
-                    }
-                }
-            } message: {
-                Text("\(template.title) has been added to your tasks!")
-            }
-        }
-    }
-
-    private func claimTask() {
-        let assignment = taskService.claimTask(template: template, childId: childId, level: selectedLevel)
-        print("✅ Child claimed task: \(assignment.title) at level \(selectedLevel.displayName)")
-        showSuccessAlert = true
-    }
-}
-
-// MARK: - Create Custom Task Sheet
-
-struct CreateCustomTaskSheet: View {
-    @Environment(\.dismiss) var dismiss
-    let childId: UUID
-    let taskService: TaskService
-    let onCreate: () -> Void
-
-    @State private var taskTitle = ""
-    @State private var taskDescription = ""
-    @State private var selectedCategory: TaskTemplateCategory = .other
-    @State private var selectedLevel: TaskLevel = .level2
-    @State private var estimatedMinutes: Int = 30
-    @State private var showSuccessAlert = false
-    @State private var showValidationError = false
-
-    var isValid: Bool {
-        !taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !taskDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        NavigationView {
-            Form {
-                Section("Task Details") {
-                    TextField("Task title", text: $taskTitle)
-                    TextField("Description", text: $taskDescription, axis: .vertical)
-                        .lineLimit(3...6)
-                }
-
-                Section("Category") {
-                    Picker("Category", selection: $selectedCategory) {
-                        ForEach(TaskTemplateCategory.allCases) { category in
-                            HStack {
-                                Text(category.icon)
-                                Text(category.rawValue)
-                            }
-                            .tag(category)
-                        }
-                    }
-                }
-
-                Section("Level & Time") {
-                    Picker("Task Level", selection: $selectedLevel) {
-                        ForEach(TaskLevel.allCases) { level in
-                            Text(level.displayName).tag(level)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    HStack {
-                        Text("You'll earn:")
-                        Spacer()
-                        Text("\(selectedLevel.baseXP) minutes")
-                            .fontWeight(.bold)
-                            .foregroundColor(.green)
-                    }
-
-                    Stepper("Estimated time: \(estimatedMinutes) min", value: $estimatedMinutes, in: 5...180, step: 5)
-                        .font(.subheadline)
-                }
-
-                Section {
-                    Text("Your custom task will be submitted for parent approval once you complete it with photo proof.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .navigationTitle("Create Custom Task")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Create Task") {
-                        if isValid {
-                            createCustomTask()
-                        } else {
-                            showValidationError = true
-                        }
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-            .alert("Task Created!", isPresented: $showSuccessAlert) {
-                Button("OK") {
-                    // Dismiss the create sheet first
-                    dismiss()
-                    // Then call onCreate to dismiss the parent view
-                    // Small delay to ensure smooth animation
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        onCreate()
-                    }
-                }
-            } message: {
-                Text("\(taskTitle) has been added to your tasks!")
-            }
-            .alert("Missing Information", isPresented: $showValidationError) {
-                Button("OK") {}
-            } message: {
-                Text("Please provide a title and description for your task.")
-            }
-        }
-    }
-
-    private func createCustomTask() {
-        // Create a custom template
-        let customTemplate = TaskTemplate(
-            title: taskTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-            description: taskDescription.trimmingCharacters(in: .whitespacesAndNewlines),
-            category: selectedCategory,
-            suggestedLevel: selectedLevel,
-            estimatedMinutes: estimatedMinutes,
-            tags: ["custom", "child-created"],
-            isDefault: false,
-            createdBy: childId  // Track which child created it
+struct ChildTaskCreationView_Previews: PreviewProvider {
+    static var previews: some View {
+        ChildTaskCreationView(
+            childId: UUID(),
+            taskService: DependencyContainer.shared.taskService
         )
-
-        // Save the template to the library for future use
-        taskService.saveTemplate(customTemplate)
-
-        // Claim the custom template as an assignment
-        let assignment = taskService.claimTask(template: customTemplate, childId: childId, level: selectedLevel)
-        print("✅ Child created custom task: \(assignment.title) at level \(selectedLevel.displayName)")
-        print("💾 Template saved to task library for future use")
-        showSuccessAlert = true
     }
 }

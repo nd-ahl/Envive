@@ -130,30 +130,43 @@ enum BadgeType: String, Codable, CaseIterable {
     }
 
     var bonusXP: Int {
+        // XP rewards scale by badge tier:
+        // Bronze: 25-100 XP (common, starter achievements)
+        // Silver: 150-400 XP (moderate achievements)
+        // Gold: 500-1500 XP (difficult achievements)
+        // Platinum: 2000-10000 XP (rare, exceptional achievements)
+
         switch self {
-        case .firstAppOpen: return 10
-        case .profileComplete: return 25
-        case .firstTaskComplete: return 50
-        case .tasksNovice: return 100
-        case .tasksApprentice: return 500
-        case .tasksExpert: return 2000
-        case .tasksMaster: return 10000
-        case .perfectWeek: return 1000
-        case .xpBeginner: return 50
-        case .xpIntermediate: return 500
-        case .xpAdvanced: return 5000
-        case .xpMaster: return 50000
-        case .trustworthy: return 500
-        case .reliable: return 2000
-        case .exemplary: return 5000
-        case .streak3: return 150
-        case .streak7: return 350
-        case .streak30: return 1500
-        case .streak100: return 10000
-        case .earlyBird: return 100
-        case .nightOwl: return 100
+        // BRONZE TIER (25-100 XP) - Common, Getting Started
+        case .firstAppOpen: return 25
+        case .profileComplete: return 50
+        case .firstTaskComplete: return 75
+        case .tasksNovice: return 100          // 5 tasks
+        case .xpBeginner: return 75            // 100 XP earned
+        case .streak3: return 100              // 3 day streak
+        case .earlyBird: return 50
+        case .nightOwl: return 50
+
+        // SILVER TIER (150-400 XP) - Moderate Achievements
+        case .tasksApprentice: return 250      // 25 tasks
+        case .xpIntermediate: return 300       // 1,000 XP earned
+        case .trustworthy: return 350          // 90+ credibility for 7 days
+        case .streak7: return 400              // 7 day streak
         case .speedDemon: return 200
-        case .overachiever: return 500
+
+        // GOLD TIER (500-1500 XP) - Difficult Achievements
+        case .tasksExpert: return 800          // 100 tasks
+        case .xpAdvanced: return 1000          // 10,000 XP earned
+        case .reliable: return 1200            // 95+ credibility for 30 days
+        case .streak30: return 1500            // 30 day streak
+        case .overachiever: return 600         // 10 tasks in one day
+
+        // PLATINUM TIER (2000-10000 XP) - Rare, Exceptional Achievements
+        case .tasksMaster: return 5000         // 500 tasks
+        case .xpMaster: return 10000           // 100,000 XP earned
+        case .exemplary: return 3000           // 98+ credibility for 90 days
+        case .perfectWeek: return 2000         // Perfect week
+        case .streak100: return 8000           // 100 day streak
         }
     }
 

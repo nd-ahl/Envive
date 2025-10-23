@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Assign Task View
 
 /// Parent interface for assigning tasks to children
+/// UX Flow: 1) Search/Browse tasks, 2) Select task, 3) Adjust difficulty, 4) Assign
 struct AssignTaskView: View {
     let taskService: TaskService
     let parentId: UUID
@@ -11,11 +12,13 @@ struct AssignTaskView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    // View state
-    @State private var creationMode: TaskCreationMode = .fromTemplate
+    // Task selection state
     @State private var searchQuery: String = ""
     @State private var selectedCategory: TaskTemplateCategory? = nil
     @State private var selectedTemplate: TaskTemplate? = nil
+    @State private var showingCustomTask: Bool = false
+
+    // Task customization (after selection)
     @State private var selectedLevel: TaskLevel = .level3
     @State private var dueDate: Date? = nil
     @State private var hasDueDate: Bool = false
@@ -56,7 +59,7 @@ struct AssignTaskView: View {
     }
 
     private var canAssign: Bool {
-        if creationMode == .custom {
+        if showingCustomTask {
             return !customTitle.isEmpty && !customDescription.isEmpty
         } else {
             return selectedTemplate != nil
@@ -65,37 +68,23 @@ struct AssignTaskView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header
-                    headerSection
+            VStack(spacing: 0) {
+                // Header: Who we're assigning to
+                assigningToHeader
+                    .padding()
+                    .background(Color(.systemGroupedBackground))
 
-                    // Creation mode toggle
-                    creationModeSelector
-
-                    if creationMode == .fromTemplate {
-                        // Template search and selection
-                        templateSearchSection
-                        categoryFilterSection
-                        templateListSection
-                    } else {
-                        // Custom task creation
-                        customTaskSection
-                    }
-
-                    // Difficulty selector
-                    difficultySection
-
-                    // Due date selector
-                    dueDateSection
-
-                    // Summary and assign button
-                    summarySection
+                if selectedTemplate == nil && !showingCustomTask {
+                    // STEP 1: Task Selection (Search & Browse)
+                    taskSelectionView
+                } else {
+                    // STEP 2: Difficulty Adjustment & Confirmation
+                    taskConfirmationView
                 }
-                .padding()
             }
             .navigationTitle("Assign Task")
             .navigationBarTitleDisplayMode(.large)
+            .background(Color(.systemGroupedBackground))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
@@ -103,12 +92,14 @@ struct AssignTaskView: View {
                     }
                 }
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Assign") {
-                        assignTask()
+                if selectedTemplate != nil || showingCustomTask {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Assign") {
+                            assignTask()
+                        }
+                        .fontWeight(.bold)
+                        .disabled(!canAssign)
                     }
-                    .fontWeight(.semibold)
-                    .disabled(!canAssign)
                 }
             }
             .alert("Task Assigned!", isPresented: $showingConfirmation) {
@@ -134,282 +125,347 @@ struct AssignTaskView: View {
         }
     }
 
-    // MARK: - Header Section
+    // MARK: - Assigning To Header
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+    private var assigningToHeader: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.15))
+                    .frame(width: 44, height: 44)
+
                 Image(systemName: selectedChildren.count == 1 ? "person.circle.fill" : "person.2.fill")
-                    .font(.title2)
+                    .font(.title3)
                     .foregroundColor(.blue)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Assigning to:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    if selectedChildren.count == 1 {
-                        Text(selectedChildren[0].name)
-                            .font(.headline)
-                    } else {
-                        Text("\(selectedChildren.count) children")
-                            .font(.headline)
-                    }
-                }
-
-                Spacer()
             }
 
-            if selectedChildren.count > 1 {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(selectedChildren, id: \.id) { child in
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text(child.name)
-                                .font(.subheadline)
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Assigning to:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if selectedChildren.count == 1 {
+                    Text(selectedChildren[0].name)
+                        .font(.headline)
+                } else {
+                    Text("\(selectedChildren.count) children")
+                        .font(.headline)
                 }
-                .padding(.top, 4)
+            }
+
+            Spacer()
+
+            // Step indicator
+            if selectedTemplate != nil || showingCustomTask {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Image(systemName: "2.circle.fill")
+                        .foregroundColor(.blue)
+                }
+                .font(.caption)
             }
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 
-    // MARK: - Creation Mode Selector
+    // MARK: - STEP 1: Task Selection View
 
-    private var creationModeSelector: some View {
-        Picker("Task Source", selection: $creationMode) {
-            Text("Browse Templates").tag(TaskCreationMode.fromTemplate)
-            Text("Create Custom").tag(TaskCreationMode.custom)
-        }
-        .pickerStyle(.segmented)
-    }
+    private var taskSelectionView: some View {
+        VStack(spacing: 0) {
+            // Search bar
+            VStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
 
-    // MARK: - Template Search Section
+                    TextField("Search tasks...", text: $searchQuery)
+                        .textFieldStyle(.plain)
 
-    private var templateSearchSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
+                    if !searchQuery.isEmpty {
+                        Button(action: { searchQuery = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
 
-                TextField("Search tasks...", text: $searchQuery)
-                    .textFieldStyle(.plain)
+                // Category filter chips with Custom Task option
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        // Custom Task chip - first position, stands out
+                        Button(action: {
+                            showingCustomTask = true
+                            selectedLevel = .level3
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.caption)
+                                Text("Custom")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.purple)
+                            .foregroundColor(.white)
+                            .cornerRadius(20)
+                        }
+                        .buttonStyle(.plain)
 
-                if !searchQuery.isEmpty {
-                    Button(action: { searchQuery = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+                        CategoryChip(
+                            title: "All Tasks",
+                            icon: "square.grid.2x2",
+                            isSelected: selectedCategory == nil,
+                            count: allTemplates.count
+                        ) {
+                            selectedCategory = nil
+                        }
+
+                        ForEach(TaskTemplateCategory.allCases) { category in
+                            let count = allTemplates.filter { $0.category == category }.count
+                            CategoryChip(
+                                title: category.rawValue,
+                                icon: category.icon,
+                                isSelected: selectedCategory == category,
+                                count: count
+                            ) {
+                                selectedCategory = category
+                            }
+                        }
                     }
                 }
             }
             .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(10)
 
-            Text("\(filteredTemplates.count) tasks available")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
+            Divider()
 
-    // MARK: - Category Filter Section
-
-    private var categoryFilterSection: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                // "All" button
-                Button(action: { selectedCategory = nil }) {
-                    Text("All")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(selectedCategory == nil ? Color.blue : Color(.systemGray5))
-                        .foregroundColor(selectedCategory == nil ? .white : .primary)
-                        .cornerRadius(20)
-                }
-
-                // Category buttons
-                ForEach(TaskTemplateCategory.allCases) { category in
-                    Button(action: { selectedCategory = category }) {
-                        HStack(spacing: 4) {
-                            Text(category.icon)
-                            Text(category.rawValue)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+            // Task list
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if filteredTemplates.isEmpty {
+                        emptySearchView
+                            .padding(.top, 60)
+                    } else {
+                        ForEach(filteredTemplates) { template in
+                            TaskTemplateCard(
+                                template: template,
+                                onSelect: {
+                                    selectedTemplate = template
+                                    selectedLevel = template.suggestedLevel
+                                }
+                            )
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(selectedCategory == category ? Color.blue : Color(.systemGray5))
-                        .foregroundColor(selectedCategory == category ? .white : .primary)
-                        .cornerRadius(20)
                     }
                 }
-            }
-        }
-    }
-
-    // MARK: - Template List Section
-
-    private var templateListSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Selection prompt (only when nothing selected)
-            if selectedTemplate == nil {
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.tap.fill")
-                        .foregroundColor(.orange)
-                    Text("Tap a task below to select it")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                }
                 .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(10)
-            }
-
-            if filteredTemplates.isEmpty {
-                emptySearchView
-            } else {
-                ForEach(filteredTemplates.prefix(20)) { template in
-                    TemplateSelectionCard(
-                        template: template,
-                        isSelected: selectedTemplate?.id == template.id,
-                        onTap: {
-                            if selectedTemplate?.id == template.id {
-                                selectedTemplate = nil
-                            } else {
-                                selectedTemplate = template
-                                selectedLevel = template.suggestedLevel
-                            }
-                        }
-                    )
-                }
-
-                if filteredTemplates.count > 20 {
-                    Text("Showing first 20 results. Refine your search to see more.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.vertical)
-                }
             }
         }
     }
 
     private var emptySearchView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 40))
+                .font(.system(size: 48))
                 .foregroundColor(.secondary)
 
             Text("No tasks found")
                 .font(.headline)
+
+            Text("Try a different search or category")
+                .font(.subheadline)
                 .foregroundColor(.secondary)
 
-            Text("Try a different search term or category")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Button("Clear Search") {
+                searchQuery = ""
+                selectedCategory = nil
+            }
+            .buttonStyle(.bordered)
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
-        .padding(40)
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
     }
 
-    // MARK: - Custom Task Section
+    // MARK: - STEP 2: Task Confirmation View
 
-    private var customTaskSection: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Task Name")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+    private var taskConfirmationView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Selected task preview
+                selectedTaskPreview
 
-                TextField("Enter task name", text: $customTitle)
-                    .textFieldStyle(.roundedBorder)
+                // Difficulty adjustment
+                difficultyAdjustmentSection
+
+                // Optional: Due date
+                dueDateSection
+
+                // Assignment summary
+                assignmentSummary
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Description")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-
-                TextEditor(text: $customDescription)
-                    .frame(height: 100)
-                    .padding(4)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Category")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-
-                Picker("Category", selection: $customCategory) {
-                    ForEach(TaskTemplateCategory.allCases) { category in
-                        HStack {
-                            Text(category.icon)
-                            Text(category.rawValue)
-                        }
-                        .tag(category)
-                    }
-                }
-                .pickerStyle(.menu)
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
-            }
+            .padding()
         }
     }
 
-    // MARK: - Difficulty Section
-
-    private var difficultySection: some View {
+    private var selectedTaskPreview: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Task Difficulty")
+                Text("Selected Task")
                     .font(.headline)
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
-                Button(action: { showingLevelInfo = true }) {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.blue)
+                Button(action: {
+                    selectedTemplate = nil
+                    showingCustomTask = false
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.left")
+                        Text("Change")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
                 }
             }
 
-            Text("Select difficulty level to determine XP reward")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            if showingCustomTask {
+                VStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Task Name")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
 
-            ForEach(TaskLevel.allCases) { level in
-                LevelCard(
-                    level: level,
-                    isSelected: selectedLevel == level,
-                    onSelect: { selectedLevel = level }
-                )
+                        TextField("Enter task name", text: $customTitle)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Description")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        TextEditor(text: $customDescription)
+                            .frame(height: 80)
+                            .padding(8)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Category")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Menu {
+                            ForEach(TaskTemplateCategory.allCases) { category in
+                                Button(action: { customCategory = category }) {
+                                    HStack {
+                                        Text(category.icon)
+                                        Text(category.rawValue)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(customCategory.icon)
+                                Text(customCategory.rawValue)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                            }
+                            .foregroundColor(.primary)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+            } else if let template = selectedTemplate {
+                HStack(spacing: 12) {
+                    Text(template.category.icon)
+                        .font(.title)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(template.title)
+                            .font(.headline)
+
+                        Text(template.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+                }
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(12)
             }
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 
-    // MARK: - Due Date Section
+    private var difficultyAdjustmentSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Adjust Difficulty")
+                        .font(.title3)
+                        .fontWeight(.bold)
+
+                    if let template = selectedTemplate {
+                        Text("Suggested: \(template.suggestedLevel.displayName)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Button(action: { showingLevelInfo = true }) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(.blue)
+                }
+            }
+
+            // Compact difficulty selector
+            VStack(spacing: 10) {
+                ForEach(TaskLevel.allCases) { level in
+                    CompactDifficultyRow(
+                        level: level,
+                        isSelected: selectedLevel == level,
+                        isSuggested: selectedTemplate?.suggestedLevel == level,
+                        onSelect: { selectedLevel = level }
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
 
     private var dueDateSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Set Due Date (Optional)", isOn: $hasDueDate)
-                .font(.headline)
+            Toggle(isOn: $hasDueDate) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Set Due Date")
+                        .font(.headline)
+                    Text("Optional deadline")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
 
             if hasDueDate {
                 DatePicker(
@@ -426,72 +482,89 @@ struct AssignTaskView: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 
-    // MARK: - Summary Section
+    private var assignmentSummary: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Ready to Assign")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Spacer()
+            }
 
-    private var summarySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Summary")
-                .font(.headline)
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Task")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(showingCustomTask ? customTitle : (selectedTemplate?.title ?? ""))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                }
 
-            if creationMode == .fromTemplate {
-                if let template = selectedTemplate {
-                    SummaryRow(label: "Task", value: template.title)
-                    SummaryRow(label: "Category", value: "\(template.category.icon) \(template.category.rawValue)")
-                } else {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text("No task selected")
+                HStack {
+                    Text("Difficulty")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(selectedLevel.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+
+                Divider()
+
+                // XP Reward - Large and prominent
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Screen Time Earned")
+                            .font(.headline)
+                        Text("Base XP (×credibility)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(selectedLevel.baseXP)")
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundColor(.blue)
+                        Text("XP = \(selectedLevel.baseXP) min")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(12)
+
+                if hasDueDate, let date = dueDate {
+                    HStack {
+                        Text("Due")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(formatDueDate(date))
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundColor(.orange)
-                    }
-                    .padding(.vertical, 4)
-                }
-            } else if creationMode == .custom {
-                SummaryRow(label: "Task", value: customTitle.isEmpty ? "Not set" : customTitle)
-                SummaryRow(label: "Category", value: "\(customCategory.icon) \(customCategory.rawValue)")
-            }
-
-            SummaryRow(label: "Difficulty", value: selectedLevel.displayName)
-            SummaryRow(label: "XP Reward", value: "\(selectedLevel.baseXP) XP (+ credibility bonus)")
-            SummaryRow(label: "Minutes Earned", value: "\(selectedLevel.baseXP) minutes")
-
-            if hasDueDate, let date = dueDate {
-                SummaryRow(label: "Due", value: formatDueDate(date))
-            } else {
-                SummaryRow(label: "Due", value: "No deadline")
-            }
-
-            // Assignment button reminder
-            if !canAssign {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.red)
-                    if creationMode == .fromTemplate {
-                        Text("Select a task to enable assignment")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    } else {
-                        Text("Complete task details to enable assignment")
-                            .font(.caption)
-                            .foregroundColor(.red)
                     }
                 }
-                .padding(.top, 8)
             }
         }
         .padding()
-        .background(canAssign ? Color.blue.opacity(0.1) : Color.red.opacity(0.05))
-        .cornerRadius(12)
+        .background(Color.green.opacity(0.1))
+        .cornerRadius(16)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(canAssign ? Color.clear : Color.red.opacity(0.3), lineWidth: 2)
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.green.opacity(0.3), lineWidth: 2)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 
     // MARK: - Actions
@@ -499,10 +572,7 @@ struct AssignTaskView: View {
     private func assignTask() {
         let template: TaskTemplate
 
-        if creationMode == .fromTemplate, let selected = selectedTemplate {
-            template = selected
-        } else {
-            // Create custom template
+        if showingCustomTask {
             template = TaskTemplate(
                 title: customTitle,
                 description: customDescription,
@@ -512,6 +582,10 @@ struct AssignTaskView: View {
                 isDefault: false,
                 createdBy: parentId
             )
+        } else if let selected = selectedTemplate {
+            template = selected
+        } else {
+            return
         }
 
         // Create assignment for EACH selected child
@@ -526,7 +600,7 @@ struct AssignTaskView: View {
             )
             print("✅ Task assigned with ID: \(assignment.id), status: \(assignment.status)")
 
-            // Send notification to child with the "complete" sound
+            // Send notification to child
             notificationManager.sendTaskAssignedNotification(
                 childName: child.name,
                 taskTitle: template.title,
@@ -544,6 +618,7 @@ struct AssignTaskView: View {
 
     private func resetForm() {
         selectedTemplate = nil
+        showingCustomTask = false
         selectedLevel = .level3
         customTitle = ""
         customDescription = ""
@@ -562,27 +637,150 @@ struct AssignTaskView: View {
     }
 }
 
-// MARK: - Task Creation Mode
+// MARK: - Category Chip
 
-enum TaskCreationMode {
-    case fromTemplate
-    case custom
+struct CategoryChip: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let count: Int
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                if icon.count == 1 {
+                    Text(icon)
+                } else {
+                    Image(systemName: icon)
+                        .font(.caption)
+                }
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text("(\(count))")
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.blue : Color(.systemGray6))
+            .foregroundColor(isSelected ? .white : .primary)
+            .cornerRadius(20)
+        }
+        .buttonStyle(.plain)
+    }
 }
 
-// MARK: - Level Card
+// MARK: - Task Template Card
 
-struct LevelCard: View {
-    let level: TaskLevel
-    let isSelected: Bool
+struct TaskTemplateCard: View {
+    let template: TaskTemplate
     let onSelect: () -> Void
 
     var body: some View {
         Button(action: onSelect) {
-            HStack {
+            HStack(spacing: 12) {
+                // Category icon
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 44, height: 44)
+
+                    Text(template.category.icon)
+                        .font(.title3)
+                }
+
+                // Task info
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(level.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                    Text(template.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text(template.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.caption2)
+                            Text(template.suggestedLevel.shortName)
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.orange)
+
+                        Text("•")
+                            .foregroundColor(.secondary)
+
+                        Text("\(template.suggestedLevel.baseXP) XP")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Compact Difficulty Row
+
+struct CompactDifficultyRow: View {
+    let level: TaskLevel
+    let isSelected: Bool
+    let isSuggested: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Level indicator
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? Color.blue : Color(.systemGray5))
+                        .frame(width: 36, height: 36)
+
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .fontWeight(.bold)
+                    } else {
+                        Text(level.shortName)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                // Level name
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(level.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+
+                        if isSuggested && !isSelected {
+                            Text("Suggested")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.2))
+                                .foregroundColor(.orange)
+                                .cornerRadius(4)
+                        }
+                    }
 
                     Text(level.description)
                         .font(.caption)
@@ -591,18 +789,13 @@ struct LevelCard: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(level.baseXP) XP")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(isSelected ? .blue : .primary)
-
-                    Text("\(level.baseXP) min")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                // XP value
+                Text("\(level.baseXP)")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(isSelected ? .blue : .primary)
             }
-            .padding()
+            .padding(12)
             .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
             .cornerRadius(10)
             .overlay(
@@ -614,102 +807,6 @@ struct LevelCard: View {
     }
 }
 
-// MARK: - Template Selection Card
-
-struct TemplateSelectionCard: View {
-    let template: TaskTemplate
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Category icon
-            Text(template.category.icon)
-                .font(.title2)
-                .foregroundColor(isSelected ? .white : .primary)
-
-            // Task info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(template.title)
-                    .font(.subheadline)
-                    .fontWeight(isSelected ? .bold : .semibold)
-                    .foregroundColor(isSelected ? .white : .primary)
-
-                Text(template.description)
-                    .font(.caption)
-                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
-                    .lineLimit(2)
-
-                HStack(spacing: 8) {
-                    Text(template.category.rawValue)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(isSelected ? Color.white.opacity(0.2) : Color.blue.opacity(0.2))
-                        .foregroundColor(isSelected ? .white : .blue)
-                        .cornerRadius(4)
-
-                    Text("Suggested: \(template.suggestedLevel.shortName)")
-                        .font(.caption2)
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
-                }
-            }
-
-            Spacer()
-
-            // Selection indicator
-            ZStack {
-                if isSelected {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 32, height: 32)
-
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                } else {
-                    Circle()
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 2)
-                        .frame(width: 32, height: 32)
-                }
-            }
-        }
-        .padding()
-        .background(isSelected ? Color.blue : Color(.systemGray6))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 3)
-        )
-        .shadow(color: isSelected ? Color.blue.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
-        .scaleEffect(isSelected ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap()
-        }
-    }
-}
-
-// MARK: - Summary Row
-
-struct SummaryRow: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-        }
-    }
-}
-
 // MARK: - Level Info View
 
 struct LevelInfoView: View {
@@ -718,7 +815,7 @@ struct LevelInfoView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     Text("How Task Levels Work")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -738,8 +835,8 @@ struct LevelInfoView: View {
                     )
 
                     LevelInfoCard(
-                        title: "Level vs Duration",
-                        description: "Level represents task VALUE/DIFFICULTY, not time required. A hard task gets more reward regardless of duration.",
+                        title: "Suggested Levels",
+                        description: "Each task has a suggested difficulty level based on typical effort required. You can always adjust it.",
                         icon: "star.fill",
                         color: .orange
                     )
@@ -749,22 +846,22 @@ struct LevelInfoView: View {
                             .font(.headline)
 
                         ForEach(TaskLevel.allCases) { level in
-                            HStack {
+                            HStack(spacing: 12) {
                                 Text(level.shortName)
                                     .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .frame(width: 70, alignment: .leading)
+                                    .fontWeight(.bold)
+                                    .frame(width: 50, alignment: .leading)
 
                                 Text("\(level.baseXP) XP")
                                     .font(.subheadline)
                                     .foregroundColor(.blue)
-                                    .frame(width: 50, alignment: .leading)
+                                    .frame(width: 60, alignment: .leading)
 
                                 Text(level.description)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 6)
                         }
                     }
                     .padding()
@@ -831,13 +928,6 @@ struct AssignTaskView_Previews: PreviewProvider {
                     credibility: 95,
                     xpBalance: 45,
                     pendingCount: 2
-                ),
-                ChildSummary(
-                    id: UUID(),
-                    name: "Tanner",
-                    credibility: 88,
-                    xpBalance: 120,
-                    pendingCount: 0
                 )
             ],
             notificationManager: NotificationManager()
