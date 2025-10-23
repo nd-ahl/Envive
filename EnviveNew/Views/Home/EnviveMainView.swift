@@ -16,7 +16,6 @@ struct EnviveMainView: View {
                     Text("Home")
                 }
                 .tag(0)
-                .badge(recentActivityCount)
 
             EnhancedTasksView()
                 .environmentObject(model)
@@ -74,11 +73,12 @@ struct EnviveMainView: View {
 
     // MARK: - Computed Properties
 
-    private var recentActivityCount: Int {
-        model.friendActivities.filter { activity in
-            Date().timeIntervalSince(activity.timestamp) < 3600
-        }.count
-    }
+    // Removed friend activity count with social features
+    // private var recentActivityCount: Int {
+    //     model.friendActivities.filter { activity in
+    //         Date().timeIntervalSince(activity.timestamp) < 3600
+    //     }.count
+    // }
 
     private var photoCount: Int {
         model.cameraManager.savedPhotos.count

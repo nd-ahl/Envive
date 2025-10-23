@@ -2,13 +2,15 @@ import SwiftUI
 
 // MARK: - Parent Profile Selector View
 
-/// Screen where parent selects which profile to use (can select ANY role - parent or child)
+/// Screen where parent selects which profile to use (ONLY parent profiles)
+/// SECURITY: Parents can only select parent profiles, not child profiles
 struct ParentProfileSelectorView: View {
     let inviteCode: String
     let onProfileSelected: (Profile) -> Void
     let onBack: () -> Void
 
     @StateObject private var householdService = HouseholdService.shared
+    @StateObject private var authService = AuthenticationService.shared
     @State private var allProfiles: [Profile] = []
     @State private var selectedProfile: Profile?
     @State private var isLoading = true
@@ -16,11 +18,13 @@ struct ParentProfileSelectorView: View {
     @State private var errorMessage: String?
 
     private var parentProfiles: [Profile] {
+        // SECURITY: Only show parent profiles for parent authentication flow
         allProfiles.filter { $0.role == "parent" }
     }
 
     private var childProfiles: [Profile] {
-        allProfiles.filter { $0.role == "child" }
+        // Do not show child profiles to parents during authentication
+        []
     }
 
     var body: some View {
@@ -103,8 +107,9 @@ struct ParentProfileSelectorView: View {
 
     private var headerSection: some View {
         VStack(spacing: 20) {
-            Text("👨‍👩‍👧‍👦")
-                .font(.system(size: 70))
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.white)
                 .scaleEffect(showContent ? 1.0 : 0.5)
                 .opacity(showContent ? 1.0 : 0)
 
@@ -115,7 +120,7 @@ struct ParentProfileSelectorView: View {
                     .multilineTextAlignment(.center)
                     .opacity(showContent ? 1.0 : 0)
 
-                Text("Choose your profile to continue")
+                Text("Choose your parent profile to continue")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
                     .multilineTextAlignment(.center)
@@ -231,12 +236,17 @@ struct ParentProfileSelectorView: View {
     private func loadAllProfiles() {
         Task {
             do {
-                // Get ALL profiles for this household (parent and child)
+                // Get ALL profiles for this household
                 let profiles = try await householdService.getAllProfilesByInviteCode(inviteCode)
 
                 await MainActor.run {
-                    self.allProfiles = profiles
+                    // SECURITY: Only show parent profiles in this view
+                    self.allProfiles = profiles.filter { $0.role == "parent" }
                     self.isLoading = false
+
+                    if self.allProfiles.isEmpty {
+                        self.errorMessage = "No parent profiles found in this household."
+                    }
 
                     withAnimation(.easeOut(duration: 0.5)) {
                         showContent = true
@@ -291,8 +301,9 @@ private struct ParentProfileSelectionCard: View {
                             .foregroundColor(.white)
 
                         if profile.role == "parent" {
-                            Text("👨‍👩‍👧")
+                            Image(systemName: "person.2.fill")
                                 .font(.system(size: 18))
+                                .foregroundColor(.white)
                         }
                     }
 

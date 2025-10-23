@@ -12,9 +12,11 @@ struct AddProfilesView: View {
     @StateObject private var householdService = HouseholdService.shared
     @StateObject private var authService = AuthenticationService.shared
     @State private var childProfiles: [ChildProfileData] = []
+    @State private var existingChildIds: Set<String> = [] // Track which profiles already exist in DB
     @State private var showingAddProfileSheet = false
     @State private var editingProfile: ChildProfileData?
     @State private var showContent = false
+    @State private var isLoadingExistingChildren = false
 
     var body: some View {
         ZStack {
@@ -91,6 +93,7 @@ struct AddProfilesView: View {
             withAnimation(.easeOut(duration: 0.5)) {
                 showContent = true
             }
+            loadExistingChildren()
         }
     }
 
@@ -98,8 +101,9 @@ struct AddProfilesView: View {
 
     private var headerSection: some View {
         VStack(spacing: 20) {
-            Text("👨‍👩‍👧‍👦")
-                .font(.system(size: 70))
+            Image(systemName: "person.3.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.white)
                 .scaleEffect(showContent ? 1.0 : 0.5)
                 .opacity(showContent ? 1.0 : 0)
 
@@ -147,10 +151,15 @@ struct AddProfilesView: View {
             VStack(spacing: 12) {
                 ForEach(childProfiles) { profile in
                     ChildProfileCard(profile: profile) {
-                        editingProfile = profile
-                        showingAddProfileSheet = true
+                        // Only allow editing new profiles, not existing ones
+                        if profile.databaseId == nil {
+                            editingProfile = profile
+                            showingAddProfileSheet = true
+                        }
                     } onDelete: {
-                        if let index = childProfiles.firstIndex(where: { $0.id == profile.id }) {
+                        // Only allow deleting new profiles, not existing ones
+                        if profile.databaseId == nil,
+                           let index = childProfiles.firstIndex(where: { $0.id == profile.id }) {
                             withAnimation {
                                 childProfiles.remove(at: index)
                             }
@@ -221,8 +230,43 @@ struct AddProfilesView: View {
 
     // MARK: - Actions
 
+    private func loadExistingChildren() {
+        isLoadingExistingChildren = true
+        Task {
+            do {
+                let existingChildren = try await householdService.getMyChildren()
+
+                await MainActor.run {
+                    // Convert Profile objects to ChildProfileData
+                    let existingProfileData = existingChildren.map { profile in
+                        ChildProfileData(
+                            name: profile.fullName ?? "Unknown",
+                            age: profile.age ?? 0,
+                            avatarImage: nil, // We'll load this from URL if needed
+                            databaseId: profile.id, // Mark as existing
+                            avatarUrl: profile.avatarUrl
+                        )
+                    }
+
+                    // Add existing profiles to the list
+                    childProfiles = existingProfileData
+                    existingChildIds = Set(existingChildren.map { $0.id })
+
+                    print("✅ Loaded \(existingChildren.count) existing child profile(s)")
+                    isLoadingExistingChildren = false
+                }
+            } catch {
+                await MainActor.run {
+                    print("⚠️ Could not load existing children: \(error.localizedDescription)")
+                    // This is OK - might be first time setup with no children yet
+                    isLoadingExistingChildren = false
+                }
+            }
+        }
+    }
+
     private func handleContinue() {
-        // Save all child profiles to the database
+        // Save only NEW child profiles to the database (skip existing ones)
         Task {
             guard let currentProfile = authService.currentProfile else {
                 print("❌ No current profile found")
@@ -235,9 +279,13 @@ struct AddProfilesView: View {
                 return
             }
 
-            print("✅ Creating \(childProfiles.count) child profile(s) in household: \(householdId)")
+            // Filter out profiles that already exist in the database
+            let newProfiles = childProfiles.filter { $0.databaseId == nil }
 
-            for childData in childProfiles {
+            print("✅ Creating \(newProfiles.count) NEW child profile(s) in household: \(householdId)")
+            print("ℹ️  Skipping \(childProfiles.count - newProfiles.count) existing profile(s)")
+
+            for childData in newProfiles {
                 do {
                     try await createChildProfile(childData, in: householdId, createdBy: currentProfile.id)
                 } catch {
@@ -289,31 +337,62 @@ private struct ChildProfileCard: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
 
+    var isExisting: Bool {
+        profile.databaseId != nil
+    }
+
     var body: some View {
         HStack(spacing: 16) {
             // Avatar
-            if let avatarImage = profile.avatarImage {
-                Image(uiImage: avatarImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 60, height: 60)
-                    .clipShape(Circle())
-            } else {
-                Circle()
-                    .fill(Color.white.opacity(0.3))
-                    .frame(width: 60, height: 60)
-                    .overlay(
-                        Text(profile.name.prefix(1).uppercased())
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.white)
-                    )
+            ZStack(alignment: .bottomTrailing) {
+                if let avatarImage = profile.avatarImage {
+                    Image(uiImage: avatarImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 60, height: 60)
+                        .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Text(profile.name.prefix(1).uppercased())
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                }
+
+                // Show checkmark badge for existing profiles
+                if isExisting {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                        .offset(x: 2, y: 2)
+                }
             }
 
             // Info
             VStack(alignment: .leading, spacing: 4) {
-                Text(profile.name)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
+                HStack(spacing: 6) {
+                    Text(profile.name)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    if isExisting {
+                        Text("(Existing)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.green.opacity(0.9))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.2))
+                            .cornerRadius(4)
+                    }
+                }
 
                 Text("\(profile.age) years old")
                     .font(.system(size: 14, weight: .medium))
@@ -322,24 +401,30 @@ private struct ChildProfileCard: View {
 
             Spacer()
 
-            // Actions
+            // Actions - disable delete for existing profiles
             HStack(spacing: 12) {
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 18))
-                        .foregroundColor(.white)
-                }
+                if !isExisting {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 18))
+                            .foregroundColor(.white)
+                    }
 
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 18))
-                        .foregroundColor(.red.opacity(0.8))
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 18))
+                            .foregroundColor(.red.opacity(0.8))
+                    }
                 }
             }
         }
         .padding(16)
-        .background(Color.white.opacity(0.15))
+        .background(isExisting ? Color.green.opacity(0.15) : Color.white.opacity(0.15))
         .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isExisting ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
     }
 }
 
@@ -350,12 +435,16 @@ struct ChildProfileData: Identifiable {
     var name: String
     var age: Int
     var avatarImage: UIImage?
+    var databaseId: String? // If set, this profile already exists in the database
+    var avatarUrl: String? // URL of existing avatar
 
-    init(id: UUID = UUID(), name: String = "", age: Int = 10, avatarImage: UIImage? = nil) {
+    init(id: UUID = UUID(), name: String = "", age: Int = 10, avatarImage: UIImage? = nil, databaseId: String? = nil, avatarUrl: String? = nil) {
         self.id = id
         self.name = name
         self.age = age
         self.avatarImage = avatarImage
+        self.databaseId = databaseId
+        self.avatarUrl = avatarUrl
     }
 }
 

@@ -426,7 +426,13 @@ struct ClaimTaskSheet: View {
             }
             .alert("Task Added!", isPresented: $showSuccessAlert) {
                 Button("OK") {
-                    onClaim()
+                    // Dismiss the claim sheet first
+                    dismiss()
+                    // Then call onClaim to dismiss the parent view
+                    // Small delay to ensure smooth animation
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        onClaim()
+                    }
                 }
             } message: {
                 Text("\(template.title) has been added to your tasks!")
@@ -530,7 +536,13 @@ struct CreateCustomTaskSheet: View {
             }
             .alert("Task Created!", isPresented: $showSuccessAlert) {
                 Button("OK") {
-                    onCreate()
+                    // Dismiss the create sheet first
+                    dismiss()
+                    // Then call onCreate to dismiss the parent view
+                    // Small delay to ensure smooth animation
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        onCreate()
+                    }
                 }
             } message: {
                 Text("\(taskTitle) has been added to your tasks!")

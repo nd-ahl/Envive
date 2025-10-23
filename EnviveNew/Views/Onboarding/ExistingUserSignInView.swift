@@ -9,6 +9,8 @@ struct ExistingUserSignInView: View {
     let onBack: () -> Void
 
     @StateObject private var authService = AuthenticationService.shared
+    @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
+
     @State private var email = ""
     @State private var password = ""
     @State private var isLoading = false
@@ -49,68 +51,72 @@ struct ExistingUserSignInView: View {
                 Spacer()
 
                 // Header
-                VStack(spacing: 20) {
+                VStack(spacing: 24) {
                     Text("👋")
-                        .font(.system(size: 70))
+                        .font(.system(size: 80))
                         .scaleEffect(showContent ? 1.0 : 0.5)
                         .opacity(showContent ? 1.0 : 0)
 
-                    VStack(spacing: 12) {
+                    VStack(spacing: 14) {
                         Text("Welcome Back")
-                            .font(.system(size: 32, weight: .bold))
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
+                            .tracking(0.5)
                             .opacity(showContent ? 1.0 : 0)
 
                         Text("Sign in to continue")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundColor(.white.opacity(0.9))
+                            .font(.system(size: 17, weight: .regular))
+                            .foregroundColor(.white.opacity(0.85))
+                            .lineSpacing(2)
                             .opacity(showContent ? 1.0 : 0)
                     }
                 }
-                .padding(.bottom, 40)
+                .padding(.bottom, 50)
 
                 // Sign in options
-                VStack(spacing: 20) {
+                VStack(spacing: 24) {
                     // Email field
                     VStack(alignment: .leading, spacing: 8) {
                         ZStack(alignment: .leading) {
                             if email.isEmpty {
                                 Text("Email")
                                     .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.leading, 16)
+                                    .padding(.leading, 18)
                             }
                             TextField("", text: $email)
                                 .textContentType(.emailAddress)
                                 .autocapitalization(.none)
                                 .keyboardType(.emailAddress)
-                                .padding()
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 18)
+                                .font(.system(size: 16, weight: .regular))
                         }
-                        .background(Color(UIColor.systemBackground))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(UIColor.systemBackground))
+                                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
                         )
                     }
                     .opacity(showContent ? 1.0 : 0)
 
                     // Password field with forgot password
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ZStack(alignment: .leading) {
                             if password.isEmpty {
                                 Text("Password")
                                     .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.leading, 16)
+                                    .padding(.leading, 18)
                             }
                             SecureField("", text: $password)
                                 .textContentType(.password)
-                                .padding()
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 18)
+                                .font(.system(size: 16, weight: .regular))
                         }
-                        .background(Color(UIColor.systemBackground))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(UIColor.systemBackground))
+                                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
                         )
 
                         // Forgot Password button
@@ -119,9 +125,9 @@ struct ExistingUserSignInView: View {
                         }) {
                             Text("Forgot Password?")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white.opacity(0.9))
+                                .foregroundColor(.white.opacity(0.85))
                         }
-                        .padding(.leading, 4)
+                        .padding(.leading, 6)
                     }
                     .opacity(showContent ? 1.0 : 0)
 
@@ -144,18 +150,19 @@ struct ExistingUserSignInView: View {
                                     .progressViewStyle(CircularProgressViewStyle(tint: .blue))
                             } else {
                                 Text("Sign In")
-                                    .font(.system(size: 18, weight: .bold))
+                                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                    .tracking(0.3)
                             }
                         }
                         .foregroundColor(.blue.opacity(0.9))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
+                        .padding(.vertical, 20)
                         .background(Color.white)
-                        .cornerRadius(14)
-                        .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+                        .cornerRadius(16)
+                        .shadow(color: Color.black.opacity(0.2), radius: 12, x: 0, y: 6)
                     }
                     .disabled(isLoading || email.isEmpty || password.isEmpty)
-                    .opacity(email.isEmpty || password.isEmpty ? 0.5 : 1.0)
+                    .opacity(email.isEmpty || password.isEmpty ? 0.6 : 1.0)
                     .scaleEffect(showContent ? 1.0 : 0.9)
                     .opacity(showContent ? 1.0 : 0)
 
@@ -210,29 +217,29 @@ struct ExistingUserSignInView: View {
 
         Task {
             do {
-                // Clear any previous user's data (this is an existing user signing in)
-                await MainActor.run {
-                    authService.resetAllUserData()
-                }
+                // DO NOT clear onboarding data here - user is mid-onboarding flow
+                // We need to preserve the welcome/role/legal flags they already completed
 
                 let profile = try await authService.signIn(email: email, password: password)
 
                 await MainActor.run {
                     isLoading = false
 
-                    // Set device mode based on user role
-                    if profile.role == "parent" {
-                        let parentMode = DeviceModeService.deviceModeFromUserRole(.parent)
-                        DeviceModeService.shared.setDeviceMode(parentMode)
-                        print("✅ Parent signed in - device mode set to PARENT")
-                    } else {
-                        let childMode = DeviceModeService.deviceModeFromUserRole(.child)
-                        DeviceModeService.shared.setDeviceMode(childMode)
-                        print("✅ Child signed in - device mode set to CHILD")
-                    }
+                    // Link device to profile so user can see their data
+                    linkDeviceToProfile(profile)
 
                     print("✅ User signed in successfully: \(profile.fullName ?? "Unknown")")
-                    onComplete()
+
+                    // Existing users should skip onboarding and go straight to the app
+                    if profile.householdId != nil {
+                        print("✅ Existing user with household - completing onboarding")
+                        OnboardingManager.shared.completeSignIn()
+                        OnboardingManager.shared.completeFamilySetup()
+                        OnboardingManager.shared.completeOnboarding()
+                    } else {
+                        // No household yet - continue through onboarding
+                        onComplete()
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -249,27 +256,27 @@ struct ExistingUserSignInView: View {
         case .success(let authorization):
             Task {
                 do {
-                    // Clear any previous user's data (this is an existing user signing in)
-                    await MainActor.run {
-                        authService.resetAllUserData()
-                    }
+                    // DO NOT clear onboarding data here - user is mid-onboarding flow
+                    // We need to preserve the welcome/role/legal flags they already completed
 
                     let profile = try await authService.signInWithApple(authorization: authorization)
 
                     await MainActor.run {
-                        // Set device mode based on user role
-                        if profile.role == "parent" {
-                            let parentMode = DeviceModeService.deviceModeFromUserRole(.parent)
-                            DeviceModeService.shared.setDeviceMode(parentMode)
-                            print("✅ Parent signed in via Apple - device mode set to PARENT")
-                        } else {
-                            let childMode = DeviceModeService.deviceModeFromUserRole(.child)
-                            DeviceModeService.shared.setDeviceMode(childMode)
-                            print("✅ Child signed in via Apple - device mode set to CHILD")
-                        }
+                        // Link device to profile so user can see their data
+                        linkDeviceToProfile(profile)
 
                         print("✅ Apple sign in successful: \(profile.fullName ?? "Unknown")")
-                        onComplete()
+
+                        // Existing users should skip onboarding and go straight to the app
+                        if profile.householdId != nil {
+                            print("✅ Existing user with household - completing onboarding")
+                            OnboardingManager.shared.completeSignIn()
+                            OnboardingManager.shared.completeFamilySetup()
+                            OnboardingManager.shared.completeOnboarding()
+                        } else {
+                            // No household yet - continue through onboarding
+                            onComplete()
+                        }
                     }
                 } catch {
                     await MainActor.run {
@@ -283,6 +290,29 @@ struct ExistingUserSignInView: View {
             errorMessage = "Apple sign in cancelled"
             print("❌ Apple sign in error: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Profile Linking
+
+    private func linkDeviceToProfile(_ profile: Profile) {
+        // Convert Profile to UserProfile
+        // Convert String ID to UUID (profile.id is from Supabase auth)
+        let profileId = UUID(uuidString: profile.id) ?? UUID()
+
+        let userProfile = UserProfile(
+            id: profileId,
+            name: profile.fullName ?? profile.email ?? "User",
+            mode: profile.role == "parent" ? .parent : .child1,
+            age: profile.age,
+            profilePhotoFileName: nil // avatarUrl from backend is not yet synced to local file
+        )
+
+        // Set device mode
+        let deviceMode: DeviceMode = profile.role == "parent" ? .parent : .child1
+        deviceModeManager.switchMode(to: deviceMode, profile: userProfile)
+        DeviceModeService.shared.setDeviceMode(deviceMode)
+
+        print("✅ Device linked to profile: \(userProfile.name) (\(profile.role ?? "unknown"))")
     }
 }
 

@@ -68,6 +68,7 @@ class SoundEffectsManager {
     private var soundPlayers: [String: AVAudioPlayer] = [:]
     private var isEnabled: Bool = true
     private var volume: Float = 0.7
+    private var useCustomSounds: Bool = true
 
     private let impactLight = UIImpactFeedbackGenerator(style: .light)
     private let impactMedium = UIImpactFeedbackGenerator(style: .medium)
@@ -76,8 +77,25 @@ class SoundEffectsManager {
     private let selectionFeedback = UISelectionFeedbackGenerator()
 
     private init() {
+        // Load settings
+        isEnabled = UserDefaults.standard.object(forKey: "soundEffectsEnabled") as? Bool ?? true
+        volume = UserDefaults.standard.object(forKey: "soundEffectsVolume") as? Float ?? 0.7
+        useCustomSounds = UserDefaults.standard.object(forKey: "useCustomSounds") as? Bool ?? true
+
         setupAudioSession()
-        preloadCommonSounds()
+
+        // Generate custom sounds if they don't exist
+        if useCustomSounds && !SoundGenerator.shared.soundsExist() {
+            print("🎵 Custom sounds not found. Generating...")
+            DispatchQueue.global(qos: .userInitiated).async {
+                SoundGenerator.shared.generateAllSounds()
+                DispatchQueue.main.async {
+                    self.preloadCommonSounds()
+                }
+            }
+        } else {
+            preloadCommonSounds()
+        }
     }
 
     // MARK: - Setup
@@ -98,7 +116,9 @@ class SoundEffectsManager {
             .buttonTap,
             .taskCompleted,
             .xpEarned,
-            .credibilityUp
+            .credibilityUp,
+            .taskApproved,
+            .taskDeclined
         ]
 
         for sound in commonSounds {
@@ -107,9 +127,19 @@ class SoundEffectsManager {
     }
 
     private func preloadSound(_ sound: SoundEffect) {
-        // For now, we'll use system sounds as placeholders
-        // In production, replace with custom sound files
-        _ = getSystemSoundID(for: sound)
+        if useCustomSounds {
+            // Preload custom sound file
+            if let url = SoundGenerator.shared.getSoundURL(for: sound.rawValue) {
+                do {
+                    let player = try AVAudioPlayer(contentsOf: url)
+                    player.volume = volume
+                    player.prepareToPlay()
+                    soundPlayers[sound.rawValue] = player
+                } catch {
+                    print("⚠️ Failed to preload \(sound.rawValue): \(error)")
+                }
+            }
+        }
     }
 
     // MARK: - Playback
@@ -123,12 +153,44 @@ class SoundEffectsManager {
         }
 
         // Play sound
-        playSystemSound(for: sound)
+        if useCustomSounds {
+            playCustomSound(for: sound)
+        } else {
+            playSystemSound(for: sound)
+        }
     }
 
     func playWithDelay(_ sound: SoundEffect, delay: TimeInterval, withHaptic haptic: HapticStyle? = nil) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.play(sound, withHaptic: haptic)
+        }
+    }
+
+    private func playCustomSound(for sound: SoundEffect) {
+        // Try to get preloaded player
+        if let player = soundPlayers[sound.rawValue] {
+            player.currentTime = 0
+            player.volume = volume
+            player.play()
+            return
+        }
+
+        // If not preloaded, load and play
+        if let url = SoundGenerator.shared.getSoundURL(for: sound.rawValue) {
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.volume = volume
+                player.play()
+                soundPlayers[sound.rawValue] = player
+            } catch {
+                print("⚠️ Failed to play \(sound.rawValue): \(error)")
+                // Fallback to system sound
+                playSystemSound(for: sound)
+            }
+        } else {
+            print("⚠️ Custom sound not found: \(sound.rawValue), using system sound")
+            // Fallback to system sound
+            playSystemSound(for: sound)
         }
     }
 
@@ -140,8 +202,7 @@ class SoundEffectsManager {
     // MARK: - System Sound Mapping
 
     private func getSystemSoundID(for sound: SoundEffect) -> SystemSoundID {
-        // Map our sound effects to iOS system sounds as placeholders
-        // Replace with custom sounds in production
+        // Map our sound effects to iOS system sounds as fallback
         switch sound {
         // UI Interactions
         case .buttonTap:
@@ -289,6 +350,11 @@ class SoundEffectsManager {
         }
     }
 
+    func playBadgeEarned() {
+        play(.achievementUnlocked, withHaptic: .success)
+        playWithDelay(.celebration, delay: 0.3, withHaptic: .heavy)
+    }
+
     // MARK: - Settings
 
     func setEnabled(_ enabled: Bool) {
@@ -303,10 +369,49 @@ class SoundEffectsManager {
     func setVolume(_ volume: Float) {
         self.volume = max(0.0, min(1.0, volume))
         UserDefaults.standard.set(self.volume, forKey: "soundEffectsVolume")
+
+        // Update all loaded players
+        for (_, player) in soundPlayers {
+            player.volume = self.volume
+        }
     }
 
     func getVolume() -> Float {
         return volume
+    }
+
+    func setUseCustomSounds(_ useCustom: Bool) {
+        useCustomSounds = useCustom
+        UserDefaults.standard.set(useCustom, forKey: "useCustomSounds")
+
+        if useCustom && !SoundGenerator.shared.soundsExist() {
+            print("🎵 Regenerating custom sounds...")
+            DispatchQueue.global(qos: .userInitiated).async {
+                SoundGenerator.shared.generateAllSounds()
+                DispatchQueue.main.async {
+                    self.soundPlayers.removeAll()
+                    self.preloadCommonSounds()
+                }
+            }
+        }
+    }
+
+    func isUsingCustomSounds() -> Bool {
+        return useCustomSounds
+    }
+
+    /// Force regenerate all custom sounds (useful if sounds get corrupted or for testing)
+    func regenerateSounds() {
+        print("🎵 Regenerating all custom sounds...")
+        soundPlayers.removeAll()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            SoundGenerator.shared.generateAllSounds()
+            DispatchQueue.main.async {
+                self.preloadCommonSounds()
+                print("✅ Sound regeneration complete")
+            }
+        }
     }
 }
 

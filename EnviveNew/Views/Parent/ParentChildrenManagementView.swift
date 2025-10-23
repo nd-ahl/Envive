@@ -161,6 +161,9 @@ struct ChildDetailView: View {
             // Statistics Overview
             statisticsOverviewSection
 
+            // Current Tasks (To-Do List)
+            currentTasksSection
+
             // Screen Time Chart
             screenTimeChartSection
 
@@ -170,6 +173,70 @@ struct ChildDetailView: View {
             // Recent Activity Log
             activityLogSection
         }
+    }
+
+    // MARK: - Current Tasks Section
+
+    private var currentTasksSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Current Tasks")
+                    .font(.headline)
+                Spacer()
+                let currentTasks = viewModel.getCurrentTasks(for: child.id)
+                Text("\(currentTasks.count)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue)
+                    .cornerRadius(8)
+            }
+
+            if viewModel.getCurrentTasks(for: child.id).isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.green)
+                        Text("No active tasks")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 20)
+                    Spacer()
+                }
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(viewModel.getCurrentTasks(for: child.id).prefix(5)) { task in
+                        CurrentTaskRow(task: task)
+
+                        if task.id != viewModel.getCurrentTasks(for: child.id).prefix(5).last?.id {
+                            Divider()
+                        }
+                    }
+                }
+
+                if viewModel.getCurrentTasks(for: child.id).count > 5 {
+                    NavigationLink(destination: AllCurrentTasksView(
+                        childName: child.name,
+                        tasks: viewModel.getCurrentTasks(for: child.id)
+                    )) {
+                        Text("View All Tasks (\(viewModel.getCurrentTasks(for: child.id).count))")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 8)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
     // MARK: - Statistics Overview
@@ -454,6 +521,94 @@ struct ActivitySummaryRow: View {
     }
 }
 
+// MARK: - Current Task Row
+
+struct CurrentTaskRow: View {
+    let task: TaskAssignment
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Status indicator
+            Circle()
+                .fill(statusColor)
+                .frame(width: 12, height: 12)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+
+                HStack(spacing: 8) {
+                    // Status badge
+                    Text(statusText)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(statusColor.opacity(0.15))
+                        .cornerRadius(6)
+
+                    // Level
+                    Text(task.assignedLevel.displayName)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    // Due date if exists
+                    if let dueDate = task.dueDate {
+                        Text("•")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("Due \(formatDueDate(dueDate))")
+                            .font(.caption2)
+                            .foregroundColor(task.isOverdue ? .red : .secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Navigate to task details
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var statusColor: Color {
+        switch task.status {
+        case .assigned: return .blue
+        case .inProgress: return .green
+        case .pendingReview: return .orange
+        default: return .gray
+        }
+    }
+
+    private var statusText: String {
+        switch task.status {
+        case .assigned: return "To Do"
+        case .inProgress: return "In Progress"
+        case .pendingReview: return "Pending Review"
+        default: return task.status.rawValue
+        }
+    }
+
+    private func formatDueDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "today"
+        } else if calendar.isDateInTomorrow(date) {
+            return "tomorrow"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            return formatter.string(from: date)
+        }
+    }
+}
+
 // MARK: - Activity Log Row
 
 struct ActivityLogRow: View {
@@ -501,6 +656,23 @@ struct FullActivityLogView: View {
             }
         }
         .navigationTitle("\(childName)'s Activity")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - All Current Tasks View
+
+struct AllCurrentTasksView: View {
+    let childName: String
+    let tasks: [TaskAssignment]
+
+    var body: some View {
+        List {
+            ForEach(tasks) { task in
+                CurrentTaskRow(task: task)
+            }
+        }
+        .navigationTitle("\(childName)'s Tasks")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -617,6 +789,7 @@ class ChildrenManagementViewModel: ObservableObject {
     private let credibilityService: CredibilityService
     private let deviceModeManager: LocalDeviceModeManager
     private let householdContext = HouseholdContext.shared
+    private let householdService = HouseholdService.shared
 
     init(taskService: TaskService, xpService: XPService, credibilityService: CredibilityService, deviceModeManager: LocalDeviceModeManager) {
         self.taskService = taskService
@@ -626,22 +799,33 @@ class ChildrenManagementViewModel: ObservableObject {
     }
 
     func loadChildren() {
-        // Load children from household context (household-scoped)
-        let householdChildren = householdContext.householdChildren
+        // Load children from Supabase database (source of truth)
+        Task {
+            do {
+                let childProfiles = try await householdService.getMyChildren()
 
-        print("📊 Loading children for management view: \(householdChildren.count) in household")
+                print("📊 Loading children for management view: \(childProfiles.count) from database")
 
-        // Convert to ChildInfo format
-        let loadedChildren = householdChildren.map { child in
-            ChildInfo(
-                id: child.id,
-                name: child.name,
-                profilePhotoFileName: child.profilePhotoFileName
-            )
+                // Convert Profile objects to ChildInfo format
+                let loadedChildren = childProfiles.map { profile in
+                    ChildInfo(
+                        id: UUID(uuidString: profile.id) ?? UUID(),
+                        name: profile.fullName ?? "Child",
+                        profilePhotoFileName: nil // Avatar URL from backend not yet synced to local file
+                    )
+                }
+
+                await MainActor.run {
+                    children = loadedChildren
+                    print("✅ Children management view loaded \(loadedChildren.count) children")
+                }
+            } catch {
+                print("❌ Error loading children for management view: \(error.localizedDescription)")
+                await MainActor.run {
+                    children = []
+                }
+            }
         }
-
-        children = loadedChildren
-        print("✅ Children management view loaded \(loadedChildren.count) children")
     }
 
     // MARK: - Statistics Methods
@@ -668,15 +852,29 @@ class ChildrenManagementViewModel: ObservableObject {
     }
 
     func getPendingTasksCount(for childId: UUID) -> Int {
-        // Only count tasks that are actively pending (not approved or declined)
+        // Only count tasks that are pending review (submitted for parent approval)
+        // NOT tasks that are just assigned or in progress
+        let pendingReview = taskService.getChildTasks(childId: childId, status: .pendingReview)
+
+        print("📊 Pending review tasks for child \(childId): \(pendingReview.count)")
+
+        return pendingReview.count
+    }
+
+    func getCurrentTasks(for childId: UUID) -> [TaskAssignment] {
+        // Get tasks that are actively being worked on (not completed or declined)
         let assigned = taskService.getChildTasks(childId: childId, status: .assigned)
         let inProgress = taskService.getChildTasks(childId: childId, status: .inProgress)
         let pendingReview = taskService.getChildTasks(childId: childId, status: .pendingReview)
 
-        let total = assigned.count + inProgress.count + pendingReview.count
-        print("📊 Pending tasks for child \(childId): Assigned=\(assigned.count), InProgress=\(inProgress.count), PendingReview=\(pendingReview.count), Total=\(total)")
-
-        return total
+        // Combine and sort by due date
+        let allCurrentTasks = assigned + inProgress + pendingReview
+        return allCurrentTasks.sorted { task1, task2 in
+            guard let date1 = task1.dueDate, let date2 = task2.dueDate else {
+                return task1.dueDate != nil // Tasks with due dates come first
+            }
+            return date1 < date2
+        }
     }
 
     func getApprovedTasksCount(for childId: UUID, days: Int) -> Int {

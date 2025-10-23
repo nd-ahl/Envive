@@ -4953,6 +4953,7 @@ struct ProfileView: View {
     @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
     @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
     @ObservedObject private var profilePhotoManager = ProfilePhotoManager.shared
+    private let badgeService = DependencyContainer.shared.badgeService
     @State private var showingNotificationSettings = false
     @State private var showingEditName = false
     @State private var showingEditAge = false
@@ -5084,7 +5085,45 @@ struct ProfileView: View {
                 }
             }
 
-            Section("Statistics") {
+            Section("Achievements") {
+                NavigationLink(destination: BadgesView(childId: model.currentUser.id)) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "trophy.fill")
+                            .foregroundColor(.yellow)
+                            .font(.title3)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("View All Badges")
+                                .fontWeight(.semibold)
+                            Text("\(badgeService.getEarnedBadges(for: model.currentUser.id).count) of \(BadgeType.allCases.count) earned")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        // Show tier counts
+                        HStack(spacing: 8) {
+                            if let platinumCount = badgeService.getBadgeCountByTier(for: model.currentUser.id)[.platinum], platinumCount > 0 {
+                                BadgeTierMini(tier: .platinum, count: platinumCount)
+                            }
+                            if let goldCount = badgeService.getBadgeCountByTier(for: model.currentUser.id)[.gold], goldCount > 0 {
+                                BadgeTierMini(tier: .gold, count: goldCount)
+                            }
+                            if let silverCount = badgeService.getBadgeCountByTier(for: model.currentUser.id)[.silver], silverCount > 0 {
+                                BadgeTierMini(tier: .silver, count: silverCount)
+                            }
+                            if let bronzeCount = badgeService.getBadgeCountByTier(for: model.currentUser.id)[.bronze], bronzeCount > 0 {
+                                BadgeTierMini(tier: .bronze, count: bronzeCount)
+                            }
+                        }
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 HStack {
                     Text("Total XP Earned")
                     Spacer()
@@ -5098,60 +5137,26 @@ struct ProfileView: View {
                     Text("\(model.currentUser.xpBalance)")
                         .fontWeight(.semibold)
                 }
-
-                NavigationLink(destination: FriendsView().environmentObject(model)) {
-                    HStack {
-                        Image(systemName: "person.2.fill")
-                            .foregroundColor(.blue)
-                        Text("Friends")
-                        Spacer()
-                        Text("\(model.friends.count)")
-                            .fontWeight(.semibold)
-                        if model.pendingFriendRequests.count > 0 {
-                            Text("(\(model.pendingFriendRequests.count))")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                    }
-                }
             }
 
             Section("Settings") {
-                // Theme/Appearance Picker
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "paintbrush.fill")
-                            .foregroundColor(.blue)
-                        Text("Appearance")
-                            .foregroundColor(.primary)
-                    }
-
-                    Picker("Theme", selection: Binding(
+                // Simplified Theme Picker
+                HStack {
+                    Image(systemName: "paintbrush.fill")
+                        .foregroundColor(.blue)
+                    Text("Appearance")
+                    Spacer()
+                    Picker("", selection: Binding(
                         get: { themeViewModel.selectedTheme },
                         set: { themeViewModel.selectTheme($0) }
                     )) {
                         ForEach(ThemeMode.allCases, id: \.self) { mode in
-                            HStack {
-                                Image(systemName: mode.icon)
-                                Text(mode.displayName)
-                            }
-                            .tag(mode)
+                            Text(mode.displayName).tag(mode)
                         }
                     }
-                    .pickerStyle(.segmented)
-
-                    // Current effective theme display
-                    HStack {
-                        Image(systemName: "info.circle")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Text("Current: \(themeViewModel.effectiveThemeDescription())")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
                 }
-                .padding(.vertical, 8)
 
                 Button(action: {
                     showingNotificationSettings = true
@@ -5521,7 +5526,8 @@ struct ContentView: View {
                     parentId: UUID() // TODO: Replace with actual parent ID from user session
                 ),
                 appSelectionStore: model.appSelectionStore,
-                notificationManager: model.notificationManager
+                notificationManager: model.notificationManager,
+                selectedTab: $selectedTab
             )
                 .id("parent-dashboard") // Ensure fresh state when mode changes
                 .tabItem {
@@ -5601,13 +5607,11 @@ struct ContentView: View {
 struct NotificationSettingsView: View {
     @EnvironmentObject var model: EnhancedScreenTimeModel
     @Environment(\.dismiss) private var dismiss
-    
-    @AppStorage("friendActivityNotifications") private var friendActivityNotifications = true
-    @AppStorage("friendRequestNotifications") private var friendRequestNotifications = true
+
     @AppStorage("milestoneNotifications") private var milestoneNotifications = true
     @AppStorage("dailyReminders") private var dailyReminders = true
     @AppStorage("sessionReminders") private var sessionReminders = true
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -5625,24 +5629,11 @@ struct NotificationSettingsView: View {
                         }
                     }
                 }
-                
-                Section("Friend Notifications") {
-                    Toggle("Friend Task Completions", isOn: $friendActivityNotifications)
-                    Toggle("Friend Requests", isOn: $friendRequestNotifications)
-                    Toggle("Location Sharing Updates", isOn: $friendActivityNotifications)
-                }
-                
-                Section("Personal Notifications") {
+
+                Section("App Notifications") {
                     Toggle("Milestone Achievements", isOn: $milestoneNotifications)
                     Toggle("Daily Goal Reminders", isOn: $dailyReminders)
                     Toggle("Session End Reminders", isOn: $sessionReminders)
-                }
-                
-                Section {
-                    Button("Test Notification") {
-                        model.simulateFriendActivity()
-                    }
-                    .foregroundColor(.blue)
                 }
             }
             .navigationTitle("Notifications")
@@ -8059,6 +8050,37 @@ struct StreakLostAlert: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             isShowing = false
             dismissing = false
+        }
+    }
+}
+
+// MARK: - Badge Tier Mini Component
+
+struct BadgeTierMini: View {
+    let tier: BadgeTier
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "medal.fill")
+                .font(.caption2)
+                .foregroundColor(tierColor)
+            Text("\(count)")
+                .font(.caption2)
+                .fontWeight(.semibold)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(tierColor.opacity(0.15))
+        .cornerRadius(8)
+    }
+
+    private var tierColor: Color {
+        switch tier {
+        case .bronze: return .brown
+        case .silver: return .gray
+        case .gold: return .yellow
+        case .platinum: return .cyan
         }
     }
 }

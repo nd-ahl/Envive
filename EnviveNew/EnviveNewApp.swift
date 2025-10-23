@@ -31,11 +31,73 @@ struct EnviveNewApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if showingSignIn {
-                    // Existing user sign-in flow (skip onboarding)
+                // ===== REFINED ONBOARDING FLOW =====
+                // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
+
+                if onboardingManager.shouldShowWelcome {
+                    // Step 1: Friendly Welcome (no terms, no role selection)
+                    FriendlyWelcomeView(
+                        onContinue: {
+                            onboardingManager.completeWelcome()
+                        }
+                    )
+                } else if onboardingManager.shouldShowRoleSelection {
+                    // Step 2: Role Selection (clear parent vs child choice)
+                    RoleSelectionView(
+                        onParentSelected: {
+                            onboardingManager.completeRoleSelection()
+                        },
+                        onChildSelected: {
+                            onboardingManager.completeRoleSelection()
+                        }
+                    )
+                } else if onboardingManager.shouldShowLegalAgreement {
+                    // Step 3: Legal Agreement (shown only once, never again)
+                    LegalAgreementView(
+                        onAccept: {
+                            onboardingManager.completeLegalAgreement()
+                        }
+                    )
+                } else if onboardingManager.shouldShowParentSignUp {
+                    // Step 4a: Parent Sign Up
+                    SimplifiedParentSignUpView(
+                        onComplete: {
+                            onboardingManager.completeSignIn()
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedRoleSelection = false
+                        }
+                    )
+                } else if onboardingManager.shouldShowParentFamilySetup {
+                    // Step 5a: Parent Family Setup
+                    QuickFamilySetupView(
+                        onComplete: {
+                            onboardingManager.completeFamilySetup()
+                            onboardingManager.completeOnboarding()
+                        }
+                    )
+                } else if onboardingManager.shouldShowChildJoin {
+                    // Step 4b: Child Join with code
+                    SimplifiedChildJoinView(
+                        onComplete: {
+                            onboardingManager.completeSignIn()
+                        },
+                        onBack: {
+                            onboardingManager.hasCompletedRoleSelection = false
+                        }
+                    )
+                } else if onboardingManager.shouldShowChildPermissions {
+                    // Step 5b: Child Permissions (with clear instructions)
+                    PermissionsView(
+                        onComplete: {
+                            onboardingManager.completePermissions()
+                            onboardingManager.completeOnboarding()
+                        }
+                    )
+                } else if showingSignIn {
+                    // Legacy: Existing user sign-in flow
                     ExistingUserSignInView(
                         onComplete: {
-                            // User signed in successfully - skip onboarding
                             onboardingManager.completeOnboarding()
                             showingSignIn = false
                         },
@@ -43,13 +105,13 @@ struct EnviveNewApp: App {
                             showingSignIn = false
                         }
                     )
-                } else if onboardingManager.shouldShowWelcome {
+                } else if false && onboardingManager.shouldShowQuestions {
+                    // === OLD COMPLEX FLOW DISABLED ===
                     WelcomeView(
                         onGetStarted: {
                             onboardingManager.completeWelcome()
                         },
                         onSignIn: {
-                            // Show sign-in screen for existing users
                             showingSignIn = true
                         }
                     )
@@ -186,6 +248,8 @@ struct EnviveNewApp: App {
                         }
                     )
                 } else {
+                    // Main app - legal consent already handled in refined onboarding flow
+                    // (Users accept terms in LegalAgreementView during onboarding)
                     RootNavigationView()
                 }
             }
@@ -227,9 +291,86 @@ struct EnviveNewApp: App {
                 )
             }
             break
+        case "/reset-password", "/auth/callback":
+            // Handle password reset callback from email link
+            print("🔐 Password reset callback received")
+            handlePasswordResetCallback(url)
+            break
         default:
             print("Unknown URL path: \(url.path)")
         }
+    }
+
+    /// Handle password reset callback from email link
+    /// URL format: envivenew://reset-password#access_token=xxx&refresh_token=yyy&type=recovery
+    private func handlePasswordResetCallback(_ url: URL) {
+        print("Processing password reset callback...")
+
+        // Parse the URL fragment (everything after #)
+        guard let fragment = url.fragment else {
+            print("❌ No fragment found in URL")
+            return
+        }
+
+        // Parse fragment parameters
+        let params = parseURLFragment(fragment)
+
+        // Check if this is a password recovery flow
+        guard let type = params["type"], type == "recovery" else {
+            print("❌ Not a recovery flow, ignoring")
+            return
+        }
+
+        // Extract tokens
+        guard let accessToken = params["access_token"],
+              let refreshToken = params["refresh_token"] else {
+            print("❌ Missing access_token or refresh_token")
+            return
+        }
+
+        print("✅ Found recovery tokens, establishing session...")
+
+        // Set the session in Supabase
+        Task {
+            do {
+                let supabase = SupabaseService.shared.client
+                try await supabase.auth.setSession(
+                    accessToken: accessToken,
+                    refreshToken: refreshToken
+                )
+
+                print("✅ Password reset session established")
+
+                // Post notification to trigger password reset UI
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("PasswordResetReady"),
+                        object: nil,
+                        userInfo: ["accessToken": accessToken]
+                    )
+                }
+            } catch {
+                print("❌ Failed to set password reset session: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Parse URL fragment into dictionary
+    /// Fragment format: "access_token=xxx&refresh_token=yyy&type=recovery"
+    private func parseURLFragment(_ fragment: String) -> [String: String] {
+        var params: [String: String] = [:]
+
+        let pairs = fragment.components(separatedBy: "&")
+        for pair in pairs {
+            let keyValue = pair.components(separatedBy: "=")
+            if keyValue.count == 2 {
+                let key = keyValue[0]
+                let value = keyValue[1].removingPercentEncoding ?? keyValue[1]
+                params[key] = value
+            }
+        }
+
+        return params
     }
 
 }

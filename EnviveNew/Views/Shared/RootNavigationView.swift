@@ -35,6 +35,7 @@ struct RootNavigationView: View {
             .animation(.easeInOut(duration: 0.3), value: currentEffectiveMode)
             .onAppear(perform: handleAppAppear)
             .onChange(of: scenePhase, handleScenePhaseChange)
+            .badgeNotifications()
 
             // Floating mode switcher button (for testing) - draggable
             ModeSwitcherButton(deviceModeManager: deviceModeManager)
@@ -85,7 +86,8 @@ struct RootNavigationView: View {
                     parentId: deviceModeManager.currentProfile?.id ?? UUID()
                 ),
                 appSelectionStore: model.appSelectionStore,
-                notificationManager: model.notificationManager
+                notificationManager: model.notificationManager,
+                selectedTab: $selectedTab
             )
             .tabItem {
                 Image(systemName: "house.fill")
@@ -109,13 +111,13 @@ struct RootNavigationView: View {
                 }
                 .tag(2)
 
-            // Activity/Reports
-            ParentActivityView()
-                .tabItem {
-                    Image(systemName: "chart.bar.fill")
-                    Text("Activity")
-                }
-                .tag(3)
+            // Activity/Reports - DISABLED per user request
+            // ParentActivityView()
+            //     .tabItem {
+            //         Image(systemName: "chart.bar.fill")
+            //         Text("Activity")
+            //     }
+            //     .tag(3)
 
             // Settings/Profile
             ParentProfileView()
@@ -123,7 +125,7 @@ struct RootNavigationView: View {
                     Image(systemName: "gearshape.fill")
                     Text("Settings")
                 }
-                .tag(4)
+                .tag(3)  // Changed from tag 4 to tag 3
         }
     }
 
@@ -139,7 +141,6 @@ struct RootNavigationView: View {
                     Text("Home")
                 }
                 .tag(0)
-                .badge(recentActivityCount)
 
             // Tasks - New task dashboard
             ChildDashboardView(
@@ -156,12 +157,20 @@ struct RootNavigationView: View {
             }
             .tag(1)
 
-            // Social
-            SocialView()
-                .environmentObject(model)
+            // Social - TEMPORARILY REMOVED
+            // SocialView()
+            //     .environmentObject(model)
+            //     .tabItem {
+            //         Image(systemName: "heart.circle.fill")
+            //         Text("Social")
+            //     }
+            //     .tag(2)
+
+            // App Management (Password Protected)
+            ChildAppManagementView(appSelectionStore: model.appSelectionStore)
                 .tabItem {
-                    Image(systemName: "heart.circle.fill")
-                    Text("Social")
+                    Image(systemName: "lock.shield.fill")
+                    Text("App Limits")
                 }
                 .tag(2)
 
@@ -176,12 +185,12 @@ struct RootNavigationView: View {
         }
     }
 
-    /// Recent activity count for badge
-    private var recentActivityCount: Int {
-        model.friendActivities.filter { activity in
-            Date().timeIntervalSince(activity.timestamp) < 3600
-        }.count
-    }
+    // Recent activity count - REMOVED with social features
+    // private var recentActivityCount: Int {
+    //     model.friendActivities.filter { activity in
+    //         Date().timeIntervalSince(activity.timestamp) < 3600
+    //     }.count
+    // }
 
     // MARK: - Handlers
 
@@ -270,6 +279,8 @@ struct ParentProfileView: View {
     @ObservedObject private var profilePhotoManager = ProfilePhotoManager.shared
     @ObservedObject private var householdService = HouseholdService.shared
     @ObservedObject private var authService = AuthenticationService.shared
+    @StateObject private var themeViewModel = DependencyContainer.shared
+        .viewModelFactory.makeThemeSettingsViewModel()
 
     private let supabase = SupabaseService.shared.client
 
@@ -478,6 +489,22 @@ struct ParentProfileView: View {
                 }
 
                 Section {
+                    // Appearance Mode Picker
+                    HStack {
+                        Image(systemName: "paintbrush.fill")
+                        Text("Appearance")
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { themeViewModel.selectedTheme },
+                            set: { themeViewModel.selectTheme($0) }
+                        )) {
+                            ForEach(ThemeMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
                     NavigationLink(destination: ManageFamilyView()) {
                         Label("Manage Family", systemImage: "person.2")
                     }

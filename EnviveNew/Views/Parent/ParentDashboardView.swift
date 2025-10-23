@@ -7,6 +7,7 @@ struct ParentDashboardView: View {
     @StateObject private var viewModel: ParentDashboardViewModel
     @ObservedObject var appSelectionStore: AppSelectionStore
     @ObservedObject var notificationManager: NotificationManager
+    @Binding var selectedTab: Int
 
     @State private var showingChildSelector = false
     @State private var showingAssignTask = false
@@ -14,10 +15,11 @@ struct ParentDashboardView: View {
     @State private var showingResetConfirmation = false
     @Environment(\.scenePhase) private var scenePhase
 
-    init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore, notificationManager: NotificationManager) {
+    init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore, notificationManager: NotificationManager, selectedTab: Binding<Int>) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.appSelectionStore = appSelectionStore
         self.notificationManager = notificationManager
+        _selectedTab = selectedTab
     }
 
     var body: some View {
@@ -270,7 +272,11 @@ struct ParentDashboardView: View {
                         childName: child.name,
                         credibility: child.credibility,
                         xpBalance: child.xpBalance,
-                        pendingCount: child.pendingCount
+                        pendingCount: child.pendingCount,
+                        onViewDetails: {
+                            // Switch to Children tab (tag 2)
+                            selectedTab = 2
+                        }
                     )
                 }
             }
@@ -333,6 +339,7 @@ struct ChildOverviewCard: View {
     let credibility: Int
     let xpBalance: Int
     let pendingCount: Int
+    let onViewDetails: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -375,7 +382,8 @@ struct ChildOverviewCard: View {
                 Spacer()
 
                 Button(action: {
-                    // Navigate to child detail
+                    // Navigate to Children tab
+                    onViewDetails()
                 }) {
                     Text("View Details")
                         .font(.caption)

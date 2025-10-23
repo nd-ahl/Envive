@@ -95,8 +95,9 @@ struct OnboardingQuestionView: View {
     private var questionOne: some View {
         VStack(spacing: 32) {
             VStack(spacing: 12) {
-                Text("👋")
+                Image(systemName: "hand.wave.fill")
                     .font(.system(size: 60))
+                    .foregroundColor(.white)
                     .opacity(showContent ? 1.0 : 0)
                     .scaleEffect(showContent ? 1.0 : 0.5)
 
@@ -115,7 +116,7 @@ struct OnboardingQuestionView: View {
 
             VStack(spacing: 16) {
                 OptionButton(
-                    icon: "👨‍👩‍👧‍👦",
+                    icon: "person.2.fill",
                     title: "Parent",
                     subtitle: "I manage my family's screen time",
                     isSelected: selectedRole == .parent
@@ -126,7 +127,7 @@ struct OnboardingQuestionView: View {
                 }
 
                 OptionButton(
-                    icon: "🧒",
+                    icon: "person.fill",
                     title: "Child",
                     subtitle: "I earn screen time by doing tasks",
                     isSelected: selectedRole == .child
@@ -144,8 +145,9 @@ struct OnboardingQuestionView: View {
     private var questionTwo: some View {
         VStack(spacing: 32) {
             VStack(spacing: 12) {
-                Text(selectedRole == .parent ? "📱" : "⏰")
+                Image(systemName: selectedRole == .parent ? "iphone" : "hourglass")
                     .font(.system(size: 60))
+                    .foregroundColor(.white)
 
                 Text(selectedRole == .parent ? "How much screen time?" : "How much time do you get?")
                     .font(.system(size: 28, weight: .bold))
@@ -303,8 +305,10 @@ private struct OptionButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                Text(icon)
+                Image(systemName: icon)
                     .font(.system(size: 40))
+                    .foregroundColor(.white)
+                    .frame(width: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)

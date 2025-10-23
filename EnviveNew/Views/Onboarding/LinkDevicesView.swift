@@ -102,8 +102,9 @@ struct LinkDevicesView: View {
 
     private var headerSection: some View {
         VStack(spacing: 20) {
-            Text("📱")
-                .font(.system(size: 70))
+            Image(systemName: "iphone")
+                .font(.system(size: 60))
+                .foregroundColor(.white)
                 .scaleEffect(showContent ? 1.0 : 0.5)
                 .opacity(showContent ? 1.0 : 0)
 

@@ -50,6 +50,18 @@ class OnboardingManager: ObservableObject {
         }
     }
 
+    @Published var hasCompletedRoleSelection: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedRoleSelection, forKey: roleSelectionKey)
+        }
+    }
+
+    @Published var hasCompletedLegalAgreement: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedLegalAgreement, forKey: legalAgreementKey)
+        }
+    }
+
     @Published var hasCompletedHouseholdSelection: Bool {
         didSet {
             UserDefaults.standard.set(hasCompletedHouseholdSelection, forKey: householdSelectionKey)
@@ -78,6 +90,8 @@ class OnboardingManager: ObservableObject {
     private let welcomeKey = "hasCompletedWelcome"
     private let questionsKey = "hasCompletedQuestions"
     private let roleConfirmationKey = "hasCompletedRoleConfirmation"
+    private let roleSelectionKey = "hasCompletedRoleSelection"
+    private let legalAgreementKey = "hasCompletedLegalAgreement"
     private let householdSelectionKey = "hasCompletedHouseholdSelection"
     private let signInKey = "hasCompletedSignIn"
     private let nameEntryKey = "hasCompletedNameEntry"
@@ -91,6 +105,8 @@ class OnboardingManager: ObservableObject {
         self.hasCompletedWelcome = UserDefaults.standard.bool(forKey: welcomeKey)
         self.hasCompletedQuestions = UserDefaults.standard.bool(forKey: questionsKey)
         self.hasCompletedRoleConfirmation = UserDefaults.standard.bool(forKey: roleConfirmationKey)
+        self.hasCompletedRoleSelection = UserDefaults.standard.bool(forKey: roleSelectionKey)
+        self.hasCompletedLegalAgreement = UserDefaults.standard.bool(forKey: legalAgreementKey)
         self.hasCompletedHouseholdSelection = UserDefaults.standard.bool(forKey: householdSelectionKey)
         self.hasCompletedSignIn = UserDefaults.standard.bool(forKey: signInKey)
         self.hasCompletedNameEntry = UserDefaults.standard.bool(forKey: nameEntryKey)
@@ -140,6 +156,18 @@ class OnboardingManager: ObservableObject {
     func completeBenefits() {
         hasCompletedBenefits = true
         print("✅ Benefits screen completed")
+    }
+
+    /// Mark role selection as completed
+    func completeRoleSelection() {
+        hasCompletedRoleSelection = true
+        print("✅ Role selection completed")
+    }
+
+    /// Mark legal agreement as completed - shown only once
+    func completeLegalAgreement() {
+        hasCompletedLegalAgreement = true
+        print("✅ Legal agreement completed - will never show again")
     }
 
     /// Mark household selection as completed
@@ -208,6 +236,8 @@ class OnboardingManager: ObservableObject {
         hasCompletedWelcome = false
         hasCompletedQuestions = false
         hasCompletedRoleConfirmation = false
+        hasCompletedRoleSelection = false
+        hasCompletedLegalAgreement = false
         hasCompletedHouseholdSelection = false
         hasCompletedSignIn = false
         hasCompletedNameEntry = false
@@ -234,9 +264,47 @@ class OnboardingManager: ObservableObject {
         return !hasCompletedOnboarding
     }
 
-    /// Check if user should see welcome screen
+    /// Check if user should see welcome screen (REFINED FLOW - first screen for everyone)
     var shouldShowWelcome: Bool {
         return !hasCompletedWelcome
+    }
+
+    /// Check if user should see role selection (REFINED FLOW - after welcome)
+    var shouldShowRoleSelection: Bool {
+        return hasCompletedWelcome && !hasCompletedRoleSelection
+    }
+
+    /// Check if user should see legal agreement (REFINED FLOW - after role selection, shown only once)
+    var shouldShowLegalAgreement: Bool {
+        return hasCompletedRoleSelection && !hasCompletedLegalAgreement
+    }
+
+    /// Check if parent should see sign up screen (REFINED FLOW - after legal agreement)
+    var shouldShowParentSignUp: Bool {
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isParent = roleString == "parent"
+        return isParent && hasCompletedLegalAgreement && !hasCompletedSignIn
+    }
+
+    /// Check if parent should see family setup (REFINED FLOW)
+    var shouldShowParentFamilySetup: Bool {
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isParent = roleString == "parent"
+        return isParent && hasCompletedSignIn && !hasCompletedFamilySetup
+    }
+
+    /// Check if child should see join flow (REFINED FLOW - after legal agreement)
+    var shouldShowChildJoin: Bool {
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isChild = roleString == "child"
+        return isChild && hasCompletedLegalAgreement && !hasCompletedSignIn
+    }
+
+    /// Check if child should see permissions screen (REFINED FLOW - after joining)
+    var shouldShowChildPermissions: Bool {
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isChild = roleString == "child"
+        return isChild && hasCompletedSignIn && !hasCompletedPermissions
     }
 
     /// Check if user should see questions
@@ -278,23 +346,32 @@ class OnboardingManager: ObservableObject {
         return false // Age is collected during child profile creation
     }
 
-    /// Check if user should see permissions screen
+    /// Check if user should see permissions screen (CHILD ONLY - parents don't need Screen Time permissions)
     var shouldShowPermissions: Bool {
         let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
         let isParent = roleString == "parent"
 
         if isParent {
-            // Parents go through: SignIn → NameEntry → FamilySetup → Permissions
-            return hasCompletedFamilySetup && !hasCompletedPermissions
+            // Parents do NOT need Screen Time permissions - skip this screen
+            return false
         } else {
-            // Children skip name entry and family setup, go straight to permissions
+            // Children need Screen Time permissions for app blocking
             return hasCompletedSignIn && !hasCompletedPermissions
         }
     }
 
     /// Check if user should see benefits screen
     var shouldShowBenefits: Bool {
-        return hasCompletedPermissions && !hasCompletedBenefits
+        let roleString = UserDefaults.standard.string(forKey: "userRole") ?? "parent"
+        let isParent = roleString == "parent"
+
+        if isParent {
+            // Parents: FamilySetup → Benefits (skip permissions)
+            return hasCompletedFamilySetup && !hasCompletedBenefits
+        } else {
+            // Children: Permissions → Benefits
+            return hasCompletedPermissions && !hasCompletedBenefits
+        }
     }
 
     /// Get saved user age

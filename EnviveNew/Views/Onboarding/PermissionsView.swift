@@ -34,10 +34,14 @@ struct PermissionsView: View {
                     // Header
                     headerSection
 
-                    // Instructional alert mock with arrow
+                    // Step-by-step instructions
+                    instructionsSection
+                        .padding(.horizontal, 24)
+
+                    // Request permission button
                     instructionalAlertMock
+                        .padding(.horizontal, 32)
                 }
-                .padding(.horizontal, 32)
 
                 Spacer()
 
@@ -87,96 +91,178 @@ struct PermissionsView: View {
         }
     }
 
-    // MARK: - Instructional Alert Mock (Non-Functional)
+    // MARK: - Step-by-Step Instructions
+
+    private var instructionsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Follow these steps:")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.bottom, 4)
+
+            // Step 1
+            instructionStep(
+                number: "1",
+                text: "Tap the \"Request Permission\" button below"
+            )
+
+            // Step 2
+            instructionStep(
+                number: "2",
+                text: "A system alert will appear from iOS"
+            )
+
+            // Step 3
+            instructionStep(
+                number: "3",
+                text: "On the alert, tap \"Continue\" (the button on the LEFT side)",
+                highlight: true
+            )
+
+            // Visual helper
+            alertVisualHelper
+        }
+        .padding(20)
+        .background(Color.white.opacity(0.15))
+        .cornerRadius(16)
+        .opacity(showContent ? 1.0 : 0)
+    }
+
+    private func instructionStep(number: String, text: String, highlight: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Number circle
+            ZStack {
+                Circle()
+                    .fill(highlight ? Color.green : Color.white.opacity(0.3))
+                    .frame(width: 32, height: 32)
+
+                Text(number)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+            }
+
+            // Text
+            Text(text)
+                .font(.system(size: 16, weight: highlight ? .bold : .medium))
+                .foregroundColor(.white)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var alertVisualHelper: some View {
+        VStack(spacing: 12) {
+            Text("The alert will look like this:")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+
+            // Mock alert visual
+            VStack(spacing: 0) {
+                // Alert title
+                VStack(spacing: 8) {
+                    Text("\"Envive\" Would Like to Access Screen Time")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.black)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 16)
+
+                    Text("Providing \"Envive\" access to Screen Time...")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                }
+
+                Divider()
+
+                // Buttons with green arrow
+                HStack(spacing: 0) {
+                    ZStack {
+                        Text("Continue")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+
+                        // Green arrow pointing to Continue
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.green)
+                            .offset(y: 50)
+                    }
+
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 0.5, height: 40)
+
+                    Text("Don't Allow")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundColor(.blue.opacity(0.5))
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                }
+            }
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.2), radius: 10)
+
+            // Arrow instruction
+            HStack(spacing: 6) {
+                Image(systemName: "hand.point.up.left.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.green)
+                Text("Tap Continue on the left")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.green)
+            }
+            .padding(.top, 50)
+        }
+        .padding(.top, 12)
+    }
+
+    // MARK: - Request Permission Button
 
     private var instructionalAlertMock: some View {
-        VStack(spacing: 0) {
-            // Title + Body
-            VStack(spacing: 12) {
-                Text("\u{201C}Envive\u{201D} Would Like to Access Screen Time")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.black)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-
-                Text("Providing \u{201C}Envive\u{201D} access to Screen Time may allow it to see your activity data, restrict content, and limit the usage of apps and websites.")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.45)) // #6D6D72
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(1) // ~1.07 line height
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-            }
-
-            // Top hairline divider
-            Divider()
-                .background(Color(red: 0.78, green: 0.78, blue: 0.78)) // #C6C6C8
-
-            // Buttons row (FUNCTIONAL - tapping Continue will request permission)
-            HStack(spacing: 0) {
-                // Continue button (left) - FUNCTIONAL with visual feedback
-                Button(action: {
-                    requestPermission()
-                }) {
-                    ZStack(alignment: .leading) {
-                        HStack(spacing: 8) {
-                            if isRequestingPermission {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.0, green: 0.48, blue: 1.0)))
-                                    .scaleEffect(0.8)
-                                Text("Requesting...")
-                                    .font(.system(size: 15, weight: .regular))
-                                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0))
-                            } else if permissionGranted {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 17))
-                                    .foregroundColor(.green)
-                                Text("Granted")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.green)
-                            } else {
-                                Text("Continue")
-                                    .font(.system(size: 17, weight: .regular))
-                                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0)) // #007AFF
-                            }
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-
-                        // Green arrow pointing to Continue (only show when idle)
-                        if !isRequestingPermission && !permissionGranted {
-                            VStack(spacing: 4) {
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 28, weight: .bold))
-                                    .foregroundColor(.green)
-                                Text("Tap to continue")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.green)
-                            }
-                            .offset(y: 60)
-                        }
+        VStack(spacing: 16) {
+            Button(action: {
+                requestPermission()
+            }) {
+                HStack(spacing: 12) {
+                    if isRequestingPermission {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.9)
+                        Text("Requesting Permission...")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                    } else if permissionGranted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white)
+                        Text("Permission Granted!")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                    } else {
+                        Image(systemName: "hand.tap.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.white)
+                        Text("Request Permission")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
                     }
                 }
-                .disabled(isRequestingPermission || permissionGranted)
-
-                // Vertical divider
-                Rectangle()
-                    .fill(Color(red: 0.78, green: 0.78, blue: 0.78)) // #C6C6C8
-                    .frame(width: 1 / UIScreen.main.scale, height: 44)
-
-                // Don't Allow button (right) - greyed out/disabled appearance
-                Text("Don't Allow")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0).opacity(0.3)) // Faded to show it's not the action
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(
+                    permissionGranted ? Color.green :
+                    isRequestingPermission ? Color.blue.opacity(0.7) :
+                    Color.blue
+                )
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.2), radius: 12, x: 0, y: 6)
             }
+            .disabled(isRequestingPermission || permissionGranted)
         }
-        .frame(width: 270)
-        .background(Color.white)
-        .cornerRadius(13)
-        .shadow(color: .black.opacity(0.10), radius: 30, x: 0, y: 0)
         .opacity(showContent ? 1.0 : 0)
         .scaleEffect(showContent ? 1.0 : 0.95)
     }

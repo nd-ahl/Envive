@@ -46,6 +46,10 @@ class HouseholdContext: ObservableObject {
 
     /// Set the current household context (call when user logs in or creates household)
     func setHouseholdContext(householdId: UUID, parentId: UUID?) {
+        // IMPORTANT: Clear any previous household data first to prevent data leakage
+        householdChildren = []
+        currentChildId = nil
+
         currentHouseholdId = householdId
         currentParentId = parentId
 
@@ -59,7 +63,7 @@ class HouseholdContext: ObservableObject {
 
         print("✅ Household context set: household=\(householdId), parent=\(parentId?.uuidString ?? "none")")
 
-        // Load household children
+        // Load household children from database (will replace householdChildren array)
         loadHouseholdChildren()
     }
 
@@ -140,8 +144,8 @@ class HouseholdContext: ObservableObject {
     // MARK: - Private Helpers
 
     private func loadHouseholdChildren() {
-        // Load children from Supabase via HouseholdService
-        // This ensures we get ALL children in the household, not just test profiles
+        // Load children from Supabase via HouseholdService ONLY
+        // DO NOT fall back to local storage - that causes data leakage between users!
         Task {
             do {
                 let householdService = HouseholdService.shared
@@ -169,27 +173,12 @@ class HouseholdContext: ObservableObject {
             } catch {
                 print("❌ Failed to load household children from Supabase: \(error)")
 
-                // Fallback to DeviceModeManager for backward compatibility
-                let deviceManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
-
-                var children: [UserProfile] = []
-
-                // Load child profiles from device manager as fallback
-                if let child1 = deviceManager.getProfile(byMode: .child1) {
-                    if let parentId = currentParentId, child1.parentId == parentId {
-                        children.append(child1)
-                    }
-                }
-
-                if let child2 = deviceManager.getProfile(byMode: .child2) {
-                    if let parentId = currentParentId, child2.parentId == parentId {
-                        children.append(child2)
-                    }
-                }
-
+                // DO NOT fall back to DeviceModeManager!
+                // Old fallback caused data leakage - users saw other users' children
+                // If database fails, show empty list (user can retry)
                 await MainActor.run {
-                    householdChildren = children
-                    print("📦 Loaded \(children.count) children from DeviceModeManager (fallback)")
+                    householdChildren = []
+                    print("⚠️ Set children to empty due to database error - user can retry")
                 }
             }
         }

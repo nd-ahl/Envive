@@ -64,21 +64,31 @@ struct ForgotPasswordView: View {
     private var inputView: some View {
         VStack(spacing: 40) {
             // Header
-            VStack(spacing: 20) {
-                Text("🔒")
-                    .font(.system(size: 70))
-                    .scaleEffect(showContent ? 1.0 : 0.5)
-                    .opacity(showContent ? 1.0 : 0)
+            VStack(spacing: 24) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(width: 90, height: 90)
+                        .shadow(color: Color.black.opacity(0.1), radius: 15, x: 0, y: 8)
 
-                VStack(spacing: 12) {
-                    Text("Forgot Password?")
-                        .font(.system(size: 32, weight: .bold))
+                    Image(systemName: "lock.rotation")
+                        .font(.system(size: 44, weight: .medium))
                         .foregroundColor(.white)
+                }
+                .scaleEffect(showContent ? 1.0 : 0.5)
+                .opacity(showContent ? 1.0 : 0)
+
+                VStack(spacing: 14) {
+                    Text("Forgot Password?")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .tracking(0.5)
                         .opacity(showContent ? 1.0 : 0)
 
-                    Text("Enter your email and we'll send you a link to reset your password")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
+                    Text("Enter your email and we'll send you a secure link to reset your password")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineSpacing(2)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
                         .opacity(showContent ? 1.0 : 0)
@@ -86,56 +96,66 @@ struct ForgotPasswordView: View {
             }
 
             // Email input
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
                 TextField("", text: $email)
                     .textContentType(.emailAddress)
                     .autocapitalization(.none)
                     .keyboardType(.emailAddress)
-                    .padding()
-                    .background(Color(UIColor.systemBackground))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(UIColor.systemBackground))
+                            .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
                     )
                     .placeholder(when: email.isEmpty) {
-                        Text("Email")
+                        Text("Email Address")
                             .foregroundColor(Color(UIColor.placeholderText))
-                            .padding(.leading, 16)
+                            .padding(.leading, 18)
                     }
+                    .font(.system(size: 16, weight: .regular))
                     .opacity(showContent ? 1.0 : 0)
 
                 // Error message
                 if let error = errorMessage {
-                    Text(error)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.red)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.white.opacity(0.9))
-                        .cornerRadius(10)
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(error)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.red)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white.opacity(0.95))
+                    )
                 }
 
                 // Send Reset Link button
                 Button(action: handlePasswordReset) {
-                    HStack {
+                    HStack(spacing: 12) {
                         if isLoading {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .blue))
                         } else {
+                            Image(systemName: "envelope.fill")
+                                .font(.system(size: 18, weight: .semibold))
                             Text("Send Reset Link")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .tracking(0.3)
                         }
                     }
-                    .foregroundColor(.blue.opacity(0.9))
+                    .foregroundColor(email.isEmpty ? .gray.opacity(0.5) : .blue.opacity(0.9))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 20)
                     .background(Color.white)
-                    .cornerRadius(14)
-                    .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(email.isEmpty ? 0.08 : 0.2), radius: 12, x: 0, y: 6)
                 }
                 .disabled(isLoading || email.isEmpty)
-                .opacity(email.isEmpty ? 0.5 : 1.0)
+                .opacity(email.isEmpty ? 0.6 : 1.0)
                 .scaleEffect(showContent ? 1.0 : 0.9)
                 .opacity(showContent ? 1.0 : 0)
             }
@@ -146,51 +166,88 @@ struct ForgotPasswordView: View {
     // MARK: - Success View
 
     private var successView: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 36) {
             // Success icon
             ZStack {
                 Circle()
                     .fill(Color.green.opacity(0.2))
-                    .frame(width: 100, height: 100)
+                    .frame(width: 110, height: 110)
+                    .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 10)
 
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 70))
-                    .foregroundColor(.green)
+                Image(systemName: "envelope.badge.fill")
+                    .font(.system(size: 56, weight: .medium))
+                    .foregroundColor(.white)
+                    .symbolRenderingMode(.hierarchical)
             }
             .scaleEffect(showContent ? 1.0 : 0.5)
 
-            VStack(spacing: 16) {
+            VStack(spacing: 18) {
                 Text("Check Your Email")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
+                    .tracking(0.5)
 
-                Text("We've sent a password reset link to:\n\(email)")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white.opacity(0.9))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                VStack(spacing: 12) {
+                    Text("We've sent a password reset link to:")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineSpacing(2)
 
-                Text("Click the link in the email to reset your password")
-                    .font(.system(size: 15))
-                    .foregroundColor(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .padding(.top, 8)
+                    Text(email)
+                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.2))
+                        )
+                }
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "1.circle.fill")
+                            .foregroundColor(.white.opacity(0.8))
+                        Text("Check your email inbox")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "2.circle.fill")
+                            .foregroundColor(.white.opacity(0.8))
+                        Text("Click the reset link")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "3.circle.fill")
+                            .foregroundColor(.white.opacity(0.8))
+                        Text("Create your new password")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .padding(.top, 12)
             }
 
             // Done button
             Button(action: { dismiss() }) {
                 Text("Done")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .tracking(0.3)
                     .foregroundColor(.blue.opacity(0.9))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 20)
                     .background(Color.white)
-                    .cornerRadius(14)
-                    .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.2), radius: 12, x: 0, y: 6)
             }
             .padding(.horizontal, 32)
-            .padding(.top, 20)
+            .padding(.top, 24)
         }
     }
 

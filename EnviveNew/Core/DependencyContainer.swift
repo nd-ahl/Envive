@@ -40,6 +40,16 @@ final class DependencyContainer {
         TaskRepositoryImpl(storage: storage)
     }()
 
+    lazy var badgeRepository: BadgeRepository = {
+        BadgeRepositoryImpl()
+    }()
+
+    // MARK: - Legal/Compliance Services
+
+    lazy var legalConsentService: LegalConsentService = {
+        LegalConsentServiceImpl(storage: storage)
+    }()
+
     // MARK: - App Services
 
     lazy var appSelectionService: AppSelectionService = {
@@ -72,6 +82,18 @@ final class DependencyContainer {
             xpService: xpService,
             credibilityService: credibilityService
         )
+    }()
+
+    lazy var badgeService: BadgeService = {
+        let service = BadgeServiceImpl(
+            badgeRepository: badgeRepository,
+            taskService: taskService,
+            xpService: xpService,
+            credibilityService: credibilityService
+        )
+        // Set badge service on task service to enable badge checking after approval
+        (taskService as? TaskServiceImpl)?.setBadgeService(service)
+        return service
     }()
 
     // MARK: - Device Mode Management

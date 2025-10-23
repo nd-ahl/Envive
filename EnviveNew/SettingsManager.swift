@@ -9,6 +9,21 @@ class SettingsManager: ObservableObject {
     @Published var isBlocking = false
     @Published var isSafariBlocked = false
 
+    init() {
+        // Check initial blocking state
+        updateBlockingState()
+    }
+
+    /// Check if apps are currently being blocked
+    private func updateBlockingState() {
+        // Check if any shields are set in the store
+        let hasShields = (store.shield.applications != nil && !store.shield.applications!.isEmpty) ||
+                        (store.shield.applicationCategories != nil) ||
+                        (store.shield.webDomains != nil && !store.shield.webDomains!.isEmpty)
+
+        isBlocking = hasShields
+    }
+
     func blockApps(_ selection: FamilyActivitySelection) {
         // PERFORMANCE FIX: Run asynchronously to prevent UI freeze
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -27,7 +42,7 @@ class SettingsManager: ObservableObject {
                     self.store.shield.webDomains = selection.webDomainTokens
                 }
 
-                self.isBlocking = true
+                self.updateBlockingState()
                 print("Blocked \(selection.applicationTokens.count) apps and \(selection.categoryTokens.count) categories")
             }
         }
@@ -42,7 +57,7 @@ class SettingsManager: ObservableObject {
                 self.store.shield.applications = nil
                 self.store.shield.applicationCategories = nil
                 self.store.shield.webDomains = nil
-                self.isBlocking = false
+                self.updateBlockingState()
                 print("Unblocked all apps")
             }
         }
@@ -56,10 +71,15 @@ class SettingsManager: ObservableObject {
 
             await MainActor.run {
                 self.store.clearAllSettings()
-                self.isBlocking = false
+                self.updateBlockingState()
                 print("Cleared all managed settings")
             }
         }
+    }
+
+    /// Public method to refresh blocking state
+    func refreshBlockingState() {
+        updateBlockingState()
     }
 
     // MARK: - Safari-specific blocking for testing

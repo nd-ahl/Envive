@@ -65,8 +65,9 @@ struct BenefitsView: View {
     private var headerSection: some View {
         VStack(spacing: 20) {
             // Icon
-            Text(userRole == .parent ? "👨‍👩‍👧‍👦" : "🎮")
-                .font(.system(size: 70))
+            Image(systemName: userRole == .parent ? "person.2.fill" : "gamecontroller.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.white)
                 .scaleEffect(showContent ? 1.0 : 0.5)
                 .opacity(showContent ? 1.0 : 0)
 

@@ -434,7 +434,20 @@ struct ModeSwitcherView: View {
     // MARK: - Actions
 
     private func handleModeSwitch() {
+        // SECURITY CHECK: Verify authenticated user's role before allowing mode switch
+        guard let currentAuthProfile = authService.currentProfile else {
+            print("❌ Cannot switch modes: No authenticated user")
+            return
+        }
+
         if selectedMode == .parent {
+            // SECURITY: Only allow switching to parent mode if authenticated as parent
+            if currentAuthProfile.role != "parent" {
+                print("❌ Cannot switch to parent mode: User is not authenticated as parent")
+                print("  - Authenticated as: \(currentAuthProfile.fullName ?? "Unknown") (\(currentAuthProfile.role))")
+                return
+            }
+
             // Use actual parent name from AuthenticationService if available
             let actualParentName = authService.currentProfile?.fullName ?? ""
             let trimmedName = !actualParentName.isEmpty ? actualParentName : parentName.trimmingCharacters(in: .whitespaces)
@@ -467,6 +480,19 @@ struct ModeSwitcherView: View {
             print("🔄 Switched to Parent mode: \(trimmedName), Photo: \(existingParentProfile?.profilePhotoFileName ?? "none")")
         } else if let childId = selectedChildId,
                   let child = availableChildren.first(where: { $0.id == childId }) {
+            // SECURITY: Only allow switching to child mode if:
+            // 1. User is authenticated as a child, OR
+            // 2. User is authenticated as a parent AND is using the mode switcher for testing
+            // For production, parents should NOT be able to switch to child profiles
+
+            // For now, allow parents to switch to child mode for single-device testing
+            // In production, this should be restricted
+            if currentAuthProfile.role == "parent" {
+                print("⚠️ WARNING: Parent switching to child mode (development/testing only)")
+                print("  - Authenticated as: \(currentAuthProfile.fullName ?? "Unknown") (parent)")
+                print("  - Switching to: \(child.fullName ?? "Unknown") (child)")
+            }
+
             // Before switching to child, save current parent name
             let actualParentName = authService.currentProfile?.fullName ?? ""
             if !actualParentName.isEmpty {

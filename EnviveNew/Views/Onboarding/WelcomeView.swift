@@ -61,8 +61,9 @@ struct WelcomeView: View {
                     .fill(Color.white.opacity(0.15))
                     .frame(width: 100, height: 100)
 
-                Text("✨")
-                    .font(.system(size: 60))
+                Image(systemName: "house.fill")
+                    .font(.system(size: 50))
+                    .foregroundColor(.white)
             }
             .scaleEffect(showContent ? 1.0 : 0.5)
             .opacity(showContent ? 1.0 : 0)
@@ -86,7 +87,7 @@ struct WelcomeView: View {
                 .opacity(showContent ? 1.0 : 0)
                 .offset(y: showContent ? 0 : 20)
 
-            Text("Kids do tasks. Parents approve.\nEveryone wins. 🎉")
+            Text("Kids do tasks. Parents approve.\nEveryone wins.")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundColor(.white.opacity(0.95))
                 .multilineTextAlignment(.center)

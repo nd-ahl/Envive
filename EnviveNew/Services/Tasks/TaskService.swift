@@ -59,11 +59,17 @@ class TaskServiceImpl: TaskService {
     private let xpService: XPService
     private let credibilityService: CredibilityService
     private let householdContext = HouseholdContext.shared
+    private var badgeService: BadgeService?
 
     init(repository: TaskRepository, xpService: XPService, credibilityService: CredibilityService) {
         self.repository = repository
         self.xpService = xpService
         self.credibilityService = credibilityService
+        // Badge service will be set after initialization to avoid circular dependency
+    }
+
+    func setBadgeService(_ badgeService: BadgeService) {
+        self.badgeService = badgeService
     }
 
     // MARK: - Template Operations
@@ -223,6 +229,11 @@ class TaskServiceImpl: TaskService {
         // Play approval sound
         SoundEffectsManager.shared.playTaskApproved(xpAmount: xpAwarded)
 
+        // Check and award badges
+        Task {
+            try? await badgeService?.checkAndAwardBadges(for: assignment.childId)
+        }
+
         // TODO: Send notification to child
 
         return TaskServiceApprovalResult(
@@ -285,6 +296,11 @@ class TaskServiceImpl: TaskService {
 
         // Play approval sound
         SoundEffectsManager.shared.playTaskApproved(xpAmount: xpAwarded)
+
+        // Check and award badges
+        Task {
+            try? await badgeService?.checkAndAwardBadges(for: assignment.childId)
+        }
 
         // TODO: Send notification to child
 

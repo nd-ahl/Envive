@@ -207,6 +207,10 @@ struct ChildDashboardView: View {
             .onAppear {
                 viewModel.loadData()
                 checkForDeclines()
+                // Check for welcome badge on first app open
+                Task {
+                    try? await viewModel.checkWelcomeBadge()
+                }
             }
             .refreshable {
                 viewModel.loadData()
@@ -220,7 +224,12 @@ struct ChildDashboardView: View {
                     checkForDeclines()
                 }
             }
-            .sheet(isPresented: $showTaskCreation) {
+            .sheet(isPresented: $showTaskCreation, onDismiss: {
+                // Reload data when task library sheet is dismissed
+                // This ensures newly claimed/created tasks appear immediately
+                print("🔄 Task library dismissed - reloading tasks")
+                viewModel.loadData()
+            }) {
                 ChildTaskCreationView(
                     childId: viewModel.childId,
                     taskService: viewModel.taskService
@@ -726,6 +735,11 @@ class ChildDashboardViewModel: ObservableObject {
         completedTasksCount = allTasks.filter {
             $0.status == .approved
         }.count
+    }
+
+    func checkWelcomeBadge() async throws {
+        // Award welcome badge on first app open
+        _ = try await DependencyContainer.shared.badgeService.awardBadge(.firstAppOpen, to: childId)
     }
 }
 

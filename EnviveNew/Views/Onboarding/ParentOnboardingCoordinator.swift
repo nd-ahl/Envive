@@ -60,8 +60,24 @@ struct ParentOnboardingCoordinator: View {
     }
 
     private func linkDeviceToProfile(_ profile: Profile) {
-        // Determine if selected profile is parent or child
-        let selectedRole: UserRole = profile.role == "parent" ? .parent : .child
+        // IMPORTANT: Use the AUTHENTICATED user's role, not the selected profile's role
+        // The authenticated user determines the device mode
+        guard let authenticatedProfile = authenticatedProfile else {
+            print("❌ Error: No authenticated profile found")
+            return
+        }
+
+        // The authenticated user's role determines device mode
+        let authenticatedRole: UserRole = authenticatedProfile.role == "parent" ? .parent : .child
+
+        // SECURITY: If authenticated as parent, only allow selecting parent profiles
+        // This prevents a parent from accidentally logging into a child's profile
+        if authenticatedRole == .parent && profile.role != "parent" {
+            print("❌ Error: Parent authenticated users can only select parent profiles")
+            print("  - Authenticated as: \(authenticatedProfile.fullName ?? "Unknown") (parent)")
+            print("  - Attempted to select: \(profile.fullName ?? "Unknown") (\(profile.role))")
+            return
+        }
 
         // Save the selected profile information
         UserDefaults.standard.set(profile.id, forKey: "linkedProfileId")
@@ -77,36 +93,25 @@ struct ParentOnboardingCoordinator: View {
             UserDefaults.standard.set(true, forKey: "isInHousehold")
         }
 
-        // Set device mode based on selected role
-        let deviceMode = DeviceModeService.deviceModeFromUserRole(selectedRole)
+        // Set device mode based on AUTHENTICATED role, not selected profile
+        let deviceMode = DeviceModeService.deviceModeFromUserRole(authenticatedRole)
         DeviceModeService.shared.setDeviceMode(deviceMode)
 
-        // Save user role for onboarding flow
-        UserDefaults.standard.set(selectedRole == .parent ? "parent" : "child", forKey: "userRole")
+        // Save AUTHENTICATED user role for onboarding flow
+        UserDefaults.standard.set(authenticatedRole == .parent ? "parent" : "child", forKey: "userRole")
 
-        // If parent was selected and they're joining (not creating), skip certain steps
-        if selectedRole == .parent {
-            // Mark certain steps as complete since they're joining existing household
-            OnboardingManager.shared.hasCompletedNameEntry = true
-            OnboardingManager.shared.hasCompletedFamilySetup = true
+        // Mark certain steps as complete since they're joining existing household
+        OnboardingManager.shared.hasCompletedNameEntry = true
+        OnboardingManager.shared.hasCompletedFamilySetup = true
 
-            print("✅ Device linked to parent profile: \(profile.fullName ?? "Parent")")
-            print("  - Profile ID: \(profile.id)")
-            print("  - Household ID: \(profile.householdId ?? "nil")")
-            print("  - Device mode set to: PARENT")
-        } else {
-            // Parent joining as child (for troubleshooting)
-            OnboardingManager.shared.hasCompletedNameEntry = true
-            OnboardingManager.shared.hasCompletedFamilySetup = true
-
-            print("✅ Device linked to child profile: \(profile.fullName ?? "Child")")
-            print("  - Profile ID: \(profile.id)")
-            print("  - Household ID: \(profile.householdId ?? "nil")")
-            print("  - Age: \(profile.age ?? 0)")
-            print("  - Device mode set to: CHILD")
-        }
-
+        print("✅ Device linked to profile: \(profile.fullName ?? "Unknown")")
+        print("  - Authenticated as: \(authenticatedProfile.fullName ?? "Unknown") (\(authenticatedProfile.role))")
+        print("  - Selected profile: \(profile.fullName ?? "Unknown") (\(profile.role))")
+        print("  - Profile ID: \(profile.id)")
+        print("  - Household ID: \(profile.householdId ?? "nil")")
+        print("  - Device mode set to: \(deviceMode.displayName)")
         print("  - Moving to next onboarding step")
+
         onComplete()
     }
 }
