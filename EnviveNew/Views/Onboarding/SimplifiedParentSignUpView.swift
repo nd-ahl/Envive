@@ -123,6 +123,7 @@ struct SimplifiedParentSignUpView: View {
 
     private var appleSignInSection: some View {
         SignInWithAppleButton(
+            .signUp,  // Use signUp label instead of signIn
             onRequest: { request in
                 request.requestedScopes = [.email, .fullName]
             },
