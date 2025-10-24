@@ -266,6 +266,7 @@ struct ChildDashboardView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     // MARK: - Decline Checking

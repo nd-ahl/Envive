@@ -76,6 +76,7 @@ struct ChildAppManagementView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     // MARK: - Header Section

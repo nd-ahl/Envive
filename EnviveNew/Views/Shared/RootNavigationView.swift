@@ -618,6 +618,7 @@ struct ParentProfileView: View {
                 Text("Enter your name")
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func updateProfilePhoto(fileName: String) {

@@ -105,6 +105,7 @@ struct ParentDashboardView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     // MARK: - Pending Approvals

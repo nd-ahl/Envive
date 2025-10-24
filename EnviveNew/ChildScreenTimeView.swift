@@ -274,11 +274,17 @@ struct ChildScreenTimeView: View {
                     Text("Select Duration")
                         .font(.headline)
 
+                    // Debug: Show available minutes
+                    Text("Available: \(rewardManager.earnedMinutes) minutes")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 12) {
+                        // Show all session options that are less than or equal to earned minutes
                         ForEach(sessionOptions.filter { $0 <= rewardManager.earnedMinutes }, id: \.self) { duration in
                             sessionOptionButton(duration: duration)
                         }

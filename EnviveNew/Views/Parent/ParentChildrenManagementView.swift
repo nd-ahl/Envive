@@ -46,6 +46,7 @@ struct ParentChildrenManagementView: View {
                 viewModel.loadChildren()
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     // MARK: - Empty State
@@ -815,12 +816,17 @@ class ChildrenManagementViewModel: ObservableObject {
 
                 print("📊 Loading children for management view: \(childProfiles.count) from database")
 
-                // Convert Profile objects to ChildInfo format
+                // Convert Profile objects to ChildInfo format, fetching local profile photo data
                 let loadedChildren = childProfiles.map { profile in
-                    ChildInfo(
-                        id: UUID(uuidString: profile.id) ?? UUID(),
+                    let childId = UUID(uuidString: profile.id) ?? UUID()
+
+                    // Try to get the local UserProfile to access profilePhotoFileName
+                    let localProfile = deviceModeManager.getProfile(byId: childId)
+
+                    return ChildInfo(
+                        id: childId,
                         name: profile.fullName ?? "Child",
-                        profilePhotoFileName: nil // Avatar URL from backend not yet synced to local file
+                        profilePhotoFileName: localProfile?.profilePhotoFileName
                     )
                 }
 

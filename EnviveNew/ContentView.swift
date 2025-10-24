@@ -4968,6 +4968,7 @@ struct ProfileView: View {
         NavigationView {
             profileContent
         }
+        .navigationViewStyle(.stack)
         .alert("Edit Name", isPresented: $showingEditName) {
             TextField("Enter your name", text: $tempName)
             Button("Cancel", role: .cancel) { }
@@ -6919,6 +6920,7 @@ struct EnhancedHomeView: View {
                 loadRealData()
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     // MARK: - Load Real Data
