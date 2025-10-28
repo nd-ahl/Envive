@@ -272,6 +272,7 @@ struct ParentProfileView: View {
     @State private var showCopiedMessage = false
     @State private var showingNameEditor = false
     @State private var editedName = ""
+    @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
 
     var body: some View {
         NavigationView {
@@ -527,12 +528,29 @@ struct ParentProfileView: View {
                     Text("Info")
                 }
 
+                // Developer/Testing tools - moved to bottom for discretion
                 Section {
+                    Toggle(isOn: $enableDeviceSwitcher) {
+                        HStack {
+                            Text("Device Switcher")
+                                .font(.caption)
+                            Spacer()
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+
                     Button(action: {
                         resetHelper.initiateReset()
                     }) {
-                        Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
-                            .foregroundColor(.orange)
+                        HStack {
+                            Text("Reset Onboarding")
+                                .font(.caption)
+                            Spacer()
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
                     }
 
                     Button(action: {
@@ -555,16 +573,28 @@ struct ParentProfileView: View {
                             rootVC.present(alert, animated: true)
                         }
                     }) {
-                        Label("Clean Test Data", systemImage: "trash")
-                            .foregroundColor(.red)
+                        HStack {
+                            Text("Clean Test Data")
+                                .font(.caption)
+                            Spacer()
+                            Image(systemName: "trash")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
                     }
 
                     Button(action: {
                         // Show all stored keys for debugging
                         TestDataCleanupService.shared.printAllStoredKeys()
                     }) {
-                        Label("Print Debug Keys", systemImage: "info.circle")
-                            .foregroundColor(.blue)
+                        HStack {
+                            Text("Print Debug Keys")
+                                .font(.caption)
+                            Spacer()
+                            Image(systemName: "terminal")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
                     }
 
                     Button(action: {
@@ -578,14 +608,19 @@ struct ParentProfileView: View {
                             }
                         }
                     }) {
-                        Label("Fix Profile Household IDs", systemImage: "wrench.and.screwdriver")
-                            .foregroundColor(.orange)
+                        HStack {
+                            Text("Fix Profile IDs")
+                                .font(.caption)
+                            Spacer()
+                            Image(systemName: "wrench")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
                     }
-                } header: {
-                    Text("Debug & Testing")
                 } footer: {
-                    Text("Reset onboarding, clean test data, or fix profile household IDs. Check console for results.")
-                        .font(.caption)
+                    Text("Developer tools")
+                        .font(.caption2)
+                        .foregroundColor(.secondary.opacity(0.6))
                 }
             }
             .navigationTitle("Settings")

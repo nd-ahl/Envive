@@ -130,7 +130,13 @@ enum BadgeType: String, Codable, CaseIterable {
     }
 
     var bonusXP: Int {
-        // XP rewards scale by badge tier:
+        // DISABLED: No XP/time rewards for achievements
+        // Badges are now purely cosmetic achievements
+        // This prevents children from earning screen time through badge collection
+        return 0
+
+        /* PREVIOUS XP REWARDS (disabled per user request):
+        // XP rewards scaled by badge tier:
         // Bronze: 25-100 XP (common, starter achievements)
         // Silver: 150-400 XP (moderate achievements)
         // Gold: 500-1500 XP (difficult achievements)
@@ -168,6 +174,7 @@ enum BadgeType: String, Codable, CaseIterable {
         case .perfectWeek: return 2000         // Perfect week
         case .streak100: return 8000           // 100 day streak
         }
+        */
     }
 
     var category: BadgeCategory {

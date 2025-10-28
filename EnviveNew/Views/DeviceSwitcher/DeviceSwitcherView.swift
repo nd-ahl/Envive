@@ -14,8 +14,8 @@ struct DeviceSwitcherView: View {
     @State private var availableChildren: [Profile] = []
     @State private var isLoading = false
 
-    // Testing mode flag - only show if in debug mode
-    @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = true
+    // Testing mode flag - disabled by default, enable via settings if needed
+    @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
 
     var body: some View {
         ZStack {

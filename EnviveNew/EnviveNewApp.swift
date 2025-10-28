@@ -29,7 +29,8 @@ struct EnviveNewApp: App {
 
     init() {
         // Clean up legacy test data on first launch after beta deployment
-        TestDataCleanupService.shared.performCleanupIfNeeded()
+        // TEMPORARILY DISABLED: Causing blank screen on hot reload during development
+        // TestDataCleanupService.shared.performCleanupIfNeeded()
     }
 
     var body: some Scene {
@@ -258,8 +259,20 @@ struct EnviveNewApp: App {
                     // Main app with loading screen - refreshes data on every launch
                     // Legal consent already handled in refined onboarding flow
                     // (Users accept terms in LegalAgreementView during onboarding)
+
+                    // CRITICAL FIX: Auto-complete onboarding for authenticated users
+                    // This prevents blank screen issues during development hot reloads
                     AppLoadingCoordinator {
                         RootNavigationView()
+                    }
+                    .onAppear {
+                        // If user is logged in but onboarding incomplete, auto-complete it
+                        if authService.isAuthenticated && !onboardingManager.hasCompletedOnboarding {
+                            print("⚠️  User authenticated but onboarding incomplete - auto-completing")
+                            DispatchQueue.main.async {
+                                onboardingManager.completeOnboarding()
+                            }
+                        }
                     }
                 }
             }
