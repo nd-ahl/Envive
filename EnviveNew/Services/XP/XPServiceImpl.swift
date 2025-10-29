@@ -65,16 +65,21 @@ final class XPServiceImpl: XPService {
         userId: UUID,
         credibilityScore: Int
     ) -> Result<RedemptionResult, RedemptionError> {
+        print("💳 XPService.redeemXP() called: amount=\(amount), userId=\(userId.uuidString)")
+
         // Validate amount
         guard amount > 0 else {
+            print("❌ XPService.redeemXP() FAILED: Invalid amount (\(amount))")
             return .failure(.invalidAmount)
         }
 
         // Get or create balance
         var balance = repository.getBalance(userId: userId) ?? repository.createBalance(userId: userId)
+        print("💳 Current balance BEFORE redemption: \(balance.currentXP) XP")
 
         // Check if user has enough XP
         guard balance.currentXP >= amount else {
+            print("❌ XPService.redeemXP() FAILED: Insufficient XP (have \(balance.currentXP), need \(amount))")
             return .failure(.insufficientXP)
         }
 
@@ -84,11 +89,15 @@ final class XPServiceImpl: XPService {
         // Update balance
         let redeemed = balance.redeem(xp: amount)
         guard redeemed else {
+            print("❌ XPService.redeemXP() FAILED: balance.redeem() returned false")
             return .failure(.systemError("Failed to redeem XP"))
         }
 
+        print("💳 Balance AFTER redemption (in memory): \(balance.currentXP) XP")
+
         // Save updated balance
         repository.saveBalance(balance)
+        print("💳 Balance saved to persistent storage")
 
         // Create transaction record
         let transaction = XPTransaction(
@@ -99,6 +108,7 @@ final class XPServiceImpl: XPService {
             notes: "Redeemed \(amount) XP for \(minutesGranted) minutes"
         )
         repository.saveTransaction(transaction)
+        print("💳 Transaction record created")
 
         // Return success result
         let result = RedemptionResult(
@@ -109,6 +119,7 @@ final class XPServiceImpl: XPService {
             message: "Successfully redeemed \(amount) XP for \(minutesGranted) minutes"
         )
 
+        print("✅ XPService.redeemXP() SUCCESS: Redeemed \(amount) XP, new balance: \(balance.currentXP) XP")
         return .success(result)
     }
 

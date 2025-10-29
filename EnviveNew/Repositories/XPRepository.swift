@@ -34,12 +34,20 @@ final class XPRepositoryImpl: XPRepository {
 
     func getBalance(userId: UUID) -> XPBalance? {
         let key = balanceKey(for: userId)
-        return storage.load(forKey: key)
+        let balance: XPBalance? = storage.load(forKey: key)
+        if let balance = balance {
+            print("📂 XPRepository: Loaded balance for user \(userId.uuidString): \(balance.currentXP) XP")
+        } else {
+            print("📂 XPRepository: No balance found for user \(userId.uuidString)")
+        }
+        return balance
     }
 
     func saveBalance(_ balance: XPBalance) {
         let key = balanceKey(for: balance.userId)
+        print("💾 XPRepository: Saving balance for user \(balance.userId.uuidString): \(balance.currentXP) XP")
         storage.save(balance, forKey: key)
+        print("💾 XPRepository: Balance saved successfully")
     }
 
     func createBalance(userId: UUID) -> XPBalance {

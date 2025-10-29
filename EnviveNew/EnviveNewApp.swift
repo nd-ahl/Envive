@@ -18,6 +18,7 @@ struct EnviveNewApp: App {
     // CRITICAL FIX: Observe these as @StateObject so SwiftUI reacts to changes!
     @StateObject private var onboardingManager = OnboardingManager.shared
     @StateObject private var authService = AuthenticationService.shared
+    @StateObject private var themeViewModel = DependencyContainer.shared.viewModelFactory.makeThemeSettingsViewModel()
 
     @State private var isCreatingHousehold = false
     @State private var showingSignIn = false
@@ -39,7 +40,7 @@ struct EnviveNewApp: App {
         WindowGroup {
             mainContent
                 .environment(\.managedObjectContext, persistenceController?.container.viewContext ?? PersistenceController(inMemory: true).container.viewContext)
-                .preferredColorScheme(DependencyContainer.shared.viewModelFactory.makeThemeSettingsViewModel().effectiveColorScheme)
+                .preferredColorScheme(themeViewModel.effectiveColorScheme)
                 .onOpenURL { url in
                     handleURLScheme(url)
                 }

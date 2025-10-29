@@ -31,6 +31,9 @@ class ScreenTimeRewardManager: ObservableObject {
 
     private let userDefaults = UserDefaults.standard
     private let earnedMinutesKeyPrefix = "earnedScreenTimeMinutes_"
+    private let activeSessionKeyPrefix = "activeScreenTimeSession_"
+    private let sessionStartTimeKeyPrefix = "sessionStartTime_"
+    private let sessionDurationKeyPrefix = "sessionDuration_"
 
     // Child ID for data isolation
     private var childId: UUID?
@@ -50,6 +53,7 @@ class ScreenTimeRewardManager: ObservableObject {
         self.xpService = xpService
         self.credibilityService = credibilityService
         loadEarnedMinutes()
+        restoreActiveSession()
     }
 
     /// Set the child ID for data isolation (must be called when switching children)
@@ -65,6 +69,27 @@ class ScreenTimeRewardManager: ObservableObject {
             return "earnedScreenTimeMinutes"
         }
         return "\(earnedMinutesKeyPrefix)\(childId.uuidString)"
+    }
+
+    private func activeSessionKey() -> String {
+        guard let childId = childId else {
+            return "activeScreenTimeSession"
+        }
+        return "\(activeSessionKeyPrefix)\(childId.uuidString)"
+    }
+
+    private func sessionStartTimeKey() -> String {
+        guard let childId = childId else {
+            return "sessionStartTime"
+        }
+        return "\(sessionStartTimeKeyPrefix)\(childId.uuidString)"
+    }
+
+    private func sessionDurationKey() -> String {
+        guard let childId = childId else {
+            return "sessionDuration"
+        }
+        return "\(sessionDurationKeyPrefix)\(childId.uuidString)"
     }
 
     func redeemXPForScreenTime(xpAmount: Int) -> Int {
@@ -130,17 +155,31 @@ class ScreenTimeRewardManager: ObservableObject {
             self.activeSessionMinutes = durationMinutes
             self.remainingSessionMinutes = durationMinutes
 
-            // Remove used minutes from local storage
-            self.earnedMinutes -= durationMinutes
-            self.saveEarnedMinutes()
-
-            // Also deduct from XPService if available
+            // Deduct from XPService if available (source of truth)
             if let childId = self.childId,
                let xpService = self.xpService,
                let credibilityService = self.credibilityService {
                 let credibility = credibilityService.getCredibilityScore(childId: childId)
-                _ = xpService.redeemXP(amount: durationMinutes, userId: childId, credibilityScore: credibility)
-                print("💳 Deducted \(durationMinutes) XP from XPService for screen time session")
+                let result = xpService.redeemXP(amount: durationMinutes, userId: childId, credibilityScore: credibility)
+
+                switch result {
+                case .success(let redemption):
+                    print("💳 Deducted \(durationMinutes) XP from XPService for screen time session (New balance: \(redemption.newBalance))")
+                    // Update local earned minutes to match XPService
+                    self.earnedMinutes -= durationMinutes
+                    self.saveEarnedMinutes()
+                case .failure(let error):
+                    print("❌ Failed to deduct from XPService: \(error)")
+                    // Don't start session if XP deduction failed
+                    self.isScreenTimeActive = false
+                    self.activeSessionMinutes = 0
+                    self.remainingSessionMinutes = 0
+                    return
+                }
+            } else {
+                // Fallback: deduct from local storage only (for backward compatibility)
+                self.earnedMinutes -= durationMinutes
+                self.saveEarnedMinutes()
             }
 
             // Start the device activity session (this will trigger the monitor extension to unblock apps)
@@ -150,6 +189,9 @@ class ScreenTimeRewardManager: ObservableObject {
             if #available(iOS 16.1, *) {
                 self.startLiveActivity(durationMinutes: durationMinutes)
             }
+
+            // Persist session state
+            self.saveSessionState(startTime: Date(), duration: durationMinutes)
 
             // Start timer to update remaining time and Live Activity
             self.startSessionTimer()
@@ -166,6 +208,14 @@ class ScreenTimeRewardManager: ObservableObject {
     }
 
     func endScreenTimeSession() {
+        // Calculate actual minutes used
+        let minutesUsed = activeSessionMinutes - remainingSessionMinutes
+
+        // CRITICAL: Do NOT refund unused time
+        // The XP was already deducted upfront when starting the session
+        // Time spent is time spent, regardless of whether the full session completed
+        print("📊 Session ended: \(minutesUsed) minutes used out of \(activeSessionMinutes) requested")
+
         // Stop timer first
         stopSessionTimer()
 
@@ -181,6 +231,12 @@ class ScreenTimeRewardManager: ObservableObject {
         isScreenTimeActive = false
         activeSessionMinutes = 0
         remainingSessionMinutes = 0
+
+        // Clear persisted session state
+        clearSessionState()
+
+        // Sync earned minutes from XPService to ensure UI shows correct balance
+        syncFromXPService()
 
         // Fallback: Re-apply restrictions using settings manager in case device activity monitor fails
         if appSelectionStore.hasSelectedApps {
@@ -216,6 +272,7 @@ class ScreenTimeRewardManager: ObservableObject {
 
     /// Sync earned minutes from XPService
     /// This ensures screen time balance matches the XP earned from tasks
+    /// CRITICAL: Uses 1:1 conversion (1 XP = 1 minute) to prevent time restoration exploit
     func syncFromXPService() {
         guard let childId = childId,
               let xpService = xpService,
@@ -232,14 +289,17 @@ class ScreenTimeRewardManager: ObservableObject {
             rawXP = 0
         }
 
-        // Convert XP to screen time minutes using credibility
-        let minutesFromXP = credibilityService.calculateXPToMinutes(xpAmount: rawXP, childId: childId)
+        // CRITICAL FIX: Use 1:1 conversion for screen time (1 XP = 1 minute, always)
+        // Do NOT apply credibility multiplier here - that only affects earning XP from tasks
+        // If we used credibility multiplier, changing credibility would change available screen time
+        // which would allow exploits where spent time gets "restored" when credibility changes
+        let minutesFromXP = rawXP  // Direct 1:1 mapping
 
         // Update earned minutes
         earnedMinutes = minutesFromXP
         saveEarnedMinutes()
 
-        print("🔄 Synced from XPService: \(rawXP) XP → \(minutesFromXP) minutes for child: \(childId)")
+        print("🔄 Synced from XPService: \(rawXP) XP → \(minutesFromXP) minutes (1:1 conversion) for child: \(childId)")
     }
 
     // MARK: - Convenience Properties
@@ -279,6 +339,84 @@ class ScreenTimeRewardManager: ObservableObject {
             return "\(hours)h \(minutes)m"
         } else {
             return "\(remainingSessionMinutes)m"
+        }
+    }
+
+    // MARK: - Session State Persistence
+
+    /// Save active session state to UserDefaults
+    private func saveSessionState(startTime: Date, duration: Int) {
+        userDefaults.set(true, forKey: activeSessionKey())
+        userDefaults.set(startTime.timeIntervalSince1970, forKey: sessionStartTimeKey())
+        userDefaults.set(duration, forKey: sessionDurationKey())
+        print("💾 Saved active session state: duration=\(duration)min, start=\(startTime)")
+    }
+
+    /// Clear session state from UserDefaults
+    private func clearSessionState() {
+        userDefaults.removeObject(forKey: activeSessionKey())
+        userDefaults.removeObject(forKey: sessionStartTimeKey())
+        userDefaults.removeObject(forKey: sessionDurationKey())
+        print("🗑️ Cleared session state")
+    }
+
+    /// Restore active session from UserDefaults if app was restarted mid-session
+    private func restoreActiveSession() {
+        guard userDefaults.bool(forKey: activeSessionKey()) else {
+            print("📂 No active session to restore")
+            return
+        }
+
+        guard let startTimeInterval = userDefaults.object(forKey: sessionStartTimeKey()) as? TimeInterval else {
+            print("⚠️ Could not restore session: missing start time")
+            clearSessionState()
+            return
+        }
+
+        let duration = userDefaults.integer(forKey: sessionDurationKey())
+        guard duration > 0 else {
+            print("⚠️ Could not restore session: invalid duration")
+            clearSessionState()
+            return
+        }
+
+        let startTime = Date(timeIntervalSince1970: startTimeInterval)
+        let elapsedMinutes = Int(Date().timeIntervalSince(startTime) / 60)
+        let remaining = max(0, duration - elapsedMinutes)
+
+        print("🔄 Restoring session: duration=\(duration)min, elapsed=\(elapsedMinutes)min, remaining=\(remaining)min")
+
+        if remaining > 0 {
+            // Session still active - restore it
+            isScreenTimeActive = true
+            activeSessionMinutes = duration
+            remainingSessionMinutes = remaining
+
+            // Restart the scheduler and timer
+            scheduler.startScreenTimeSession(durationMinutes: remaining)
+            startSessionTimer()
+
+            // Restart Live Activity if available
+            if #available(iOS 16.1, *) {
+                startLiveActivity(durationMinutes: remaining)
+            }
+
+            print("✅ Restored active screen time session with \(remaining) minutes remaining")
+        } else {
+            // Session has expired while app was closed
+            // The session ran to completion naturally, so no refund needed
+            print("⏰ Session expired while app was closed - session completed naturally")
+
+            // Clean up session state without refund (time was fully used)
+            isScreenTimeActive = false
+            activeSessionMinutes = 0
+            remainingSessionMinutes = 0
+            clearSessionState()
+
+            // Re-apply restrictions
+            if appSelectionStore.hasSelectedApps {
+                settingsManager.blockApps(appSelectionStore.familyActivitySelection)
+            }
         }
     }
 

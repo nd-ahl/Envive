@@ -1536,6 +1536,10 @@ class EnhancedScreenTimeModel: ObservableObject {
     }
     private var pausedTime: Date?
 
+    // Services for XP persistence
+    private let xpService = DependencyContainer.shared.xpService
+    private let credibilityService = DependencyContainer.shared.credibilityService
+
     // Child ID for data isolation
     var childId: UUID? {
         didSet {
@@ -2218,9 +2222,15 @@ class EnhancedScreenTimeModel: ObservableObject {
         print("🚀 Is session active: \(isSessionActive)")
         print("🚀 Is session paused: \(isSessionPaused)")
         print("🚀 Authorization status: \(authorizationStatus)")
+        print("🚀 childId: \(childId?.uuidString ?? "NIL ❌")")
         logCurrentShieldStatus()
 
         // Check guard conditions individually for better debugging
+        if childId == nil {
+            print("❌ ❌ ❌ CRITICAL: Cannot start session - childId is NIL! XP deductions will not persist!")
+            print("❌ This is a critical bug that would allow infinite screen time.")
+            return
+        }
         if duration > minutesEarned {
             print("❌ FAIL: Not enough minutes (need \(duration), have \(minutesEarned))")
             return
@@ -2262,7 +2272,21 @@ class EnhancedScreenTimeModel: ObservableObject {
                     // Deduct from minutesEarned every 60 seconds (1 minute)
                     if Int(self.sessionTimeUsed) % 60 == 0 && self.minutesEarned > 0 {
                         self.minutesEarned -= 1
-                        print("⏱️ Minute elapsed - minutesEarned now: \(self.minutesEarned)")
+
+                        // CRITICAL: Also deduct from XPService to persist the spending
+                        if let childId = self.childId {
+                            let credibility = self.credibilityService.getCredibilityScore(childId: childId)
+                            let result = self.xpService.redeemXP(amount: 1, userId: childId, credibilityScore: credibility)
+                            switch result {
+                            case .success(let redemption):
+                                print("⏱️ ✅ Minute elapsed - deducted 1 XP from balance (new balance: \(redemption.newBalance))")
+                            case .failure(let error):
+                                print("❌ CRITICAL: Failed to deduct XP: \(error)")
+                            }
+                        } else {
+                            // CRITICAL BUG: If childId is nil, XP is not being persisted!
+                            print("❌ ❌ ❌ CRITICAL BUG: childId is NIL - XP deduction NOT persisted! minutesEarned was decremented but XP balance unchanged!")
+                        }
                     }
                 } else {
                     print("⏰ Session timer expired - ending session")
@@ -2286,7 +2310,20 @@ class EnhancedScreenTimeModel: ObservableObject {
         // If there's a partial minute used (e.g., 30 seconds), deduct one more minute
         if remainingSeconds > 0 && minutesEarned > 0 {
             minutesEarned -= 1
-            print("⏱️ Deducting partial minute (used \(remainingSeconds) seconds)")
+
+            // CRITICAL: Also deduct from XPService to persist the spending
+            if let childId = childId {
+                let credibility = credibilityService.getCredibilityScore(childId: childId)
+                let result = xpService.redeemXP(amount: 1, userId: childId, credibilityScore: credibility)
+                switch result {
+                case .success(let redemption):
+                    print("⏱️ ✅ Deducting partial minute (used \(remainingSeconds) seconds) - XP balance: \(redemption.newBalance)")
+                case .failure(let error):
+                    print("❌ CRITICAL: Failed to deduct partial minute XP: \(error)")
+                }
+            } else {
+                print("❌ ❌ ❌ CRITICAL BUG: childId is NIL during partial minute deduction - XP NOT persisted!")
+            }
         }
 
         let minutesUsed = Int(ceil(sessionTimeUsed / 60.0))
@@ -2346,7 +2383,20 @@ class EnhancedScreenTimeModel: ObservableObject {
                     // Deduct from minutesEarned every 60 seconds (1 minute)
                     if Int(self.sessionTimeUsed) % 60 == 0 && self.minutesEarned > 0 {
                         self.minutesEarned -= 1
-                        print("⏱️ Minute elapsed - minutesEarned now: \(self.minutesEarned)")
+
+                        // CRITICAL: Also deduct from XPService to persist the spending
+                        if let childId = self.childId {
+                            let credibility = self.credibilityService.getCredibilityScore(childId: childId)
+                            let result = self.xpService.redeemXP(amount: 1, userId: childId, credibilityScore: credibility)
+                            switch result {
+                            case .success(let redemption):
+                                print("⏱️ ✅ Minute elapsed (resumed session) - deducted 1 XP from balance (new balance: \(redemption.newBalance))")
+                            case .failure(let error):
+                                print("❌ CRITICAL: Failed to deduct XP: \(error)")
+                            }
+                        } else {
+                            print("❌ ❌ ❌ CRITICAL BUG: childId is NIL in resumed session - XP deduction NOT persisted!")
+                        }
                     }
                 } else {
                     self.endSession()
@@ -4960,6 +5010,7 @@ struct ProfileView: View {
     @State private var showingEditAge = false
     @State private var showingProfilePhotoPicker = false
     @State private var showingResetTestDataConfirmation = false
+    @State private var showingMailtoAlert = false
     @State private var tempName: String = ""
 
     // Persisted user data
@@ -4998,6 +5049,11 @@ struct ProfileView: View {
             }
         } message: {
             Text("This will delete all tasks, reset all children's XP to 0, and set credibility to 100. This action cannot be undone.")
+        }
+        .alert("Email Not Available", isPresented: $showingMailtoAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Please email us at envive.app@gmail.com for support. (Email app may not be configured on this device)")
         }
     }
 
@@ -5214,6 +5270,36 @@ struct ProfileView: View {
                         Image(systemName: "arrow.up.forward")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section("Support") {
+                Button(action: {
+                    if let url = URL(string: "mailto:envive.app@gmail.com") {
+                        if UIApplication.shared.canOpenURL(url) {
+                            UIApplication.shared.open(url)
+                        } else {
+                            showingMailtoAlert = true
+                        }
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "questionmark.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("Help & Support")
+                        Spacer()
+                        Image(systemName: "arrow.up.forward")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                NavigationLink(destination: AboutView()) {
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("About Envive")
                     }
                 }
             }
@@ -5443,6 +5529,95 @@ struct EditAgeView: View {
                     .fontWeight(.semibold)
                 }
             }
+        }
+    }
+}
+
+// MARK: - About View
+struct AboutView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // App Icon and Name
+                VStack(spacing: 12) {
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(.blue)
+
+                    Text("Envive")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+
+                    Text("Version 1.0")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+
+                Divider()
+
+                // Description
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("About Envive")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text("Envive is a family-focused screen time management app that transforms healthy habits into rewards. Parents can assign tasks while children earn screen time by completing activities, creating a positive and productive family dynamic.")
+                        .font(.body)
+                        .foregroundColor(.primary)
+
+                    Text("With Envive, families can:")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .padding(.top, 8)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        FeatureRow(icon: "checkmark.circle.fill", text: "Assign and track tasks with photo verification")
+                        FeatureRow(icon: "clock.fill", text: "Earn screen time minutes through completed tasks")
+                        FeatureRow(icon: "star.fill", text: "Build credibility and unlock achievements")
+                        FeatureRow(icon: "person.2.fill", text: "Manage multiple children and household members")
+                        FeatureRow(icon: "shield.fill", text: "Control app access with built-in parental controls")
+                    }
+                }
+                .padding(.horizontal)
+
+                Divider()
+
+                // Mission Statement
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Our Mission")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text("We believe in empowering families to find balance in the digital age. Envive helps children develop responsibility and time management skills while giving parents peace of mind and effective tools to guide their family's screen time habits.")
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .italic()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 20)
+            }
+            .padding(.vertical)
+        }
+        .navigationTitle("About")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Feature Row Component
+struct FeatureRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.blue)
+                .frame(width: 24)
+            Text(text)
+                .font(.body)
+                .foregroundColor(.primary)
         }
     }
 }
@@ -7072,7 +7247,14 @@ struct EnhancedHomeView: View {
         // Get the current child ID based on the device mode
         childId = currentChildId
 
-        print("🏠 Home screen loading data for child ID: \(childId) (mode: \(deviceModeManager.currentMode.displayName))")
+        print("🏠 ============ LOAD REAL DATA ============")
+        print("🏠 Loading data for child ID: \(childId) (mode: \(deviceModeManager.currentMode.displayName))")
+        print("🏠 model.childId BEFORE setting: \(model.childId?.uuidString ?? "NIL")")
+        print("🏠 model.minutesEarned BEFORE loading: \(model.minutesEarned)")
+
+        // CRITICAL: Set the model's childId to ensure XP deductions persist
+        model.childId = childId
+        print("🏠 model.childId AFTER setting: \(model.childId?.uuidString ?? "NIL")")
 
         // Load XP balance (screen time minutes)
         if let balance = xpService.getBalance(userId: childId) {
@@ -7084,11 +7266,16 @@ struct EnhancedHomeView: View {
         }
 
         // Convert XP to minutes and sync with model.minutesEarned
-        // This ensures the home screen and session system use the same value
-        let convertedMinutes = credibilityService.calculateXPToMinutes(xpAmount: xpBalance, childId: childId)
+        // CRITICAL: Use 1:1 conversion (1 XP = 1 minute) to prevent time restoration exploit
+        // Do NOT use credibility multiplier - that only affects earning XP from tasks
+        let convertedMinutes = xpBalance  // Direct 1:1 mapping
+        print("🏠 XP Balance from XPService: \(xpBalance) XP")
+        print("🏠 Converting to minutes: \(convertedMinutes) minutes")
+        print("🏠 OVERWRITING model.minutesEarned from \(model.minutesEarned) to \(convertedMinutes)")
         model.minutesEarned = convertedMinutes
 
-        print("🔄 Synced XP to minutes: \(xpBalance) XP = \(convertedMinutes) minutes")
+        print("🔄 Synced XP to minutes: \(xpBalance) XP = \(convertedMinutes) minutes (1:1 conversion)")
+        print("🏠 ============ LOAD COMPLETE ============")
 
         // Load credibility
         credibility = credibilityService.getCredibilityScore(childId: childId)
