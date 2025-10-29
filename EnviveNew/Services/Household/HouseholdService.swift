@@ -8,6 +8,7 @@ class HouseholdService: ObservableObject {
 
     @Published var currentHousehold: Household?
     @Published var householdMembers: [Profile] = []
+    @Published var childrenProfiles: [Profile] = []  // Cached children for dashboard refresh
 
     private let supabase = SupabaseService.shared.client
 
@@ -27,7 +28,9 @@ class HouseholdService: ObservableObject {
             createdBy: createdBy,
             createdAt: Date(),
             updatedAt: Date(),
-            appRestrictionPassword: nil  // Password will be set later by parent
+            appRestrictionPassword: nil,  // Password will be set later by parent
+            passwordResetCode: nil,
+            passwordResetExpiry: nil
         )
 
         // Insert household into database
@@ -516,5 +519,146 @@ class HouseholdService: ObservableObject {
         }
 
         return profiles
+    }
+
+    // MARK: - Data Refresh
+
+    /// Refresh all household and children data for the current user
+    /// This performs the same comprehensive refresh as pull-to-refresh in ParentDashboardView
+    /// Fetches household info, members, children, and ensures all Core Data is loaded
+    func refreshAllData() async throws {
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("🔄🔄🔄 HouseholdService.refreshAllData() STARTED")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        let startTime = Date()
+
+        // Step 0: Check authentication
+        print("📋 STEP 0: Checking authentication...")
+        let authService = AuthenticationService.shared
+        print("   - AuthenticationService.shared exists: ✅")
+        print("   - authService.isAuthenticated: \(authService.isAuthenticated)")
+        print("   - authService.currentProfile exists: \(authService.currentProfile != nil)")
+
+        guard let currentProfile = authService.currentProfile else {
+            print("❌❌❌ CRITICAL: No currentProfile found!")
+            print("   - Cannot refresh data without authenticated user")
+            print("   - This is likely why data is not refreshing")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            throw NSError(domain: "HouseholdService", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "No authenticated user profile available"
+            ])
+        }
+
+        print("✅ STEP 0 Complete: User authenticated")
+        print("   - User: \(currentProfile.fullName ?? "Unknown")")
+        print("   - ID: \(currentProfile.id)")
+        print("   - Email: \(currentProfile.email ?? "None")")
+        print("   - Role: \(currentProfile.role)")
+        print("   - Household ID: \(currentProfile.householdId ?? "None")")
+
+        // Step 1: Check household ID
+        print("\n📋 STEP 1: Checking household ID...")
+        guard let householdId = currentProfile.householdId else {
+            print("⚠️⚠️⚠️ WARNING: User has no household_id")
+            print("   - Cannot fetch household data")
+            print("   - User may need to complete onboarding")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            return
+        }
+        print("✅ STEP 1 Complete: Household ID found: \(householdId)")
+
+        // Step 2: Fetch household info
+        print("\n📋 STEP 2: Fetching household from Supabase...")
+        print("   - Query: SELECT * FROM households WHERE id = '\(householdId)'")
+        do {
+            let household: Household = try await supabase
+                .from("households")
+                .select()
+                .eq("id", value: householdId)
+                .single()
+                .execute()
+                .value
+
+            await MainActor.run {
+                self.currentHousehold = household
+            }
+            print("✅ STEP 2 Complete: Household loaded")
+            print("   - Name: \(household.name)")
+            print("   - ID: \(household.id)")
+            print("   - Invite Code: \(household.inviteCode)")
+            print("   - Created By: \(household.createdBy)")
+        } catch {
+            print("❌❌❌ STEP 2 FAILED: Could not fetch household")
+            print("   - Error: \(error.localizedDescription)")
+            print("   - Details: \(error)")
+            throw error
+        }
+
+        // Step 3: Fetch household members
+        print("\n📋 STEP 3: Fetching household members from Supabase...")
+        print("   - Query: SELECT * FROM profiles WHERE household_id = '\(householdId)' ORDER BY role DESC")
+        do {
+            let members: [Profile] = try await supabase
+                .from("profiles")
+                .select()
+                .eq("household_id", value: householdId)
+                .order("role", ascending: false) // Parents first
+                .execute()
+                .value
+
+            await MainActor.run {
+                self.householdMembers = members
+            }
+            print("✅ STEP 3 Complete: Household members loaded")
+            print("   - Total members: \(members.count)")
+            for (index, member) in members.enumerated() {
+                print("   - Member \(index + 1): \(member.fullName ?? "Unknown") (\(member.role))")
+            }
+        } catch {
+            print("❌❌❌ STEP 3 FAILED: Could not fetch household members")
+            print("   - Error: \(error.localizedDescription)")
+            print("   - Details: \(error)")
+            throw error
+        }
+
+        // Step 4: Fetch children profiles
+        print("\n📋 STEP 4: Fetching children profiles...")
+        print("   - Calling getMyChildren()...")
+        do {
+            let childProfiles = try await getMyChildren()
+
+            // Cache children profiles for dashboard refresh
+            await MainActor.run {
+                self.childrenProfiles = childProfiles
+            }
+
+            print("✅ STEP 4 Complete: Children profiles loaded and cached")
+            print("   - Total children: \(childProfiles.count)")
+            for (index, child) in childProfiles.enumerated() {
+                print("   - Child \(index + 1): \(child.fullName ?? "Unknown"), Age: \(child.age ?? 0), ID: \(child.id)")
+            }
+        } catch {
+            print("❌❌❌ STEP 4 FAILED: Could not fetch children")
+            print("   - Error: \(error.localizedDescription)")
+            print("   - Details: \(error)")
+            throw error
+        }
+
+        // Step 5: Trigger Core Data refresh
+        print("\n📋 STEP 5: Posting dashboard refresh notification...")
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("RefreshDashboardData"),
+                object: nil
+            )
+        }
+        print("✅ STEP 5 Complete: Dashboard refresh notification posted")
+
+        let duration = Date().timeIntervalSince(startTime)
+        print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("✅✅✅ HouseholdService.refreshAllData() COMPLETED")
+        print("   - Total duration: \(String(format: "%.2f", duration))s")
+        print("   - All data successfully refreshed")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     }
 }

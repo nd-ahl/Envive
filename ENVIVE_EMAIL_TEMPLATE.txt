@@ -1,0 +1,37 @@
+ENVIVE - WELCOME TO ENVIVE!
+Screen Time Management Made Simple
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Welcome to Envive! 🎉
+
+We're excited to have you join our community of families taking control of screen time together. To get started, please confirm your email address by clicking the link below.
+
+CONFIRM YOUR EMAIL:
+{{ .ConfirmationURL }}
+
+🔒 SECURE VERIFICATION
+
+This link will expire in 24 hours for security. If you didn't create an Envive account, you can safely ignore this email.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT'S NEXT?
+
+Once confirmed, you'll be able to:
+• Set up your family household
+• Add children to your account
+• Create tasks and rewards
+• Manage screen time effectively
+
+If you have any questions, we're here to help at support@envive.app
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This email was sent to {{ .Email }} because you signed up for Envive.
+
+Privacy Policy: https://nd-ahl.github.io/Envive/privacy-policy
+Terms of Service: https://nd-ahl.github.io/Envive/terms-of-service
+Support: support@envive.app
+
+© 2025 Envive. All rights reserved.

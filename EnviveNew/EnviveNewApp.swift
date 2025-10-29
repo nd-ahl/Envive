@@ -23,6 +23,9 @@ struct EnviveNewApp: App {
     @State private var showingSignIn = false
     @State private var needsPasswordSetup = false
     @State private var userEmailForPassword = ""
+    @State private var showSplashScreen = false
+
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         print("🚀 EnviveNewApp init() started")
@@ -55,10 +58,11 @@ struct EnviveNewApp: App {
 
     @ViewBuilder
     private var mainContent: some View {
-        Group {
-                // ===== REFINED ONBOARDING FLOW =====
-                // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
-                let _ = print("🎬 mainContent rendering - checking onboarding state")
+        ZStack {
+            Group {
+                    // ===== REFINED ONBOARDING FLOW =====
+                    // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
+                    let _ = print("🎬 mainContent rendering - checking onboarding state")
 
                 if onboardingManager.shouldShowWelcome {
                     // Step 1: Friendly Welcome (no terms, no role selection)
@@ -277,31 +281,17 @@ struct EnviveNewApp: App {
                         }
                     )
                 } else {
-                    // Main app with loading screen - refreshes data on every launch
-                    // Legal consent already handled in refined onboarding flow
-                    // (Users accept terms in LegalAgreementView during onboarding)
-
                     // Main app - only shown after completing all onboarding steps
-                    AppLoadingCoordinator {
-                        RootNavigationView()
-                    }
-                    .onAppear {
-                        // CRITICAL: Only auto-complete if user has legitimately finished onboarding
-                        // Don't skip family setup for new parents!
-                        let shouldAutoComplete = authService.isAuthenticated &&
-                                                 !onboardingManager.hasCompletedOnboarding &&
-                                                 onboardingManager.hasCompletedFamilySetup
+                    // ALWAYS show splash screen with data refresh on EVERY app launch
+                    let _ = print("🏠🏠🏠 Main app view rendering - showSplashScreen: \(showSplashScreen)")
 
-                        if shouldAutoComplete {
-                            print("⚠️  User authenticated and completed family setup - auto-completing onboarding")
-                            DispatchQueue.main.async {
-                                onboardingManager.completeOnboarding()
-                            }
-                        } else if authService.isAuthenticated && !onboardingManager.hasCompletedFamilySetup {
-                            print("⚠️  User authenticated but hasn't completed family setup - NOT auto-completing")
-                        }
-                    }
+                    MainAppWithRefresh(
+                        showSplashScreen: $showSplashScreen,
+                        authService: authService,
+                        onboardingManager: onboardingManager
+                    )
                 }
+            }
         }
     }
 
@@ -523,3 +513,112 @@ struct EnviveNewApp: App {
     }
 
 }
+
+// MARK: - Main App with Automatic Refresh
+
+/// Wrapper view that ensures splash screen with data refresh shows on EVERY app launch
+/// This view is destroyed and recreated on every scene phase change, guaranteeing fresh state
+struct MainAppWithRefresh: View {
+    @Binding var showSplashScreen: Bool
+    @ObservedObject var authService: AuthenticationService
+    @ObservedObject var onboardingManager: OnboardingManager
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(showSplashScreen: Binding<Bool>, authService: AuthenticationService, onboardingManager: OnboardingManager) {
+        self._showSplashScreen = showSplashScreen
+        self.authService = authService
+        self.onboardingManager = onboardingManager
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("🏗️ MainAppWithRefresh.init() CALLED")
+        print("   - showSplashScreen initial value: \(showSplashScreen.wrappedValue)")
+        print("   - authService.isAuthenticated: \(authService.isAuthenticated)")
+        print("   - authService.currentProfile exists: \(authService.currentProfile != nil)")
+        if let profile = authService.currentProfile {
+            print("   - Profile: \(profile.fullName ?? "Unknown") (\(profile.id))")
+            print("   - Household ID: \(profile.householdId ?? "None")")
+        }
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    }
+
+    var body: some View {
+        let _ = print("🏠 MainAppWithRefresh.body rendering - showSplashScreen: \(showSplashScreen)")
+
+        ZStack {
+            RootNavigationView()
+                .opacity(showSplashScreen ? 0 : 1)
+                .onAppear {
+                    print("📱 RootNavigationView appeared")
+                }
+
+            // Animated splash screen overlay - triggers data refresh on every app launch
+            if showSplashScreen {
+                let _ = print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                let _ = print("🎬 RENDERING AnimatedSplashScreen (showSplashScreen = true)")
+                let _ = print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                AnimatedSplashScreen {
+                    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    print("🔚 AnimatedSplashScreen onComplete callback FIRED")
+                    print("   - About to set showSplashScreen = false")
+                    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    withAnimation(.easeOut(duration: 0.5)) {
+                        showSplashScreen = false
+                        print("✅ showSplashScreen set to false - main app should now be visible")
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(999)
+            } else {
+                let _ = print("⚠️ NOT showing splash screen (showSplashScreen = false)")
+            }
+        }
+        .onAppear {
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("🎯 MainAppWithRefresh.onAppear() TRIGGERED")
+            print("   - Current showSplashScreen value: \(showSplashScreen)")
+            print("   - authService.isAuthenticated: \(authService.isAuthenticated)")
+            print("   - authService.currentProfile exists: \(authService.currentProfile != nil)")
+            if let profile = authService.currentProfile {
+                print("   - User: \(profile.fullName ?? "Unknown")")
+                print("   - Household ID: \(profile.householdId ?? "None")")
+            } else {
+                print("   - ❌ NO CURRENT PROFILE - THIS MAY BE THE PROBLEM!")
+            }
+            print("   - onboardingManager.hasCompletedOnboarding: \(onboardingManager.hasCompletedOnboarding)")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            // ALWAYS show splash screen on main app launch (no conditions)
+            print("✅ SETTING showSplashScreen = true (UNCONDITIONAL)")
+            showSplashScreen = true
+            print("   - showSplashScreen is now: \(showSplashScreen)")
+
+            // CRITICAL: Only auto-complete if user has legitimately finished onboarding
+            let shouldAutoComplete = authService.isAuthenticated &&
+                                     !onboardingManager.hasCompletedOnboarding &&
+                                     onboardingManager.hasCompletedFamilySetup
+
+            if shouldAutoComplete {
+                print("⚠️ User authenticated and completed family setup - auto-completing onboarding")
+                DispatchQueue.main.async {
+                    onboardingManager.completeOnboarding()
+                }
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("🔄 MainAppWithRefresh scenePhase CHANGED")
+            print("   - Old phase: \(oldPhase)")
+            print("   - New phase: \(newPhase)")
+            print("   - Current showSplashScreen: \(showSplashScreen)")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            // ALWAYS refresh when app becomes active
+            if newPhase == .active && oldPhase != .active {
+                print("✅ App became ACTIVE (from background)")
+                print("✅ SETTING showSplashScreen = true (UNCONDITIONAL)")
+                showSplashScreen = true
+                print("   - showSplashScreen is now: \(showSplashScreen)")
+            }
+        }
+    }
+}
+

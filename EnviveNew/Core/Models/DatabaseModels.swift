@@ -37,6 +37,8 @@ struct Household: Codable, Identifiable {
     let createdAt: Date
     let updatedAt: Date
     let appRestrictionPassword: String? // Password for managing app restrictions (synced across household)
+    let passwordResetCode: String? // Temporary code for password reset
+    let passwordResetExpiry: Date? // Expiry time for reset code
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -46,6 +48,8 @@ struct Household: Codable, Identifiable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case appRestrictionPassword = "app_restriction_password"
+        case passwordResetCode = "password_reset_code"
+        case passwordResetExpiry = "password_reset_expiry"
     }
 }
 

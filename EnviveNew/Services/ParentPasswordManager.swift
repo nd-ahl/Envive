@@ -225,6 +225,129 @@ class ParentPasswordManager: ObservableObject {
     func refreshPasswordFromServer() async {
         await syncPasswordFromSupabase()
     }
+
+    // MARK: - Password Reset
+
+    /// Request a password reset - generates a code and sends email
+    func requestPasswordReset() async throws -> String {
+        guard let household = householdService.currentHousehold else {
+            throw PasswordError.noHousehold
+        }
+
+        // Generate 6-digit reset code
+        let resetCode = String(format: "%06d", Int.random(in: 100000...999999))
+        let expiryDate = Date().addingTimeInterval(15 * 60) // 15 minutes
+
+        // Store reset code in Supabase
+        try await supabase
+            .from("households")
+            .update([
+                "password_reset_code": resetCode,
+                "password_reset_expiry": ISO8601DateFormatter().string(from: expiryDate)
+            ])
+            .eq("id", value: household.id)
+            .execute()
+
+        print("✅ Password reset code generated: \(resetCode)")
+
+        // Get parent email for sending the code
+        guard let parentEmail = AuthenticationService.shared.currentProfile?.email else {
+            throw PasswordError.noEmail
+        }
+
+        // Send email with reset code
+        try await sendResetCodeEmail(email: parentEmail, code: resetCode, householdName: household.name)
+
+        return parentEmail
+    }
+
+    /// Verify reset code and reset password
+    func resetPasswordWithCode(code: String, newPassword: String) async throws {
+        guard let household = householdService.currentHousehold else {
+            throw PasswordError.noHousehold
+        }
+
+        guard newPassword.count >= 4 else {
+            throw PasswordError.passwordTooShort
+        }
+
+        // Fetch household to verify code
+        let response: Household = try await supabase
+            .from("households")
+            .select()
+            .eq("id", value: household.id)
+            .single()
+            .execute()
+            .value
+
+        // Verify reset code exists and hasn't expired
+        guard let storedCode = response.passwordResetCode,
+              let expiry = response.passwordResetExpiry else {
+            throw PasswordError.invalidResetCode
+        }
+
+        guard storedCode == code else {
+            throw PasswordError.invalidResetCode
+        }
+
+        guard expiry > Date() else {
+            throw PasswordError.resetCodeExpired
+        }
+
+        // Code is valid - set new password
+        try saveToKeychain(newPassword)
+        try await syncPasswordToSupabase(newPassword)
+
+        // Clear reset code - set to null in database
+        struct ResetCodeClear: Encodable {
+            let password_reset_code: String?
+            let password_reset_expiry: String?
+        }
+
+        let clearData = ResetCodeClear(password_reset_code: nil, password_reset_expiry: nil)
+
+        try await supabase
+            .from("households")
+            .update(clearData)
+            .eq("id", value: household.id)
+            .execute()
+
+        print("✅ Password reset successfully with code")
+    }
+
+    /// Send reset code via email
+    private func sendResetCodeEmail(email: String, code: String, householdName: String) async throws {
+        // In a production app, you would use a service like SendGrid, AWS SES, or Supabase Edge Functions
+        // For now, we'll use a simple notification approach
+
+        // Create encodable struct for email data
+        struct EmailData: Encodable {
+            let to: String
+            let subject: String
+            let code: String
+            let household_name: String
+        }
+
+        let emailData = EmailData(
+            to: email,
+            subject: "Envive App Restriction Password Reset",
+            code: code,
+            household_name: householdName
+        )
+
+        do {
+            // Call your Supabase edge function to send email
+            // This is a placeholder - you'll need to implement the edge function
+            _ = try await supabase.functions.invoke(
+                "send-password-reset-email",
+                options: FunctionInvokeOptions(body: emailData)
+            )
+            print("✅ Reset code email sent to \(email)")
+        } catch {
+            print("⚠️ Could not send email, but code is still valid: \(code)")
+            // Don't throw - the code is still generated and can be used
+        }
+    }
 }
 
 // MARK: - Password Error
@@ -235,6 +358,10 @@ enum PasswordError: LocalizedError {
     case encodingFailed
     case keychainSaveFailed
     case syncFailed
+    case noHousehold
+    case noEmail
+    case invalidResetCode
+    case resetCodeExpired
 
     var errorDescription: String? {
         switch self {
@@ -248,6 +375,14 @@ enum PasswordError: LocalizedError {
             return "Failed to save password securely"
         case .syncFailed:
             return "Failed to sync password to household"
+        case .noHousehold:
+            return "No household found"
+        case .noEmail:
+            return "No email address associated with account"
+        case .invalidResetCode:
+            return "Invalid reset code"
+        case .resetCodeExpired:
+            return "Reset code has expired. Please request a new one."
         }
     }
 }
