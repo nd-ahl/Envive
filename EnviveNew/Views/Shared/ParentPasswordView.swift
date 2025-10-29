@@ -272,14 +272,204 @@ struct ParentPasswordSetupView: View {
     }
 
     private func setPassword() {
-        do {
-            try passwordManager.setPassword(password)
-            passwordManager.isUnlocked = true
-            onSuccess()
-            dismiss()
-        } catch {
-            showError = true
-            errorMessage = error.localizedDescription
+        Task {
+            do {
+                try await passwordManager.setPassword(password)
+                await MainActor.run {
+                    passwordManager.isUnlocked = true
+                    onSuccess()
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    showError = true
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Change Password View
+
+/// View for parents to change the app restriction password
+/// This password is synced across all household devices
+struct ChangePasswordView: View {
+    @Environment(\.dismiss) var dismiss
+    @StateObject private var passwordManager = ParentPasswordManager.shared
+
+    @State private var currentPassword: String = ""
+    @State private var newPassword: String = ""
+    @State private var confirmPassword: String = ""
+    @State private var showError: Bool = false
+    @State private var errorMessage: String = ""
+    @State private var showSuccess: Bool = false
+    @State private var isChanging: Bool = false
+
+    var body: some View {
+        List {
+            Section {
+                VStack(spacing: 16) {
+                    // Lock Icon
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.blue, .purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    Text("App Restriction Password")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text("Change the password used to manage app restrictions on all household devices")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .listRowBackground(Color.clear)
+
+            if passwordManager.isPasswordSet {
+                Section {
+                    SecureField("Current Password", text: $currentPassword)
+                        .textContentType(.password)
+                } header: {
+                    Text("Current Password")
+                }
+            }
+
+            Section {
+                SecureField("New Password", text: $newPassword)
+                    .textContentType(.newPassword)
+
+                SecureField("Confirm New Password", text: $confirmPassword)
+                    .textContentType(.newPassword)
+            } header: {
+                Text("New Password")
+            } footer: {
+                VStack(alignment: .leading, spacing: 8) {
+                    requirementRow(
+                        text: "At least 4 characters",
+                        isMet: newPassword.count >= 4
+                    )
+                    requirementRow(
+                        text: "Passwords match",
+                        isMet: !newPassword.isEmpty && newPassword == confirmPassword
+                    )
+                }
+                .padding(.top, 8)
+            }
+
+            if showError {
+                Section {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.subheadline)
+                }
+            }
+
+            if showSuccess {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Password updated and synced to all devices")
+                            .foregroundColor(.green)
+                            .font(.subheadline)
+                    }
+                }
+            }
+
+            Section {
+                Button(action: changePassword) {
+                    HStack {
+                        if isChanging {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+                        Text(isChanging ? "Updating..." : (passwordManager.isPasswordSet ? "Change Password" : "Set Password"))
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(!isFormValid || isChanging)
+            }
+        }
+        .navigationTitle("Password Settings")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Helpers
+
+    private var isFormValid: Bool {
+        let passwordsValid = newPassword.count >= 4 && newPassword == confirmPassword
+
+        if passwordManager.isPasswordSet {
+            return !currentPassword.isEmpty && passwordsValid
+        } else {
+            return passwordsValid
+        }
+    }
+
+    private func requirementRow(text: String, isMet: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isMet ? .green : .gray)
+                .font(.caption)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(isMet ? .primary : .secondary)
+        }
+    }
+
+    private func changePassword() {
+        showError = false
+        showSuccess = false
+        isChanging = true
+
+        Task {
+            do {
+                // Verify current password if one is set
+                if passwordManager.isPasswordSet {
+                    guard passwordManager.verifyPassword(currentPassword) else {
+                        await MainActor.run {
+                            showError = true
+                            errorMessage = "Current password is incorrect"
+                            isChanging = false
+                            currentPassword = ""
+                        }
+                        return
+                    }
+                }
+
+                // Set new password (will sync to Supabase)
+                try await passwordManager.setPassword(newPassword)
+
+                await MainActor.run {
+                    showSuccess = true
+                    isChanging = false
+                    currentPassword = ""
+                    newPassword = ""
+                    confirmPassword = ""
+
+                    // Dismiss after showing success
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        dismiss()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    showError = true
+                    errorMessage = error.localizedDescription
+                    isChanging = false
+                }
+            }
         }
     }
 }
@@ -291,6 +481,9 @@ struct ParentPasswordView_Previews: PreviewProvider {
         Group {
             ParentPasswordView(onSuccess: {})
             ParentPasswordSetupView(onSuccess: {})
+            NavigationView {
+                ChangePasswordView()
+            }
         }
     }
 }

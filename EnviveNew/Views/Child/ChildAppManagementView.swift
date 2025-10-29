@@ -39,6 +39,10 @@ struct ChildAppManagementView: View {
                 passwordManager.lock()
                 // Refresh blocking state to show current status
                 settingsManager.refreshBlockingState()
+                // Sync password from Supabase (in case parent changed it)
+                Task {
+                    await passwordManager.refreshPasswordFromServer()
+                }
             }
             .sheet(isPresented: $showingPasswordSetup) {
                 ParentPasswordSetupView {

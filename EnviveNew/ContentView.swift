@@ -4953,16 +4953,19 @@ struct ProfileView: View {
     @ObservedObject private var resetHelper = ResetOnboardingHelper.shared
     @ObservedObject private var deviceModeManager = DependencyContainer.shared.deviceModeManager as! LocalDeviceModeManager
     @ObservedObject private var profilePhotoManager = ProfilePhotoManager.shared
+    @ObservedObject private var householdService = HouseholdService.shared
     private let badgeService = DependencyContainer.shared.badgeService
     @State private var showingNotificationSettings = false
     @State private var showingEditName = false
     @State private var showingEditAge = false
     @State private var showingProfilePhotoPicker = false
+    @State private var showingResetTestDataConfirmation = false
     @State private var tempName: String = ""
 
     // Persisted user data
     @AppStorage("userName") private var userName: String = "User"
     @AppStorage("userAge") private var userAge: Int = 13
+    @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
 
     var body: some View {
         NavigationView {
@@ -4987,6 +4990,14 @@ struct ProfileView: View {
             }
         } message: {
             Text("This will reset the app and show the welcome screen again. The app will close.")
+        }
+        .alert("Reset All Test Data", isPresented: $showingResetTestDataConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                resetAllTestData()
+            }
+        } message: {
+            Text("This will delete all tasks, reset all children's XP to 0, and set credibility to 100. This action cannot be undone.")
         }
     }
 
@@ -5214,18 +5225,112 @@ struct ProfileView: View {
                 .foregroundColor(.blue)
             }
 
+            // Developer/Testing tools - same as parent view
             Section {
+                Toggle(isOn: $enableDeviceSwitcher) {
+                    HStack {
+                        Text("Device Switcher")
+                            .font(.caption)
+                        Spacer()
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .blue))
+
                 Button(action: {
                     resetHelper.initiateReset()
                 }) {
-                    Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
-                        .foregroundColor(.orange)
+                    HStack {
+                        Text("Reset Onboarding")
+                            .font(.caption)
+                        Spacer()
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
                 }
-            } header: {
-                Text("Debug & Testing")
+
+                Button(action: {
+                    // Force cleanup of test data
+                    TestDataCleanupService.shared.forceCleanup()
+
+                    // Show alert that cleanup is complete
+                    let alert = UIAlertController(
+                        title: "Test Data Cleaned",
+                        message: "All legacy test data has been removed. The app will close.",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                        // Close the app
+                        exit(0)
+                    })
+
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        rootVC.present(alert, animated: true)
+                    }
+                }) {
+                    HStack {
+                        Text("Clean Test Data")
+                            .font(.caption)
+                        Spacer()
+                        Image(systemName: "trash")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
+                }
+
+                Button(action: {
+                    // Show all stored keys for debugging
+                    TestDataCleanupService.shared.printAllStoredKeys()
+                }) {
+                    HStack {
+                        Text("Print Debug Keys")
+                            .font(.caption)
+                        Spacer()
+                        Image(systemName: "terminal")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
+                }
+
+                Button(action: {
+                    // Fix profile household IDs
+                    Task {
+                        do {
+                            try await HouseholdService.shared.fixProfileHouseholdIds()
+                            print("✅ Profile household IDs fixed successfully")
+                        } catch {
+                            print("❌ Failed to fix profile household IDs: \(error)")
+                        }
+                    }
+                }) {
+                    HStack {
+                        Text("Fix Profile IDs")
+                            .font(.caption)
+                        Spacer()
+                        Image(systemName: "wrench")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
+                }
+
+                Button(action: {
+                    showingResetTestDataConfirmation = true
+                }) {
+                    HStack {
+                        Text("Reset All Test Data")
+                            .font(.caption)
+                        Spacer()
+                        Image(systemName: "trash.circle")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.red)
+                }
             } footer: {
-                Text("Reset onboarding to see the welcome screen again")
-                    .font(.caption)
+                Text("Developer tools")
+                    .font(.caption2)
+                    .foregroundColor(.secondary.opacity(0.6))
             }
         }
         .navigationTitle("Profile")
@@ -5251,6 +5356,44 @@ struct ProfileView: View {
 
     private func updateProfilePhoto(fileName: String) {
         deviceModeManager.updateProfilePhoto(fileName: fileName.isEmpty ? nil : fileName)
+    }
+
+    private func resetAllTestData() {
+        print("🗑️ Resetting all child data...")
+
+        let taskService = DependencyContainer.shared.taskService
+        let credibilityService = DependencyContainer.shared.credibilityService
+        let xpService = DependencyContainer.shared.xpService
+
+        // Load children from household
+        Task {
+            do {
+                let children = try await householdService.getMyChildren()
+                let childIds = children.compactMap { UUID(uuidString: $0.id) }
+
+                // Reset data for each child
+                for childId in childIds {
+                    // Reset XP balance
+                    xpService.resetBalance(userId: childId)
+                    xpService.deleteAllTransactions(userId: childId)
+
+                    // Reset credibility
+                    credibilityService.resetCredibility(childId: childId)
+
+                    // Clear ScreenTimeRewardManager storage
+                    UserDefaults.standard.removeObject(forKey: "earnedScreenTimeMinutes_\(childId.uuidString)")
+                    UserDefaults.standard.removeObject(forKey: "currentStreak_\(childId.uuidString)")
+                    UserDefaults.standard.removeObject(forKey: "lastTaskCompletionDate_\(childId.uuidString)")
+                }
+
+                // Delete all task assignments
+                taskService.deleteAllAssignments()
+
+                print("✅ Reset complete - all tasks deleted, XP set to 0, credibility set to 100")
+            } catch {
+                print("❌ Error loading children for reset: \(error.localizedDescription)")
+            }
+        }
     }
 }
 

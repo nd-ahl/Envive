@@ -128,7 +128,7 @@ struct LegalAgreementView: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundColor(Color(.label))
 
-            Text("Effective Date: January 2025")
+            Text("Effective Date: October 21, 2025")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(Color(.secondaryLabel))
 
@@ -162,7 +162,7 @@ struct LegalAgreementView: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundColor(Color(.label))
 
-            Text("Effective Date: January 2025")
+            Text("Effective Date: October 21, 2025")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(Color(.secondaryLabel))
 

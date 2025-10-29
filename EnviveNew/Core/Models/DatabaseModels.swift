@@ -36,6 +36,7 @@ struct Household: Codable, Identifiable {
     let createdBy: String // UUID of the parent who created it
     let createdAt: Date
     let updatedAt: Date
+    let appRestrictionPassword: String? // Password for managing app restrictions (synced across household)
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -44,6 +45,7 @@ struct Household: Codable, Identifiable {
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case appRestrictionPassword = "app_restriction_password"
     }
 }
 

@@ -16,13 +16,32 @@ By accessing or using the Envive mobile application ("the App"), you agree to be
 - **Children (Under 18):** Must have a parent or legal guardian create and authorize their account
 - **Minimum Age:** No child under 4 years of age may use this App
 
-### Parental Consent
+### Parental Consent and COPPA Compliance
+
+**For Parents of Children Under 13:**
+
+By creating a parent account and adding your child to Envive, you represent and warrant that:
+1. You are the parent or legal guardian of the child
+2. You are 18 years of age or older
+3. You have authority to consent to these Terms on behalf of your child
+4. You consent to the collection, use, and disclosure of your child's information as described in our Privacy Policy
+5. You understand your rights under COPPA to review, delete, or refuse collection of your child's data
+
+**Verifiable Parental Consent:**
+
+We obtain verifiable parental consent before collecting any personal information from children under 13 through:
+- Requiring adult-only parent account creation with email verification or Apple Sign In
+- Preventing children from creating accounts independently
+- Requiring parents to explicitly create and authorize child profiles
+- Maintaining parent-controlled architecture where child accounts cannot exist without parent accounts
 
 Parents or legal guardians must:
-- Create their own account first
+- Create their own verified account first
 - Explicitly authorize and set up child accounts
 - Review and accept these Terms on behalf of their children
+- Review and accept our Privacy Policy regarding children's data collection
 - Supervise their children's use of the App
+- Understand they can revoke consent and delete child data at any time
 
 ## 3. Account Responsibilities
 
@@ -142,14 +161,36 @@ We grant you a limited, non-exclusive, non-transferable license to use the App f
 
 ## 9. Privacy and Data
 
-Your use of the App is also governed by our Privacy Policy, which is incorporated into these Terms by reference. Please review our Privacy Policy to understand our data practices.
+Your use of the App is also governed by our Privacy Policy, which is incorporated into these Terms by reference. Please review our Privacy Policy at [link to privacy policy] to understand our data practices.
 
-### Data Collection
+### Data Collection and Processing
 
-By using the App, you consent to:
-- Collection of data described in our Privacy Policy
-- Use of third-party services (Supabase, Apple Sign In)
-- Processing of children's data (for parent accounts only)
+By using the App, you acknowledge and consent to:
+
+**General Data Collection:**
+- Collection and processing of data as described in our Privacy Policy
+- Use of third-party services (Supabase for data storage, Apple Sign In for authentication)
+- Storage of your personal information on secure servers operated by Supabase
+
+**For Parents - Children's Data:**
+- You consent to collection and processing of your child's data as described in our Privacy Policy
+- You understand what information we collect from children (name, age, task data, verification photos)
+- You acknowledge your rights to review, modify, or delete your child's data at any time
+- You understand that screen time data remains on-device only and is never transmitted to our servers
+
+**Third-Party Services:**
+All third-party service providers (Supabase, Apple) are required to maintain the same level of data protection as described in our Privacy Policy.
+
+### Your Data Rights
+
+You have the right to:
+- Access your data and your child's data
+- Correct or update your information
+- Delete your account and all associated data
+- Withdraw consent for data collection (may affect app functionality)
+- Export your data in a portable format
+
+For COPPA compliance, parents can exercise these rights on behalf of their children under 13 at any time by contacting Envive.app@gmail.com or through the app's settings.
 
 ## 10. Disclaimers and Limitations of Liability
 
@@ -276,23 +317,60 @@ For questions about these Terms, please contact:
 - **Email:** Envive.app@gmail.com
 - **GitHub:** https://github.com/nd-ahl/Envive
 
-## 18. Apple-Specific Terms
+## 18. Apple-Specific Terms and Compliance
 
-### Family Controls Usage
+### App Category and Audience
 
-This App uses Apple's Family Controls framework solely for:
-- Parental screen time management
+Envive is classified as a **Family/Parental Control** app and is designed for mixed audiences:
+- **Primary Users:** Parents and legal guardians (18+ years old)
+- **Secondary Users:** Children (ages 4-17) under direct parental supervision
+- **Not a Kids Category App:** This app is NOT classified in Apple's Kids Category, as it requires parental setup and is intended for family use with adult supervision
+
+### Family Controls Framework Usage
+
+This App uses Apple's Family Controls framework exclusively for legitimate parental control purposes:
+
+**We use Family Controls for:**
+- Parental screen time management and monitoring
 - Monitoring app usage within the household
 - Setting age-appropriate device restrictions
+- Enabling parents to manage their children's device usage
 
-We do not use Family Controls for:
-- Advertising or marketing
+**We do NOT use Family Controls for:**
+- Advertising or marketing purposes
 - Tracking users outside the intended parental control features
-- Any purpose other than helping parents manage their children's device usage
+- Collecting data for third-party sharing
+- Any commercial purposes beyond providing our core service
+- Surveillance or monitoring beyond what parents explicitly authorize
+
+**Important Technical Details:**
+- Screen time data remains on-device only and is never transmitted to our servers
+- Parents maintain complete control over what is monitored
+- Family Controls features require explicit parental authorization
+- We comply with Apple's Family Controls API usage guidelines
+
+### Compliance with Apple App Store Guidelines
+
+This app complies with Apple App Store Review Guidelines, including:
+- **Section 1.3:** Kids Category requirements (not applicable - we are not a Kids app)
+- **Section 5.1.1:** Privacy requirements and data collection practices
+- **Section 5.1.4:** Kids Apps requirements for collecting data from children under 13
+- **Section 2.5.14:** Device Management apps and parental controls
+
+### Apple Account Requirements
+
+If you use Apple Sign In to authenticate:
+- You agree to Apple's Terms of Service and Privacy Policy
+- Apple's age verification applies (Apple ID requires users to be 13+)
+- Apple may share your name and email with us per your Apple ID settings
+- You can manage what information Apple shares in your Apple ID settings
 
 ### App Store Terms
 
-Your use of the App is also subject to Apple's App Store Terms of Service and Licensed Application End User License Agreement.
+Your use of the App is also subject to:
+- Apple's App Store Terms of Service
+- Apple's Licensed Application End User License Agreement (EULA)
+- Apple's Privacy Policy (when using Apple Sign In or Family Controls)
 
 ## Acknowledgment
 

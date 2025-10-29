@@ -1,10 +1,12 @@
 import Foundation
 import Combine
 import Security
+import Supabase
 
 // MARK: - Parent Password Manager
 
 /// Manages password protection for parent-only features
+/// Syncs password across household devices via Supabase
 class ParentPasswordManager: ObservableObject {
     static let shared = ParentPasswordManager()
 
@@ -15,9 +17,15 @@ class ParentPasswordManager: ObservableObject {
     private let sessionTimeout: TimeInterval = 300 // 5 minutes
 
     private var unlockTime: Date?
+    private let supabase = SupabaseService.shared.client
+    private let householdService = HouseholdService.shared
 
     private init() {
         checkSessionExpiration()
+        // Sync password from Supabase on init
+        Task {
+            await syncPasswordFromSupabase()
+        }
     }
 
     // MARK: - Password Management
@@ -28,7 +36,7 @@ class ParentPasswordManager: ObservableObject {
     }
 
     /// Set or update the parent password
-    func setPassword(_ password: String) throws {
+    func setPassword(_ password: String) async throws {
         guard !password.isEmpty else {
             throw PasswordError.emptyPassword
         }
@@ -39,7 +47,11 @@ class ParentPasswordManager: ObservableObject {
 
         // Store password securely in keychain
         try saveToKeychain(password)
-        print("✅ Parent password set successfully")
+
+        // Sync to Supabase for household-wide access
+        try await syncPasswordToSupabase(password)
+
+        print("✅ Parent password set and synced successfully")
     }
 
     /// Verify the password
@@ -157,6 +169,62 @@ class ParentPasswordManager: ObservableObject {
 
         SecItemDelete(query as CFDictionary)
     }
+
+    // MARK: - Supabase Sync
+
+    /// Sync password to Supabase for household-wide access
+    private func syncPasswordToSupabase(_ password: String) async throws {
+        guard let household = householdService.currentHousehold else {
+            print("⚠️ No current household - cannot sync password")
+            return
+        }
+
+        do {
+            // Update household with encrypted password
+            try await supabase
+                .from("households")
+                .update(["app_restriction_password": password])
+                .eq("id", value: household.id)
+                .execute()
+
+            print("✅ Password synced to Supabase for household: \(household.name)")
+        } catch {
+            print("❌ Failed to sync password to Supabase: \(error.localizedDescription)")
+            throw PasswordError.syncFailed
+        }
+    }
+
+    /// Fetch password from Supabase (for child devices)
+    func syncPasswordFromSupabase() async {
+        guard let household = householdService.currentHousehold else {
+            print("⚠️ No current household - cannot fetch password")
+            return
+        }
+
+        do {
+            // Fetch household password
+            let response: Household = try await supabase
+                .from("households")
+                .select()
+                .eq("id", value: household.id)
+                .single()
+                .execute()
+                .value
+
+            // If password exists in Supabase, update local keychain
+            if let password = response.appRestrictionPassword, !password.isEmpty {
+                try saveToKeychain(password)
+                print("✅ Password synced from Supabase")
+            }
+        } catch {
+            print("⚠️ Could not fetch password from Supabase: \(error.localizedDescription)")
+        }
+    }
+
+    /// Force refresh password from Supabase (call when child device needs latest password)
+    func refreshPasswordFromServer() async {
+        await syncPasswordFromSupabase()
+    }
 }
 
 // MARK: - Password Error
@@ -166,6 +234,7 @@ enum PasswordError: LocalizedError {
     case passwordTooShort
     case encodingFailed
     case keychainSaveFailed
+    case syncFailed
 
     var errorDescription: String? {
         switch self {
@@ -177,6 +246,8 @@ enum PasswordError: LocalizedError {
             return "Failed to encode password"
         case .keychainSaveFailed:
             return "Failed to save password securely"
+        case .syncFailed:
+            return "Failed to sync password to household"
         }
     }
 }

@@ -272,6 +272,7 @@ struct ParentProfileView: View {
     @State private var showCopiedMessage = false
     @State private var showingNameEditor = false
     @State private var editedName = ""
+    @State private var showingResetTestDataConfirmation = false
     @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
 
     var body: some View {
@@ -479,6 +480,10 @@ struct ParentProfileView: View {
                         Label("Manage Family", systemImage: "person.2")
                     }
 
+                    NavigationLink(destination: ChangePasswordView()) {
+                        Label("App Restriction Password", systemImage: "lock.shield")
+                    }
+
                     NavigationLink(destination: Text("Notifications Settings")) {
                         Label("Notifications", systemImage: "bell")
                     }
@@ -617,6 +622,19 @@ struct ParentProfileView: View {
                         }
                         .foregroundColor(.secondary)
                     }
+
+                    Button(action: {
+                        showingResetTestDataConfirmation = true
+                    }) {
+                        HStack {
+                            Text("Reset All Test Data")
+                                .font(.caption)
+                            Spacer()
+                            Image(systemName: "trash.circle")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.red)
+                    }
                 } footer: {
                     Text("Developer tools")
                         .font(.caption2)
@@ -651,6 +669,14 @@ struct ParentProfileView: View {
                 }
             } message: {
                 Text("Enter your name")
+            }
+            .alert("Reset All Test Data", isPresented: $showingResetTestDataConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Reset", role: .destructive) {
+                    resetAllTestData()
+                }
+            } message: {
+                Text("This will delete all tasks, reset all children's XP to 0, and set credibility to 100. This action cannot be undone.")
             }
         }
         .navigationViewStyle(.stack)
@@ -716,6 +742,44 @@ struct ParentProfileView: View {
                 print("✅ Parent name updated: \(trimmedName)")
             } catch {
                 print("❌ Failed to update parent name: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func resetAllTestData() {
+        print("🗑️ Resetting all child data...")
+
+        let taskService = DependencyContainer.shared.taskService
+        let credibilityService = DependencyContainer.shared.credibilityService
+        let xpService = DependencyContainer.shared.xpService
+
+        // Load children from household
+        Task {
+            do {
+                let children = try await householdService.getMyChildren()
+                let childIds = children.compactMap { UUID(uuidString: $0.id) }
+
+                // Reset data for each child
+                for childId in childIds {
+                    // Reset XP balance
+                    xpService.resetBalance(userId: childId)
+                    xpService.deleteAllTransactions(userId: childId)
+
+                    // Reset credibility
+                    credibilityService.resetCredibility(childId: childId)
+
+                    // Clear ScreenTimeRewardManager storage
+                    UserDefaults.standard.removeObject(forKey: "earnedScreenTimeMinutes_\(childId.uuidString)")
+                    UserDefaults.standard.removeObject(forKey: "currentStreak_\(childId.uuidString)")
+                    UserDefaults.standard.removeObject(forKey: "lastTaskCompletionDate_\(childId.uuidString)")
+                }
+
+                // Delete all task assignments
+                taskService.deleteAllAssignments()
+
+                print("✅ Reset complete - all tasks deleted, XP set to 0, credibility set to 100")
+            } catch {
+                print("❌ Error loading children for reset: \(error.localizedDescription)")
             }
         }
     }

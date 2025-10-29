@@ -9,12 +9,14 @@ class AuthenticationService: ObservableObject {
 
     @Published var isAuthenticated = false
     @Published var currentProfile: Profile?
+    @Published var isCheckingAuth = true
 
     private let supabase = SupabaseService.shared.client
 
     private init() {
-        Task {
-            await checkAuthStatus()
+        // Perform auth check in background to avoid blocking app launch
+        Task.detached(priority: .background) { [weak self] in
+            await self?.checkAuthStatus()
         }
     }
 
@@ -22,6 +24,12 @@ class AuthenticationService: ObservableObject {
 
     /// Check if user is currently authenticated
     func checkAuthStatus() async {
+        defer {
+            Task { @MainActor [weak self] in
+                self?.isCheckingAuth = false
+            }
+        }
+
         do {
             let session = try await supabase.auth.session
             await MainActor.run {
@@ -44,8 +52,9 @@ class AuthenticationService: ObservableObject {
         // DO NOT clear data here - user is mid-onboarding!
         // Only clear data on sign OUT or when existing user signs IN
 
+        print("📧 Creating new user account: \(email)")
+
         // Create auth user with metadata for the database trigger
-        // CRITICAL FIX: Add emailRedirectTo to skip email confirmation for development
         let response = try await supabase.auth.signUp(
             email: email,
             password: password,
@@ -53,8 +62,10 @@ class AuthenticationService: ObservableObject {
                 "full_name": .string(fullName),
                 "role": .string(role == .parent ? "parent" : "child")
             ],
-            redirectTo: nil  // Skip email confirmation redirect
+            redirectTo: URL(string: "envivenew://auth/callback")  // Email confirmation will redirect here
         )
+
+        print("✅ User account created - confirmation email sent to: \(email)")
 
         let user = response.user
 
@@ -102,32 +113,52 @@ class AuthenticationService: ObservableObject {
         // DO NOT clear data here automatically
         // Caller should clear if needed (e.g., ExistingUserSignInView)
 
-        let session = try await supabase.auth.signIn(
-            email: email,
-            password: password
-        )
+        print("🔐 Attempting sign-in for: \(email)")
 
-        await MainActor.run {
-            self.isAuthenticated = true
-        }
-
-        // Load profile - MUST exist for sign-in (don't create new one)
         do {
-            return try await loadProfile(userId: session.user.id.uuidString)
-        } catch {
-            // Profile doesn't exist - user must create account first
-            print("❌ Sign-in failed: No profile found for user \(session.user.id.uuidString)")
-            print("   User must go through account creation flow first")
+            let session = try await supabase.auth.signIn(
+                email: email,
+                password: password
+            )
 
-            // Sign out the auth user since they don't have a profile
-            try? await supabase.auth.signOut()
+            print("✅ Auth sign-in successful")
+            print("   User ID: \(session.user.id.uuidString)")
+            print("   Email confirmed: \(session.user.emailConfirmedAt != nil ? "YES" : "NO")")
 
             await MainActor.run {
-                self.isAuthenticated = false
-                self.currentProfile = nil
+                self.isAuthenticated = true
             }
 
-            throw AuthError.profileNotFound
+            // Load profile - MUST exist for sign-in (don't create new one)
+            do {
+                let profile = try await loadProfile(userId: session.user.id.uuidString)
+                print("✅ Sign-in complete - profile loaded")
+                return profile
+            } catch {
+                // Profile doesn't exist - user must create account first
+                print("❌ Sign-in failed: No profile found for user \(session.user.id.uuidString)")
+                print("   User must go through account creation flow first")
+
+                // Sign out the auth user since they don't have a profile
+                try? await supabase.auth.signOut()
+
+                await MainActor.run {
+                    self.isAuthenticated = false
+                    self.currentProfile = nil
+                }
+
+                throw AuthError.profileNotFound
+            }
+        } catch {
+            print("❌ Sign-in failed: \(error.localizedDescription)")
+
+            // Check if it's an email not confirmed error
+            if error.localizedDescription.contains("Email not confirmed") ||
+               error.localizedDescription.contains("email_not_confirmed") {
+                print("⚠️  Email not confirmed - user must click confirmation link in email")
+            }
+
+            throw error
         }
     }
 
@@ -185,7 +216,7 @@ class AuthenticationService: ObservableObject {
 
     /// Load user profile from database
     @discardableResult
-    private func loadProfile(userId: String) async throws -> Profile {
+    func loadProfile(userId: String) async throws -> Profile {
         let response: Profile = try await supabase
             .from("profiles")
             .select()

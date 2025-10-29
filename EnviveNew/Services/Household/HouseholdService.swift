@@ -26,7 +26,8 @@ class HouseholdService: ObservableObject {
             inviteCode: inviteCode,
             createdBy: createdBy,
             createdAt: Date(),
-            updatedAt: Date()
+            updatedAt: Date(),
+            appRestrictionPassword: nil  // Password will be set later by parent
         )
 
         // Insert household into database

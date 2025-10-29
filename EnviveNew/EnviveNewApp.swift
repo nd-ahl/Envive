@@ -13,31 +13,52 @@ import Auth
 
 @main
 struct EnviveNewApp: App {
-    let persistenceController = PersistenceController.shared
+    @State private var persistenceController: PersistenceController?
 
-    // Theme management
-    @StateObject private var themeViewModel = DependencyContainer.shared
-        .viewModelFactory.makeThemeSettingsViewModel()
-
-    // Onboarding management
+    // CRITICAL FIX: Observe these as @StateObject so SwiftUI reacts to changes!
     @StateObject private var onboardingManager = OnboardingManager.shared
     @StateObject private var authService = AuthenticationService.shared
+
     @State private var isCreatingHousehold = false
     @State private var showingSignIn = false
     @State private var needsPasswordSetup = false
     @State private var userEmailForPassword = ""
 
     init() {
+        print("🚀 EnviveNewApp init() started")
         // Clean up legacy test data on first launch after beta deployment
         // TEMPORARILY DISABLED: Causing blank screen on hot reload during development
         // TestDataCleanupService.shared.performCleanupIfNeeded()
+        print("✅ EnviveNewApp init() completed")
     }
 
     var body: some Scene {
         WindowGroup {
-            Group {
+            mainContent
+                .environment(\.managedObjectContext, persistenceController?.container.viewContext ?? PersistenceController(inMemory: true).container.viewContext)
+                .preferredColorScheme(DependencyContainer.shared.viewModelFactory.makeThemeSettingsViewModel().effectiveColorScheme)
+                .onOpenURL { url in
+                    handleURLScheme(url)
+                }
+                .task {
+                    // Load Core Data in background without blocking UI
+                    if persistenceController == nil {
+                        print("🔄 Loading Core Data in background...")
+                        let start = Date()
+                        persistenceController = await PersistenceController.loadAsync()
+                        let duration = Date().timeIntervalSince(start)
+                        print("✅ Core Data loaded in \(String(format: "%.2f", duration)) seconds")
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        Group {
                 // ===== REFINED ONBOARDING FLOW =====
                 // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
+                let _ = print("🎬 mainContent rendering - checking onboarding state")
 
                 if onboardingManager.shouldShowWelcome {
                     // Step 1: Friendly Welcome (no terms, no role selection)
@@ -260,27 +281,27 @@ struct EnviveNewApp: App {
                     // Legal consent already handled in refined onboarding flow
                     // (Users accept terms in LegalAgreementView during onboarding)
 
-                    // CRITICAL FIX: Auto-complete onboarding for authenticated users
-                    // This prevents blank screen issues during development hot reloads
+                    // Main app - only shown after completing all onboarding steps
                     AppLoadingCoordinator {
                         RootNavigationView()
                     }
                     .onAppear {
-                        // If user is logged in but onboarding incomplete, auto-complete it
-                        if authService.isAuthenticated && !onboardingManager.hasCompletedOnboarding {
-                            print("⚠️  User authenticated but onboarding incomplete - auto-completing")
+                        // CRITICAL: Only auto-complete if user has legitimately finished onboarding
+                        // Don't skip family setup for new parents!
+                        let shouldAutoComplete = authService.isAuthenticated &&
+                                                 !onboardingManager.hasCompletedOnboarding &&
+                                                 onboardingManager.hasCompletedFamilySetup
+
+                        if shouldAutoComplete {
+                            print("⚠️  User authenticated and completed family setup - auto-completing onboarding")
                             DispatchQueue.main.async {
                                 onboardingManager.completeOnboarding()
                             }
+                        } else if authService.isAuthenticated && !onboardingManager.hasCompletedFamilySetup {
+                            print("⚠️  User authenticated but hasn't completed family setup - NOT auto-completing")
                         }
                     }
                 }
-            }
-            .environment(\.managedObjectContext, persistenceController.container.viewContext)
-            .preferredColorScheme(themeViewModel.effectiveColorScheme)
-            .onOpenURL { url in
-                handleURLScheme(url)
-            }
         }
     }
 
@@ -315,19 +336,19 @@ struct EnviveNewApp: App {
             }
             break
         case "/reset-password", "/auth/callback":
-            // Handle password reset callback from email link
-            print("🔐 Password reset callback received")
-            handlePasswordResetCallback(url)
+            // Handle both password reset AND email confirmation callbacks
+            print("🔐 Auth callback received")
+            handleAuthCallback(url)
             break
         default:
             print("Unknown URL path: \(url.path)")
         }
     }
 
-    /// Handle password reset callback from email link
-    /// URL format: envivenew://reset-password#access_token=xxx&refresh_token=yyy&type=recovery
-    private func handlePasswordResetCallback(_ url: URL) {
-        print("Processing password reset callback...")
+    /// Handle authentication callbacks (password reset AND email confirmation)
+    /// URL format: envivenew://auth/callback#access_token=xxx&refresh_token=yyy&type=recovery|signup
+    private func handleAuthCallback(_ url: URL) {
+        print("Processing auth callback...")
 
         // Parse the URL fragment (everything after #)
         guard let fragment = url.fragment else {
@@ -338,12 +359,6 @@ struct EnviveNewApp: App {
         // Parse fragment parameters
         let params = parseURLFragment(fragment)
 
-        // Check if this is a password recovery flow
-        guard let type = params["type"], type == "recovery" else {
-            print("❌ Not a recovery flow, ignoring")
-            return
-        }
-
         // Extract tokens
         guard let accessToken = params["access_token"],
               let refreshToken = params["refresh_token"] else {
@@ -351,9 +366,29 @@ struct EnviveNewApp: App {
             return
         }
 
-        print("✅ Found recovery tokens, establishing session...")
+        // Check the type of callback
+        let callbackType = params["type"] ?? "unknown"
 
-        // Set the session in Supabase
+        switch callbackType {
+        case "recovery":
+            // Password reset flow
+            handlePasswordResetFlow(accessToken: accessToken, refreshToken: refreshToken)
+
+        case "signup", "email_confirmation":
+            // Email confirmation flow
+            handleEmailConfirmationFlow(accessToken: accessToken, refreshToken: refreshToken)
+
+        default:
+            print("⚠️ Unknown callback type: \(callbackType), attempting to establish session anyway...")
+            // Try to establish session for any auth callback
+            handleEmailConfirmationFlow(accessToken: accessToken, refreshToken: refreshToken)
+        }
+    }
+
+    /// Handle password reset flow
+    private func handlePasswordResetFlow(accessToken: String, refreshToken: String) {
+        print("🔐 Processing password reset flow...")
+
         Task {
             do {
                 let supabase = SupabaseService.shared.client
@@ -374,6 +409,97 @@ struct EnviveNewApp: App {
                 }
             } catch {
                 print("❌ Failed to set password reset session: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Handle email confirmation flow
+    private func handleEmailConfirmationFlow(accessToken: String, refreshToken: String) {
+        print("📧 Processing email confirmation flow...")
+
+        Task {
+            do {
+                let supabase = SupabaseService.shared.client
+
+                // Set the session with confirmed tokens - this marks email as verified
+                try await supabase.auth.setSession(
+                    accessToken: accessToken,
+                    refreshToken: refreshToken
+                )
+
+                print("✅ Email confirmed! Session established")
+
+                // Verify the session is valid
+                guard let session = try? await supabase.auth.session else {
+                    print("❌ Failed to get session after confirmation")
+                    return
+                }
+
+                print("✅ Session valid, user ID: \(session.user.id.uuidString)")
+                print("✅ Email verified: \(session.user.emailConfirmedAt != nil)")
+
+                // Load the user's profile
+                do {
+                    let profile = try await authService.loadProfile(userId: session.user.id.uuidString)
+
+                    await MainActor.run {
+                        authService.isAuthenticated = true
+                        authService.currentProfile = profile
+                        authService.isCheckingAuth = false
+                    }
+
+                    print("✅ User profile loaded: \(profile.email ?? "unknown")")
+                    print("✅ User household: \(profile.householdId ?? "none")")
+
+                    // Set household context if available
+                    if let householdIdString = profile.householdId,
+                       let householdId = UUID(uuidString: householdIdString) {
+                        let parentId: UUID? = profile.role == "parent" ? UUID(uuidString: profile.id) : nil
+                        HouseholdContext.shared.setHouseholdContext(
+                            householdId: householdId,
+                            parentId: parentId
+                        )
+                        print("✅ Household context set")
+                    }
+
+                    // Continue with onboarding flow
+                    await MainActor.run {
+                        // Mark sign-in as complete so they can proceed to family setup
+                        onboardingManager.completeSignIn()
+
+                        // Check if they've already completed family setup
+                        if onboardingManager.hasCompletedFamilySetup {
+                            print("✅ User already completed family setup - going to main app")
+                            onboardingManager.completeOnboarding()
+                        } else {
+                            print("✅ Email confirmed - user will now proceed to family setup")
+                            // User will be shown QuickFamilySetupView next
+                            // This is where they can add children to their family
+                        }
+
+                        print("✅ Email confirmation complete")
+
+                        // Show success notification to user
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("EmailConfirmed"),
+                            object: nil,
+                            userInfo: ["email": profile.email ?? ""]
+                        )
+                    }
+                } catch {
+                    print("⚠️ Profile not found after confirmation: \(error.localizedDescription)")
+                    // User account exists in auth but profile not created yet
+                    // This shouldn't happen with proper signup flow, but handle gracefully
+                    await MainActor.run {
+                        authService.isAuthenticated = true
+                        // Let them continue to create profile
+                        onboardingManager.completeSignIn()
+                    }
+                }
+
+            } catch {
+                print("❌ Failed to confirm email: \(error.localizedDescription)")
+                print("❌ Error details: \(error)")
             }
         }
     }

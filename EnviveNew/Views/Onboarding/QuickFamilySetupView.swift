@@ -268,10 +268,32 @@ struct QuickFamilySetupView: View {
                     ])
                 }
 
-                guard let householdId = currentProfile.householdId else {
-                    throw NSError(domain: "QuickFamilySetup", code: -2, userInfo: [
-                        NSLocalizedDescriptionKey: "No household found. You may not have an account yet. Please go back and create an account first, or sign out and try again."
-                    ])
+                // Check if household exists, create it if not
+                var householdId: String
+
+                if let existingHouseholdId = currentProfile.householdId {
+                    // User already has a household (existing user scenario)
+                    householdId = existingHouseholdId
+                    print("✅ Using existing household: \(householdId)")
+                } else {
+                    // New user - create household now
+                    print("🏠 Creating new household for parent...")
+
+                    // Get family name from UserDefaults (saved during signup)
+                    let familyName = UserDefaults.standard.string(forKey: "familyName") ?? "Family"
+                    let householdName = makeGrammaticalFamilyName(from: familyName)
+
+                    let household = try await householdService.createHousehold(
+                        name: householdName,
+                        createdBy: currentProfile.id
+                    )
+                    householdId = household.id
+                    print("✅ Household created: \(household.name) (ID: \(household.id))")
+
+                    // Refresh profile to get updated household_id
+                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                    try await authService.refreshCurrentProfile()
+                    print("✅ Profile refreshed with household_id")
                 }
 
                 print("🏠 Creating \(children.count) child profile(s) in household: \(householdId)")
@@ -294,8 +316,6 @@ struct QuickFamilySetupView: View {
                 }
 
                 await MainActor.run {
-                    // CRITICAL FIX: Don't set flags directly - let parent handle it
-                    // This prevents navigation glitches caused by double-setting
                     isLoading = false
                     onComplete()
                 }
@@ -306,6 +326,27 @@ struct QuickFamilySetupView: View {
                     print("❌ Error in family setup: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    /// Generate a grammatically correct family name with possessive form
+    private func makeGrammaticalFamilyName(from name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            return "Family"
+        }
+
+        // Check if name already ends with "Family" or similar
+        let lowercased = trimmed.lowercased()
+        if lowercased.hasSuffix("family") || lowercased.hasSuffix("household") {
+            return trimmed
+        }
+
+        // Add possessive apostrophe
+        if trimmed.hasSuffix("s") {
+            return "\(trimmed)' Family"
+        } else {
+            return "\(trimmed)'s Family"
         }
     }
 }

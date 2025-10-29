@@ -336,51 +336,11 @@ struct SimplifiedParentSignUpView: View {
                     role: .parent
                 )
 
-                // Save family name
+                // Save family name for later use in family setup
                 UserDefaults.standard.set(familyName, forKey: "familyName")
                 UserDefaults.standard.set(email, forKey: "parentEmail")
 
-                // Check if this is an existing user with household already set up
-                let isExistingUser = profile.householdId != nil
-
-                // If new user, create a household for them
-                if !isExistingUser {
-                    print("🏠 Creating household for new user...")
-
-                    // Wait a moment to ensure profile is fully committed to database
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
-                    // Verify profile exists in database before creating household
-                    do {
-                        _ = try await authService.refreshCurrentProfile()
-                        print("✅ Profile verified in database")
-                    } catch {
-                        print("⚠️ Profile not yet in database, waiting...")
-                        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 more second
-                        _ = try await authService.refreshCurrentProfile()
-                    }
-
-                    let household = try await householdService.createHousehold(
-                        name: makeGrammaticalFamilyName(from: familyName),
-                        createdBy: profile.id
-                    )
-                    print("✅ Household created: \(household.name) (ID: \(household.id))")
-
-                    // CRITICAL FIX: Wait a moment for database to update
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
-                    // Refresh profile to get updated household_id
-                    try await authService.refreshCurrentProfile()
-
-                    // Verify household_id was updated
-                    if authService.currentProfile?.householdId == nil {
-                        print("⚠️ WARNING: Profile household_id is still nil after refresh, retrying...")
-                        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                        try await authService.refreshCurrentProfile()
-                    }
-
-                    print("✅ Profile household_id: \(authService.currentProfile?.householdId ?? "nil")")
-                }
+                print("✅ Profile created - household will be created during family setup")
 
                 // Link device to profile so user can see their data
                 linkDeviceToProfile(authService.currentProfile ?? profile)
@@ -605,30 +565,11 @@ struct SimplifiedParentSignUpView: View {
                 // Refresh the current profile to get the updated name
                 try await authService.refreshCurrentProfile()
 
-                // Save name to UserDefaults for settings display
+                // Save name to UserDefaults for settings display and later household creation
                 UserDefaults.standard.set(trimmedName, forKey: "parentName")
+                UserDefaults.standard.set(trimmedName, forKey: "familyName")
 
-                // Create household with the entered name
-                let household = try await householdService.createHousehold(
-                    name: makeGrammaticalFamilyName(from: trimmedName),
-                    createdBy: profile.id
-                )
-                print("✅ Household created: \(household.name) (ID: \(household.id))")
-
-                // CRITICAL FIX: Wait a moment for database to update
-                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
-                // Refresh profile to get updated household_id
-                try await authService.refreshCurrentProfile()
-
-                // Verify household_id was updated
-                if authService.currentProfile?.householdId == nil {
-                    print("⚠️ WARNING: Profile household_id is still nil after refresh, retrying...")
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                    try await authService.refreshCurrentProfile()
-                }
-
-                print("✅ Profile household_id: \(authService.currentProfile?.householdId ?? "nil")")
+                print("✅ Profile updated - household will be created during family setup")
 
                 // Link device to profile so user can see their data
                 linkDeviceToProfile(authService.currentProfile ?? profile)

@@ -12,7 +12,6 @@ struct ParentDashboardView: View {
     @State private var showingChildSelector = false
     @State private var showingAssignTask = false
     @State private var selectedChildrenForAssignment: [ChildSummary] = []
-    @State private var showingResetConfirmation = false
     @Environment(\.scenePhase) private var scenePhase
 
     init(viewModel: ParentDashboardViewModel, appSelectionStore: AppSelectionStore, notificationManager: NotificationManager, selectedTab: Binding<Int>) {
@@ -42,24 +41,6 @@ struct ParentDashboardView: View {
                 .padding()
             }
             .navigationTitle("Parent Dashboard")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showingResetConfirmation = true
-                    }) {
-                        Image(systemName: "trash.circle.fill")
-                            .foregroundColor(.red)
-                    }
-                }
-            }
-            .alert("Reset All Test Data", isPresented: $showingResetConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Reset", role: .destructive) {
-                    viewModel.resetAllChildData()
-                }
-            } message: {
-                Text("This will delete all tasks, reset all children's XP to 0, and set credibility to 100. This action cannot be undone.")
-            }
             .onAppear {
                 viewModel.loadData()
             }

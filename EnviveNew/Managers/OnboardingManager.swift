@@ -6,7 +6,12 @@ import Supabase
 
 /// Manages onboarding state and user introduction flow
 class OnboardingManager: ObservableObject {
-    static let shared = OnboardingManager()
+    static let shared: OnboardingManager = {
+        print("📋 OnboardingManager initializing...")
+        let manager = OnboardingManager()
+        print("✅ OnboardingManager initialized")
+        return manager
+    }()
 
     @Published var hasCompletedOnboarding: Bool {
         didSet {

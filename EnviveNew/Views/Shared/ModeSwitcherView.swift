@@ -622,6 +622,9 @@ struct ModeSwitcherButton: View {
     @AppStorage("modeSwitcherButtonX") private var buttonX: Double = 20
     @AppStorage("modeSwitcherButtonY") private var buttonY: Double = 100
 
+    // Toggle state - same as DeviceSwitcherView
+    @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
+
     // Drag state
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging = false
@@ -632,64 +635,68 @@ struct ModeSwitcherButton: View {
     }
 
     var body: some View {
-        Button(action: {
-            if !isDragging {
-                if deviceModeService.isRoleLocked {
-                    showingLockedAlert = true
-                } else {
-                    showingModeSwitcher = true
-                }
-            }
-        }) {
-            HStack(spacing: 6) {
-                Image(systemName: deviceModeManager.currentMode.icon)
-                    .font(.caption)
-                Text(currentDisplayName)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                Image(systemName: deviceModeService.isRoleLocked ? "lock.fill" : "arrow.triangle.2.circlepath")
-                    .font(.caption2)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isDragging ? Color.blue.opacity(0.8) : (deviceModeService.isRoleLocked ? Color.gray : Color.blue))
-            .foregroundColor(.white)
-            .cornerRadius(20)
-            .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 2)
-        }
-        .buttonStyle(.plain)
-        .position(x: buttonX + dragOffset.width, y: buttonY + dragOffset.height)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    isDragging = true
-                    dragOffset = value.translation
-                }
-                .onEnded { value in
-                    // Update final position
-                    buttonX += value.translation.width
-                    buttonY += value.translation.height
-
-                    // Clamp to screen bounds (with some padding)
-                    buttonX = max(60, min(buttonX, UIScreen.main.bounds.width - 60))
-                    buttonY = max(60, min(buttonY, UIScreen.main.bounds.height - 100))
-
-                    // Reset drag offset
-                    dragOffset = .zero
-
-                    // Small delay before allowing tap
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        isDragging = false
+        Group {
+            if enableDeviceSwitcher {
+                Button(action: {
+                    if !isDragging {
+                        if deviceModeService.isRoleLocked {
+                            showingLockedAlert = true
+                        } else {
+                            showingModeSwitcher = true
+                        }
                     }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: deviceModeManager.currentMode.icon)
+                            .font(.caption)
+                        Text(currentDisplayName)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Image(systemName: deviceModeService.isRoleLocked ? "lock.fill" : "arrow.triangle.2.circlepath")
+                            .font(.caption2)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(isDragging ? Color.blue.opacity(0.8) : (deviceModeService.isRoleLocked ? Color.gray : Color.blue))
+                    .foregroundColor(.white)
+                    .cornerRadius(20)
+                    .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 2)
                 }
-        )
-        .sheet(isPresented: $showingModeSwitcher) {
-            ModeSwitcherView(deviceModeManager: deviceModeManager)
-        }
-        .alert("Device Role Locked", isPresented: $showingLockedAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("This device's role has been locked to \(deviceModeService.deviceMode.displayName) mode. To change roles, reset onboarding from Settings.")
+                .buttonStyle(.plain)
+                .position(x: buttonX + dragOffset.width, y: buttonY + dragOffset.height)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            isDragging = true
+                            dragOffset = value.translation
+                        }
+                        .onEnded { value in
+                            // Update final position
+                            buttonX += value.translation.width
+                            buttonY += value.translation.height
+
+                            // Clamp to screen bounds (with some padding)
+                            buttonX = max(60, min(buttonX, UIScreen.main.bounds.width - 60))
+                            buttonY = max(60, min(buttonY, UIScreen.main.bounds.height - 100))
+
+                            // Reset drag offset
+                            dragOffset = .zero
+
+                            // Small delay before allowing tap
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                isDragging = false
+                            }
+                        }
+                )
+                .sheet(isPresented: $showingModeSwitcher) {
+                    ModeSwitcherView(deviceModeManager: deviceModeManager)
+                }
+                .alert("Device Role Locked", isPresented: $showingLockedAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("This device's role has been locked to \(deviceModeService.deviceMode.displayName) mode. To change roles, reset onboarding from Settings.")
+                }
+            }
         }
     }
 }

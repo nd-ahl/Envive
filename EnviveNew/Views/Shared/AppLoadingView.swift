@@ -68,35 +68,30 @@ struct AppLoadingView: View {
 
     private func performDataRefresh() {
         Task {
-            // Step 1: Request notification permissions (300ms)
+            // Step 1: Request notification permissions
             await updateStep("Setting up notifications...", progress: 0.2)
             let notificationService = NotificationServiceImpl()
             _ = await notificationService.requestPermission()
-            try? await Task.sleep(nanoseconds: 300_000_000)
 
-            // Step 2: Sync authentication state (300ms)
+            // Step 2: Sync authentication state
             await updateStep("Checking authentication...", progress: 0.4)
             try? await AuthenticationService.shared.refreshCurrentProfile()
-            try? await Task.sleep(nanoseconds: 300_000_000)
 
-            // Step 3: Load household data (300ms)
+            // Step 3: Load household data
             await updateStep("Loading household...", progress: 0.6)
             let authService = AuthenticationService.shared
             if let profile = authService.currentProfile {
                 try? await HouseholdService.shared.getUserHousehold(userId: profile.id)
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
 
-            // Step 4: Refresh task data (300ms)
+            // Step 4: Refresh task data
             await updateStep("Syncing tasks...", progress: 0.8)
             // Task data is loaded on-demand by views, so just ensure services are ready
-            try? await Task.sleep(nanoseconds: 300_000_000)
 
-            // Step 5: Finalize (200ms)
+            // Step 5: Finalize
             await updateStep("Almost ready...", progress: 1.0)
-            try? await Task.sleep(nanoseconds: 200_000_000)
 
-            // Complete loading (minimum 1.7 seconds total)
+            // Complete loading
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.3)) {
                     isLoading = false
@@ -122,35 +117,50 @@ struct AppLoadingView: View {
 
 // MARK: - App Loading Coordinator
 
-/// Wrapper view that shows loading screen on app launch, then transitions to content
+/// Wrapper view that shows content immediately and performs data refresh in background
 struct AppLoadingCoordinator<Content: View>: View {
     @State private var hasCompletedInitialLoad = false
-    @State private var showContent = false
     @Environment(\.scenePhase) private var scenePhase
 
     let content: () -> Content
 
     var body: some View {
-        ZStack {
-            if showContent {
-                content()
-                    .transition(.opacity)
-            } else {
-                AppLoadingView {
-                    withAnimation(.easeOut(duration: 0.5)) {
-                        showContent = true
-                        hasCompletedInitialLoad = true
-                    }
+        content()
+            .task {
+                // Perform initial data refresh in background on first launch
+                if !hasCompletedInitialLoad {
+                    await performInitialDataRefresh()
+                    hasCompletedInitialLoad = true
                 }
-                .transition(.opacity)
             }
-        }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            // Refresh data when app becomes active (but don't show loading screen again)
-            if newPhase == .active && hasCompletedInitialLoad {
-                performBackgroundRefresh()
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // Refresh data when app becomes active
+                if newPhase == .active && hasCompletedInitialLoad {
+                    performBackgroundRefresh()
+                }
             }
+    }
+
+    // MARK: - Initial Data Refresh
+
+    /// Perform initial data refresh in background on app launch
+    private func performInitialDataRefresh() async {
+        print("🔄 Performing initial data refresh in background...")
+
+        // Request notification permissions
+        let notificationService = NotificationServiceImpl()
+        _ = await notificationService.requestPermission()
+
+        // Sync authentication state
+        try? await AuthenticationService.shared.refreshCurrentProfile()
+
+        // Load household data
+        let authService = AuthenticationService.shared
+        if let profile = authService.currentProfile {
+            try? await HouseholdService.shared.getUserHousehold(userId: profile.id)
         }
+
+        print("✅ Initial data refresh complete")
     }
 
     // MARK: - Background Refresh
@@ -159,7 +169,7 @@ struct AppLoadingCoordinator<Content: View>: View {
         Task {
             print("🔄 Performing background data refresh...")
 
-            // Quick refresh without showing loading screen
+            // Quick refresh without blocking UI
             try? await AuthenticationService.shared.refreshCurrentProfile()
 
             let authService = AuthenticationService.shared

@@ -1,7 +1,12 @@
 import Foundation
 
 final class DependencyContainer {
-    static let shared = DependencyContainer()
+    static let shared: DependencyContainer = {
+        print("🏗️ DependencyContainer initializing...")
+        let container = DependencyContainer()
+        print("✅ DependencyContainer initialized")
+        return container
+    }()
 
     // MARK: - Services
 
