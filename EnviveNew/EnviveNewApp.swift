@@ -544,11 +544,15 @@ struct MainAppWithRefresh: View {
         let _ = print("🏠 MainAppWithRefresh.body rendering - showSplashScreen: \(showSplashScreen)")
 
         ZStack {
-            RootNavigationView()
-                .opacity(showSplashScreen ? 0 : 1)
-                .onAppear {
-                    print("📱 RootNavigationView appeared")
-                }
+            // Only show RootNavigationView after splash completes
+            // This ensures .onAppear fires AFTER data refresh is complete
+            if !showSplashScreen {
+                RootNavigationView()
+                    .transition(.opacity)
+                    .onAppear {
+                        print("📱 RootNavigationView appeared AFTER splash screen")
+                    }
+            }
 
             // Animated splash screen overlay - triggers data refresh on every app launch
             if showSplashScreen {

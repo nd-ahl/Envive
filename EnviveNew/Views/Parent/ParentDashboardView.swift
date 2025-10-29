@@ -85,6 +85,11 @@ struct ParentDashboardView: View {
                     viewModel.loadData()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshDashboardData"))) { _ in
+                // Reload data when HouseholdService completes background refresh
+                print("🔔 Received RefreshDashboardData notification - reloading parent dashboard")
+                viewModel.loadData()
+            }
         }
         .navigationViewStyle(.stack)
     }

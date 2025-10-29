@@ -235,6 +235,12 @@ struct ChildDashboardView: View {
                     checkForDeclines()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshDashboardData"))) { _ in
+                // Reload data when HouseholdService completes background refresh
+                print("🔔 Received RefreshDashboardData notification - reloading child dashboard")
+                viewModel.loadData()
+                checkForDeclines()
+            }
             .sheet(isPresented: $showTaskCreation, onDismiss: {
                 // Reload data when task library sheet is dismissed
                 // This ensures newly claimed/created tasks appear immediately

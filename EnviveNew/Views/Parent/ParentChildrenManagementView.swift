@@ -45,6 +45,11 @@ struct ParentChildrenManagementView: View {
             .refreshable {
                 viewModel.loadChildren()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshDashboardData"))) { _ in
+                // Reload children when HouseholdService completes background refresh
+                print("🔔 Received RefreshDashboardData notification - reloading children management")
+                viewModel.loadChildren()
+            }
         }
         .navigationViewStyle(.stack)
     }
