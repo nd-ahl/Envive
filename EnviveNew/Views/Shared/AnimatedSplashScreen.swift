@@ -29,6 +29,7 @@ struct AnimatedSplashScreen: View {
 
             VStack(spacing: 40) {
                 Spacer()
+                    .frame(minHeight: 80, maxHeight: 150)
 
                 // Animated logo container
                 ZStack {
@@ -90,9 +91,9 @@ struct AnimatedSplashScreen: View {
                     )
                     .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
                     .opacity(fadeIn ? 1 : 0)
-                    .offset(y: fadeIn ? 0 : 20)
 
                 Spacer()
+                    .frame(minHeight: 60, maxHeight: 120)
 
                 // Loading indicator
                 VStack(spacing: 16) {
@@ -119,8 +120,11 @@ struct AnimatedSplashScreen: View {
                         .foregroundColor(.white.opacity(0.9))
                         .opacity(fadeIn ? 1 : 0)
                 }
-                .padding(.bottom, 60)
+
+                Spacer()
+                    .frame(minHeight: 100, maxHeight: 140)
             }
+            .padding(.horizontal)
         }
         .onAppear {
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
