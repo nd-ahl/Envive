@@ -2,10 +2,11 @@ import SwiftUI
 
 // MARK: - Parent Password Authentication View
 
-/// View for parent to unlock protected features with password
+/// View for parent to unlock protected features with biometrics or password
 struct ParentPasswordView: View {
     @Environment(\.dismiss) var dismiss
     @StateObject private var passwordManager = ParentPasswordManager.shared
+    @StateObject private var biometricService = BiometricAuthenticationService.shared
 
     let onSuccess: () -> Void
 
@@ -13,6 +14,7 @@ struct ParentPasswordView: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isAuthenticating: Bool = false
+    @State private var showPasswordField: Bool = false
 
     var body: some View {
         NavigationView {
@@ -40,57 +42,103 @@ struct ParentPasswordView: View {
                         .font(.title)
                         .fontWeight(.bold)
 
-                    Text("Enter your password to manage app restrictions")
+                    Text(biometricService.isBiometricsAvailable
+                         ? "Use \(biometricService.biometricType.displayName) or password to manage app restrictions"
+                         : "Enter your password to manage app restrictions")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
 
-                    // Password Field
-                    SecureField("Password", text: $password)
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal, 40)
-                        .textContentType(.password)
-                        .submitLabel(.done)
-                        .onSubmit {
-                            verifyPassword()
-                        }
-
-                    if showError {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 40)
-                    }
-
-                    // Verify Button
-                    Button(action: verifyPassword) {
-                        HStack {
-                            if isAuthenticating {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
+                    // Biometric Authentication Button (Primary)
+                    if biometricService.isBiometricsAvailable && !showPasswordField {
+                        VStack(spacing: 16) {
+                            Button(action: authenticateWithBiometrics) {
+                                HStack {
+                                    if isAuthenticating {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Image(systemName: biometricService.biometricType.icon)
+                                            .font(.title3)
+                                    }
+                                    Text(isAuthenticating ? "Authenticating..." : "Unlock with \(biometricService.biometricType.displayName)")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
                             }
-                            Text(isAuthenticating ? "Verifying..." : "Unlock")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            password.isEmpty ? Color.gray : Color.blue
-                        )
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                    }
-                    .disabled(password.isEmpty || isAuthenticating)
-                    .padding(.horizontal, 40)
+                            .disabled(isAuthenticating)
+                            .padding(.horizontal, 40)
 
-                    // Note: Biometric authentication disabled for security
-                    // A child may have their face registered on the device
-                    Text("Password required for security")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 8)
+                            Button("Use Password Instead") {
+                                withAnimation {
+                                    showPasswordField = true
+                                }
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                        }
+                    }
+
+                    // Password Field (Fallback)
+                    if showPasswordField || !biometricService.isBiometricsAvailable {
+                        VStack(spacing: 16) {
+                            SecureField("Password", text: $password)
+                                .textFieldStyle(.roundedBorder)
+                                .padding(.horizontal, 40)
+                                .textContentType(.password)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    verifyPassword()
+                                }
+
+                            if showError {
+                                Text(errorMessage)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 40)
+                            }
+
+                            // Verify Button
+                            Button(action: verifyPassword) {
+                                HStack {
+                                    if isAuthenticating {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                    }
+                                    Text(isAuthenticating ? "Verifying..." : "Unlock")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(
+                                    password.isEmpty ? Color.gray : Color.blue
+                                )
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                            }
+                            .disabled(password.isEmpty || isAuthenticating)
+                            .padding(.horizontal, 40)
+
+                            if biometricService.isBiometricsAvailable {
+                                Button("Use \(biometricService.biometricType.displayName) Instead") {
+                                    withAnimation {
+                                        showPasswordField = false
+                                        password = ""
+                                        showError = false
+                                    }
+                                }
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                            }
+                        }
+                    }
 
                     Spacer()
                 }
@@ -103,10 +151,57 @@ struct ParentPasswordView: View {
                     }
                 }
             }
+            .onAppear {
+                // Automatically trigger biometric authentication if available
+                if biometricService.isBiometricsAvailable && !showPasswordField {
+                    // Small delay to let the view settle
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        authenticateWithBiometrics()
+                    }
+                }
+            }
         }
     }
 
     // MARK: - Actions
+
+    private func authenticateWithBiometrics() {
+        isAuthenticating = true
+        showError = false
+
+        Task {
+            let result = await biometricService.authenticateParent(
+                reason: "Authenticate to manage app restrictions and screen time limits"
+            )
+
+            await MainActor.run {
+                isAuthenticating = false
+
+                switch result {
+                case .success:
+                    print("✅ Parent authenticated with biometrics")
+                    onSuccess()
+                    dismiss()
+
+                case .failure(let error):
+                    print("❌ Biometric authentication failed: \(error.localizedDescription)")
+                    showError = true
+                    errorMessage = error.localizedDescription
+
+                    // If biometrics failed due to lockout or not enrolled, show password field
+                    if case .lockout = error, !showPasswordField {
+                        withAnimation {
+                            showPasswordField = true
+                        }
+                    } else if case .notEnrolled = error, !showPasswordField {
+                        withAnimation {
+                            showPasswordField = true
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private func verifyPassword() {
         isAuthenticating = true
@@ -116,6 +211,7 @@ struct ParentPasswordView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             if passwordManager.verifyPassword(password) {
                 isAuthenticating = false
+                print("✅ Parent authenticated with password")
                 onSuccess()
                 dismiss()
             } else {
@@ -294,9 +390,11 @@ struct ParentPasswordSetupView: View {
 
 /// View for parents to change the app restriction password
 /// This password is synced across all household devices
+/// Parents can authenticate with biometrics instead of typing current password
 struct ChangePasswordView: View {
     @Environment(\.dismiss) var dismiss
     @StateObject private var passwordManager = ParentPasswordManager.shared
+    @StateObject private var biometricService = BiometricAuthenticationService.shared
 
     @State private var currentPassword: String = ""
     @State private var newPassword: String = ""
@@ -305,7 +403,9 @@ struct ChangePasswordView: View {
     @State private var errorMessage: String = ""
     @State private var showSuccess: Bool = false
     @State private var isChanging: Bool = false
-    @State private var showPasswordReset: Bool = false
+    @State private var biometricAuthVerified: Bool = false
+    @State private var showCurrentPasswordField: Bool = false
+    @State private var showForgotPassword: Bool = false
 
     var body: some View {
         List {
@@ -338,15 +438,62 @@ struct ChangePasswordView: View {
 
             if passwordManager.isPasswordSet {
                 Section {
-                    SecureField("Current Password", text: $currentPassword)
-                        .textContentType(.password)
-                } header: {
-                    Text("Current Password")
-                } footer: {
-                    Button("Forgot Password?") {
-                        showPasswordReset = true
+                    if biometricService.isBiometricsAvailable && !showCurrentPasswordField && !biometricAuthVerified {
+                        VStack(spacing: 12) {
+                            Button(action: authenticateWithBiometrics) {
+                                HStack {
+                                    Image(systemName: biometricService.biometricType.icon)
+                                        .font(.title3)
+                                    Text("Verify Identity with \(biometricService.biometricType.displayName)")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                            }
+
+                            Button("Use Password Instead") {
+                                withAnimation {
+                                    showCurrentPasswordField = true
+                                }
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                        }
+                        .listRowBackground(Color.clear)
+                    } else if !biometricAuthVerified {
+                        SecureField("Current Password", text: $currentPassword)
+                            .textContentType(.password)
+                    } else {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Identity Verified")
+                                .foregroundColor(.green)
+                                .fontWeight(.semibold)
+                        }
                     }
-                    .font(.subheadline)
+                } header: {
+                    Text(biometricAuthVerified ? "Verification Status" : "Current Verification")
+                } footer: {
+                    if !biometricAuthVerified {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if biometricService.isBiometricsAvailable && !showCurrentPasswordField {
+                                Text("Use \(biometricService.biometricType.displayName) to verify your identity before changing the password")
+                            } else if showCurrentPasswordField {
+                                Text("Enter your current password to verify your identity")
+                            }
+
+                            Button("Forgot Password?") {
+                                showForgotPassword = true
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            .padding(.top, 4)
+                        }
+                    }
                 }
             }
 
@@ -409,8 +556,8 @@ struct ChangePasswordView: View {
         }
         .navigationTitle("Password Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showPasswordReset) {
-            PasswordResetRequestView()
+        .sheet(isPresented: $showForgotPassword) {
+            BiometricPasswordResetView()
         }
     }
 
@@ -420,9 +567,41 @@ struct ChangePasswordView: View {
         let passwordsValid = newPassword.count >= 4 && newPassword == confirmPassword
 
         if passwordManager.isPasswordSet {
-            return !currentPassword.isEmpty && passwordsValid
+            // Either biometric auth verified OR password entered
+            return (biometricAuthVerified || !currentPassword.isEmpty) && passwordsValid
         } else {
             return passwordsValid
+        }
+    }
+
+    private func authenticateWithBiometrics() {
+        showError = false
+
+        Task {
+            let result = await biometricService.authenticateParent(
+                reason: "Verify your identity to change the app restriction password"
+            )
+
+            await MainActor.run {
+                switch result {
+                case .success:
+                    print("✅ Parent identity verified with biometrics for password change")
+                    biometricAuthVerified = true
+                    showError = false
+
+                case .failure(let error):
+                    print("❌ Biometric authentication failed: \(error.localizedDescription)")
+                    showError = true
+                    errorMessage = error.localizedDescription
+
+                    // If biometrics failed, offer password fallback
+                    if case .lockout = error, !showCurrentPasswordField {
+                        withAnimation {
+                            showCurrentPasswordField = true
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -444,16 +623,23 @@ struct ChangePasswordView: View {
 
         Task {
             do {
-                // Verify current password if one is set
+                // Verify current identity if password is already set
                 if passwordManager.isPasswordSet {
-                    guard passwordManager.verifyPassword(currentPassword) else {
-                        await MainActor.run {
-                            showError = true
-                            errorMessage = "Current password is incorrect"
-                            isChanging = false
-                            currentPassword = ""
+                    // Check if verified with biometrics
+                    if biometricAuthVerified {
+                        print("✅ Identity already verified with biometrics - proceeding with password change")
+                    } else {
+                        // Verify with password
+                        guard passwordManager.verifyPassword(currentPassword) else {
+                            await MainActor.run {
+                                showError = true
+                                errorMessage = "Current password is incorrect"
+                                isChanging = false
+                                currentPassword = ""
+                            }
+                            return
                         }
-                        return
+                        print("✅ Identity verified with password - proceeding with password change")
                     }
                 }
 
@@ -466,6 +652,9 @@ struct ChangePasswordView: View {
                     currentPassword = ""
                     newPassword = ""
                     confirmPassword = ""
+                    biometricAuthVerified = false
+
+                    print("✅ Password changed successfully")
 
                     // Dismiss after showing success
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -483,9 +672,263 @@ struct ChangePasswordView: View {
     }
 }
 
-// MARK: - Password Reset Request View
+// MARK: - Biometric Password Reset View
+
+/// View for resetting password using biometric authentication
+/// No email required - uses Face ID/Touch ID to verify parent identity
+struct BiometricPasswordResetView: View {
+    @Environment(\.dismiss) var dismiss
+    @StateObject private var passwordManager = ParentPasswordManager.shared
+    @StateObject private var biometricService = BiometricAuthenticationService.shared
+
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var isResetting = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var showSuccess = false
+    @State private var biometricVerified = false
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    VStack(spacing: 16) {
+                        Image(systemName: biometricService.isBiometricsAvailable ? biometricService.biometricType.icon : "key.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+
+                        Text("Reset Password")
+                            .font(.title2)
+                            .fontWeight(.bold)
+
+                        if biometricService.isBiometricsAvailable {
+                            Text("Use \(biometricService.biometricType.displayName) to verify your identity and reset your password")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        } else {
+                            Text("Biometric authentication is required to reset your password")
+                                .font(.subheadline)
+                                .foregroundColor(.red)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .listRowBackground(Color.clear)
+
+                if biometricService.isBiometricsAvailable {
+                    if !biometricVerified {
+                        Section {
+                            Button(action: authenticateWithBiometrics) {
+                                HStack {
+                                    Image(systemName: biometricService.biometricType.icon)
+                                        .font(.title3)
+                                    Text("Verify Identity with \(biometricService.biometricType.displayName)")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                            }
+                        } header: {
+                            Text("Step 1: Verify Identity")
+                        } footer: {
+                            Text("Authenticate with \(biometricService.biometricType.displayName) to confirm you are the parent")
+                        }
+                        .listRowBackground(Color.clear)
+                    } else {
+                        Section {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Identity Verified")
+                                    .foregroundColor(.green)
+                                    .fontWeight(.semibold)
+                            }
+                        } header: {
+                            Text("Verification Status")
+                        }
+
+                        Section {
+                            SecureField("New Password", text: $newPassword)
+                                .textContentType(.newPassword)
+
+                            SecureField("Confirm New Password", text: $confirmPassword)
+                                .textContentType(.newPassword)
+                        } header: {
+                            Text("Step 2: Set New Password")
+                        } footer: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                requirementRow(
+                                    text: "At least 4 characters",
+                                    isMet: newPassword.count >= 4
+                                )
+                                requirementRow(
+                                    text: "Passwords match",
+                                    isMet: !newPassword.isEmpty && newPassword == confirmPassword
+                                )
+                            }
+                            .padding(.top, 8)
+                        }
+
+                        if showError {
+                            Section {
+                                Text(errorMessage)
+                                    .foregroundColor(.red)
+                                    .font(.subheadline)
+                            }
+                        }
+
+                        if showSuccess {
+                            Section {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                    Text("Password reset successfully!")
+                                        .foregroundColor(.green)
+                                        .font(.subheadline)
+                                }
+                            }
+                        }
+
+                        Section {
+                            Button(action: resetPassword) {
+                                HStack {
+                                    if isResetting {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                    }
+                                    Text(isResetting ? "Resetting..." : "Reset Password")
+                                        .fontWeight(.semibold)
+                                        .frame(maxWidth: .infinity)
+                                }
+                            }
+                            .disabled(!isFormValid || isResetting)
+                        }
+                    }
+                } else {
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Biometric authentication is not available on this device.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+
+                            Text("To reset your password, you'll need to:")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("• Set up Face ID or Touch ID in Settings")
+                                Text("• Or contact your household administrator")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Reset Password")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var isFormValid: Bool {
+        biometricVerified &&
+        newPassword.count >= 4 &&
+        newPassword == confirmPassword
+    }
+
+    private func requirementRow(text: String, isMet: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isMet ? .green : .gray)
+                .font(.caption)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(isMet ? .primary : .secondary)
+        }
+    }
+
+    private func authenticateWithBiometrics() {
+        showError = false
+
+        Task {
+            let result = await biometricService.authenticateParent(
+                reason: "Verify your identity to reset the app restriction password"
+            )
+
+            await MainActor.run {
+                switch result {
+                case .success:
+                    print("✅ Parent identity verified with biometrics for password reset")
+                    biometricVerified = true
+                    showError = false
+
+                case .failure(let error):
+                    print("❌ Biometric authentication failed: \(error.localizedDescription)")
+                    showError = true
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func resetPassword() {
+        showError = false
+        showSuccess = false
+        isResetting = true
+
+        Task {
+            do {
+                // Set new password (will sync to Supabase)
+                try await passwordManager.setPassword(newPassword)
+
+                await MainActor.run {
+                    showSuccess = true
+                    isResetting = false
+                    newPassword = ""
+                    confirmPassword = ""
+
+                    print("✅ Password reset successfully via biometric authentication")
+
+                    // Dismiss after showing success
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        dismiss()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    showError = true
+                    errorMessage = error.localizedDescription
+                    isResetting = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Password Reset Request View (DEPRECATED - Email-based)
 
 /// View for requesting a password reset via email
+/// DEPRECATED: Replaced with BiometricPasswordResetView
 struct PasswordResetRequestView: View {
     @Environment(\.dismiss) var dismiss
     @StateObject private var passwordManager = ParentPasswordManager.shared
