@@ -192,13 +192,10 @@ class TestDataCleanupService {
             print("   ✓ Households cleared")
 
             // Step 5: Delete all profiles
-            print("🗑️  Deleting all profiles...")
-            try await adminClient
-                .from("profiles")
-                .delete()
-                .neq("id", value: "00000000-0000-0000-0000-000000000000") // Delete all (dummy condition)
-                .execute()
-            print("   ✓ Profiles cleared")
+            // DISABLED: Deleting profiles can break Supabase auth triggers and email sending
+            print("⚠️  Skipping profile deletion (can break auth system)")
+            print("   → To delete profiles, do it manually in Supabase Dashboard")
+            print("   → SQL Editor: DELETE FROM profiles WHERE household_id IS NULL;")
 
             // Step 6: Delete all auth users using admin API
             print("🗑️  Deleting all auth users...")

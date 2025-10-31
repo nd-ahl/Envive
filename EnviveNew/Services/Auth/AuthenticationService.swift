@@ -67,6 +67,9 @@ class AuthenticationService: ObservableObject {
         // Only clear data on sign OUT or when existing user signs IN
 
         print("📧 Creating new user account: \(email)")
+        print("   - Full Name: \(fullName)")
+        print("   - Role: \(role == .parent ? "parent" : "child")")
+        print("   - Redirect URL: envivenew://auth/callback")
 
         // Create auth user with metadata for the database trigger
         let response = try await supabase.auth.signUp(
@@ -79,7 +82,22 @@ class AuthenticationService: ObservableObject {
             redirectTo: URL(string: "envivenew://auth/callback")  // Email confirmation will redirect here
         )
 
-        print("✅ User account created - confirmation email sent to: \(email)")
+        print("✅ User account created in Supabase")
+        print("   - User ID: \(response.user.id)")
+        print("   - Email: \(email)")
+        print("   - Email confirmed: \(response.user.emailConfirmedAt != nil ? "YES" : "NO (needs confirmation)")")
+        print("   - Session exists: \(response.session != nil ? "YES" : "NO")")
+
+        // IMPORTANT: Check if email was actually sent
+        if response.user.emailConfirmedAt == nil {
+            print("📬 Confirmation email should be sent to: \(email)")
+            print("   ⚠️ If user doesn't receive email, check:")
+            print("   - Spam/junk folder")
+            print("   - Supabase Dashboard → Logs → Auth Logs for errors")
+            print("   - Supabase Dashboard → Authentication → Settings → SMTP configuration")
+        } else {
+            print("✅ Email already confirmed (no confirmation needed)")
+        }
 
         let user = response.user
 

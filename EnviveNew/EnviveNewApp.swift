@@ -13,8 +13,8 @@ import Auth
 
 @main
 struct EnviveNewApp: App {
-    @State private var persistenceController: PersistenceController?
-    @State private var appIsReady = false
+    // CRITICAL: Initialize Core Data synchronously (lightweight operation)
+    @State private var persistenceController: PersistenceController? = PersistenceController(inMemory: false)
 
     // CRITICAL FIX: Use @ObservedObject instead of @StateObject
     // StateObject can block app initialization while it waits for the object to fully initialize
@@ -34,12 +34,11 @@ struct EnviveNewApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        print("🚀 EnviveNewApp init() started")
-        print("   - Using lightweight initialization to prevent device freeze")
+        print("🚀 EnviveNewApp init() started - lightweight mode")
         // Clean up legacy test data on first launch after beta deployment
         // TEMPORARILY DISABLED: Causing blank screen on hot reload during development
         // TestDataCleanupService.shared.performCleanupIfNeeded()
-        print("✅ EnviveNewApp init() completed (lightweight)")
+        print("✅ EnviveNewApp init() completed")
     }
 
     var body: some Scene {
@@ -50,24 +49,13 @@ struct EnviveNewApp: App {
                 .onOpenURL { url in
                     handleURLScheme(url)
                 }
-                .task {
-                    // Initialize theme view model lazily after UI renders
+                .onAppear {
+                    // Load Theme lazily after UI is visible
                     if themeViewModel == nil {
-                        print("🎨 Initializing ThemeViewModel after app rendered...")
+                        print("🎨 Initializing ThemeViewModel...")
                         themeViewModel = DependencyContainer.shared.viewModelFactory.makeThemeSettingsViewModel()
                         print("✅ ThemeViewModel initialized")
                     }
-
-                    // Load Core Data in background without blocking UI
-                    if persistenceController == nil {
-                        print("🔄 Loading Core Data in background...")
-                        let start = Date()
-                        persistenceController = await PersistenceController.loadAsync()
-                        let duration = Date().timeIntervalSince(start)
-                        print("✅ Core Data loaded in \(String(format: "%.2f", duration)) seconds")
-                    }
-
-                    appIsReady = true
                 }
         }
     }
@@ -75,30 +63,8 @@ struct EnviveNewApp: App {
     @ViewBuilder
     private var mainContent: some View {
         ZStack {
-            // EMERGENCY: Show immediate loading indicator to prove app is alive
-            if !appIsReady {
-                ZStack {
-                    Color.blue.ignoresSafeArea()
-                    VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(2)
-                            .tint(.white)
-                        Text("Loading Envive...")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                        Text("If stuck here, check Xcode console")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                }
-                .onAppear {
-                    print("🚨 EMERGENCY LOADING VIEW APPEARED - App is rendering!")
-                    print("   If you see this, SwiftUI is working. Check console for where it freezes next.")
-                }
-            }
-
+            // No emergency loading screen - appIsReady is always true now
             Group {
-                if appIsReady {
                     // ===== REFINED ONBOARDING FLOW =====
                     // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
                     let _ = print("🎬 mainContent rendering - checking onboarding state")
@@ -330,7 +296,6 @@ struct EnviveNewApp: App {
                         onboardingManager: onboardingManager
                     )
                     }
-                } // End of appIsReady check
             }
         }
     }
