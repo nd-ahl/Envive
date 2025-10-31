@@ -553,6 +553,8 @@ struct MainAppWithRefresh: View {
     @ObservedObject var onboardingManager: OnboardingManager
     @Environment(\.scenePhase) private var scenePhase
 
+    @State private var lastSplashDismissTime: Date?  // Track when splash was last dismissed
+
     init(showSplashScreen: Binding<Bool>, authService: AuthenticationService, onboardingManager: OnboardingManager) {
         self._showSplashScreen = showSplashScreen
         self.authService = authService
@@ -595,7 +597,9 @@ struct MainAppWithRefresh: View {
                     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                     withAnimation(.easeOut(duration: 0.5)) {
                         showSplashScreen = false
+                        lastSplashDismissTime = Date()  // Record when splash was dismissed
                         print("✅ showSplashScreen set to false - main app should now be visible")
+                        print("⏰ Splash dismiss time recorded: \(lastSplashDismissTime!)")
                     }
                 }
                 .transition(.opacity)
@@ -605,6 +609,7 @@ struct MainAppWithRefresh: View {
             }
         }
         .onAppear {
+            let biometricService = BiometricAuthenticationService.shared
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("🎯 MainAppWithRefresh.onAppear() TRIGGERED")
             print("   - Current showSplashScreen value: \(showSplashScreen)")
@@ -617,12 +622,25 @@ struct MainAppWithRefresh: View {
                 print("   - ❌ NO CURRENT PROFILE - THIS MAY BE THE PROBLEM!")
             }
             print("   - onboardingManager.hasCompletedOnboarding: \(onboardingManager.hasCompletedOnboarding)")
+            print("   - Biometric auth in progress: \(biometricService.isAuthenticating)")
+            print("   - Should prevent splash: \(biometricService.shouldPreventSplashScreen)")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            // ALWAYS show splash screen on main app launch (no conditions)
-            print("✅ SETTING showSplashScreen = true (UNCONDITIONAL)")
-            showSplashScreen = true
-            print("   - showSplashScreen is now: \(showSplashScreen)")
+            // Show splash screen on app launch, BUT respect biometric auth protection and recent dismissals
+            if biometricService.shouldPreventSplashScreen {
+                print("⏸️ SKIPPING splash screen in onAppear - biometric auth active or within grace period")
+            } else if let dismissTime = lastSplashDismissTime {
+                let timeSinceDismiss = Date().timeIntervalSince(dismissTime)
+                if timeSinceDismiss < 5.0 {  // Don't re-show splash within 5 seconds of dismissing it
+                    print("⏸️ SKIPPING splash screen in onAppear - recently dismissed \(String(format: "%.2f", timeSinceDismiss))s ago")
+                } else {
+                    print("✅ SETTING showSplashScreen = true (last dismissed \(String(format: "%.2f", timeSinceDismiss))s ago)")
+                    showSplashScreen = true
+                }
+            } else {
+                print("✅ SETTING showSplashScreen = true (first launch)")
+                showSplashScreen = true
+            }
 
             // CRITICAL: Only auto-complete if user has legitimately finished onboarding
             let shouldAutoComplete = authService.isAuthenticated &&
@@ -637,21 +655,27 @@ struct MainAppWithRefresh: View {
             }
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
+            let biometricService = BiometricAuthenticationService.shared
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("🔄 MainAppWithRefresh scenePhase CHANGED")
             print("   - Old phase: \(oldPhase)")
             print("   - New phase: \(newPhase)")
             print("   - Current showSplashScreen: \(showSplashScreen)")
-            print("   - Biometric auth in progress: \(BiometricAuthenticationService.shared.isAuthenticating)")
+            print("   - Biometric auth in progress: \(biometricService.isAuthenticating)")
+            print("   - Should prevent splash: \(biometricService.shouldPreventSplashScreen)")
+            if let completionTime = biometricService.authCompletionTime {
+                let elapsed = Date().timeIntervalSince(completionTime)
+                print("   - Time since auth completed: \(String(format: "%.3f", elapsed))s")
+            }
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            // Only refresh when app becomes active AND biometric auth is not in progress
+            // Only refresh when app becomes active AND biometric auth is not in progress or grace period
             if newPhase == .active && oldPhase != .active {
                 print("✅ App became ACTIVE (from background)")
 
-                // Don't show splash screen if biometric auth is in progress
-                if BiometricAuthenticationService.shared.isAuthenticating {
-                    print("⏸️ SKIPPING splash screen - biometric auth in progress")
+                // Don't show splash screen if biometric auth is in progress or within grace period
+                if biometricService.shouldPreventSplashScreen {
+                    print("⏸️ SKIPPING splash screen - biometric auth active or within grace period")
                 } else {
                     print("✅ SETTING showSplashScreen = true")
                     showSplashScreen = true

@@ -13,7 +13,9 @@ final class BiometricAuthenticationService: ObservableObject {
     @Published var biometricType: BiometricType = .none
     @Published var isAuthenticating: Bool = false  // Track when biometric auth is in progress
 
+    var authCompletionTime: Date?  // Track when auth completed for grace period (internal for debugging)
     private let context = LAContext()
+    private let gracePeriod: TimeInterval = 3.0  // 3 second grace period after auth completes (covers view transitions and rebuilds)
 
     // MARK: - Biometric Type
 
@@ -46,6 +48,27 @@ final class BiometricAuthenticationService: ObservableObject {
     }
 
     // MARK: - Public Methods
+
+    /// Check if we're currently authenticating or within grace period after auth
+    var shouldPreventSplashScreen: Bool {
+        if isAuthenticating {
+            return true
+        }
+
+        // Check if we're within grace period after authentication completed
+        if let completionTime = authCompletionTime {
+            let elapsed = Date().timeIntervalSince(completionTime)
+            return elapsed < gracePeriod
+        }
+
+        return false
+    }
+
+    /// Clear the grace period - call when user explicitly navigates away from auth flows
+    func clearGracePeriod() {
+        authCompletionTime = nil
+        print("🧹 Grace period cleared manually")
+    }
 
     /// Check if biometric authentication is available on this device
     func checkBiometricAvailability() {
@@ -101,6 +124,7 @@ final class BiometricAuthenticationService: ObservableObject {
             print("❌ Cannot evaluate biometric policy: \(error?.localizedDescription ?? "Unknown")")
             await MainActor.run {
                 isAuthenticating = false
+                authCompletionTime = Date()  // Record completion time for policy evaluation failures
             }
             return .failure(.notAvailable)
         }
@@ -114,6 +138,8 @@ final class BiometricAuthenticationService: ObservableObject {
 
             await MainActor.run {
                 isAuthenticating = false
+                authCompletionTime = Date()  // Record completion time for grace period
+                print("⏰ Auth completed at \(authCompletionTime!) - grace period active for \(gracePeriod)s")
             }
 
             if success {
@@ -128,6 +154,7 @@ final class BiometricAuthenticationService: ObservableObject {
 
             await MainActor.run {
                 isAuthenticating = false
+                authCompletionTime = Date()  // Record completion time even for errors
             }
 
             switch error.code {
@@ -150,6 +177,7 @@ final class BiometricAuthenticationService: ObservableObject {
             print("❌ Unexpected error: \(error.localizedDescription)")
             await MainActor.run {
                 isAuthenticating = false
+                authCompletionTime = Date()  // Record completion time for unexpected errors
             }
             return .failure(.other(error.localizedDescription))
         }

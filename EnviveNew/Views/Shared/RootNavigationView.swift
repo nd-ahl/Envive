@@ -277,6 +277,15 @@ struct ParentProfileView: View {
     @State private var isClearingDatabase = false
     @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
 
+    /// The effective device mode - uses DeviceModeService when locked, LocalDeviceModeManager otherwise
+    private var currentEffectiveMode: DeviceMode {
+        if deviceModeService.isRoleLocked {
+            return deviceModeService.deviceMode
+        } else {
+            return deviceModeManager.currentMode
+        }
+    }
+
     var body: some View {
         NavigationView {
             List {

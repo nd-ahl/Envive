@@ -557,7 +557,11 @@ struct ChangePasswordView: View {
         .navigationTitle("Password Settings")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showForgotPassword) {
-            BiometricPasswordResetView()
+            PasswordResetOptionsView()
+        }
+        .onDisappear {
+            // Clear grace period when leaving password settings
+            BiometricAuthenticationService.shared.clearGracePeriod()
         }
     }
 
@@ -688,6 +692,7 @@ struct BiometricPasswordResetView: View {
     @State private var errorMessage = ""
     @State private var showSuccess = false
     @State private var biometricVerified = false
+    @State private var showEmailReset = false
 
     var body: some View {
         NavigationView {
@@ -744,7 +749,16 @@ struct BiometricPasswordResetView: View {
                         } header: {
                             Text("Step 1: Verify Identity")
                         } footer: {
-                            Text("Authenticate with \(biometricService.biometricType.displayName) to confirm you are the parent")
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Authenticate with \(biometricService.biometricType.displayName) to confirm you are the parent")
+
+                                Button("Use Email Verification Instead") {
+                                    showEmailReset = true
+                                }
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                                .padding(.top, 4)
+                            }
                         }
                         .listRowBackground(Color.clear)
                     } else {
@@ -824,16 +838,27 @@ struct BiometricPasswordResetView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
 
-                            Text("To reset your password, you'll need to:")
+                            Text("Use email verification to reset your password:")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
+                                .padding(.top, 8)
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("• Set up Face ID or Touch ID in Settings")
-                                Text("• Or contact your household administrator")
+                            Button(action: {
+                                showEmailReset = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "envelope.fill")
+                                        .font(.title3)
+                                    Text("Reset via Email")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
                             }
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .padding(.top, 8)
                         }
                     }
                 }
@@ -846,6 +871,13 @@ struct BiometricPasswordResetView: View {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showEmailReset) {
+                PasswordResetRequestView()
+            }
+            .onDisappear {
+                // Clear grace period when leaving biometric reset view
+                BiometricAuthenticationService.shared.clearGracePeriod()
             }
         }
     }
