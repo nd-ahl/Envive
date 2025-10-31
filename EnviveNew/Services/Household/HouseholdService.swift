@@ -150,6 +150,23 @@ class HouseholdService: ObservableObject {
         return household
     }
 
+    /// Fetch household by ID
+    func fetchHouseholdById(_ householdId: String) async throws -> Household {
+        let household: Household = try await supabase
+            .from("households")
+            .select()
+            .eq("id", value: householdId)
+            .single()
+            .execute()
+            .value
+
+        await MainActor.run {
+            self.currentHousehold = household
+        }
+
+        return household
+    }
+
     // MARK: - Helper Methods
 
     /// Update user's profile with household_id

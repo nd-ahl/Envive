@@ -191,22 +191,74 @@ class ParentPasswordManager: ObservableObject {
 
     /// Sync password to Supabase for household-wide access
     private func syncPasswordToSupabase(_ password: String) async throws {
-        guard let household = householdService.currentHousehold else {
-            print("⚠️ No current household - cannot sync password")
-            return
+        // Try to get current household, or fetch it if not loaded
+        var household = householdService.currentHousehold
+
+        if household == nil {
+            print("⚠️ Current household not loaded - attempting to fetch from profile")
+
+            // Try to get household ID from current profile
+            guard let profile = AuthenticationService.shared.currentProfile,
+                  let householdId = profile.householdId else {
+                print("❌ No household ID in profile - cannot sync password")
+                throw PasswordError.noHousehold
+            }
+
+            // Fetch the household
+            do {
+                household = try await householdService.fetchHouseholdById(householdId)
+                print("✅ Household fetched successfully: \(household!.name)")
+            } catch {
+                print("❌ Failed to fetch household: \(error.localizedDescription)")
+                throw PasswordError.noHousehold
+            }
+        }
+
+        guard let household = household else {
+            print("❌ No current household - cannot sync password")
+            throw PasswordError.noHousehold
         }
 
         do {
+            print("🔄 Syncing password to Supabase for household: \(household.name) (ID: \(household.id))")
+
+            // Create encodable struct for update (required by Supabase SDK)
+            struct PasswordUpdate: Encodable {
+                let app_restriction_password: String
+            }
+
+            let updateData = PasswordUpdate(app_restriction_password: password)
+
             // Update household with encrypted password
             try await supabase
                 .from("households")
-                .update(["app_restriction_password": password])
+                .update(updateData)
                 .eq("id", value: household.id)
                 .execute()
 
             print("✅ Password synced to Supabase for household: \(household.name)")
-        } catch {
-            print("❌ Failed to sync password to Supabase: \(error.localizedDescription)")
+
+            // Verify the update by fetching the household again
+            let verification: Household = try await supabase
+                .from("households")
+                .select()
+                .eq("id", value: household.id)
+                .single()
+                .execute()
+                .value
+
+            if verification.appRestrictionPassword == password {
+                print("✅ Password sync verified - password successfully updated in database")
+            } else {
+                print("⚠️ Password sync verification failed - database value doesn't match")
+                throw PasswordError.syncFailed
+            }
+        } catch let error as NSError {
+            print("❌ Failed to sync password to Supabase")
+            print("   Error domain: \(error.domain)")
+            print("   Error code: \(error.code)")
+            print("   Error description: \(error.localizedDescription)")
+            print("   Error userInfo: \(error.userInfo)")
             throw PasswordError.syncFailed
         }
     }
@@ -255,13 +307,21 @@ class ParentPasswordManager: ObservableObject {
         let resetCode = String(format: "%06d", Int.random(in: 100000...999999))
         let expiryDate = Date().addingTimeInterval(15 * 60) // 15 minutes
 
+        // Create encodable struct for reset code update
+        struct ResetCodeUpdate: Encodable {
+            let password_reset_code: String
+            let password_reset_expiry: String
+        }
+
+        let resetData = ResetCodeUpdate(
+            password_reset_code: resetCode,
+            password_reset_expiry: ISO8601DateFormatter().string(from: expiryDate)
+        )
+
         // Store reset code in Supabase
         try await supabase
             .from("households")
-            .update([
-                "password_reset_code": resetCode,
-                "password_reset_expiry": ISO8601DateFormatter().string(from: expiryDate)
-            ])
+            .update(resetData)
             .eq("id", value: household.id)
             .execute()
 
@@ -391,9 +451,9 @@ enum PasswordError: LocalizedError {
         case .keychainSaveFailed:
             return "Failed to save password securely"
         case .syncFailed:
-            return "Failed to sync password to household"
+            return "Failed to sync password to household. Check your internet connection and try again."
         case .noHousehold:
-            return "No household found"
+            return "No household found. Please ensure you're part of a household before setting a password."
         case .noEmail:
             return "No email address associated with account"
         case .invalidResetCode:
