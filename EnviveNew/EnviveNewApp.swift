@@ -30,6 +30,8 @@ struct EnviveNewApp: App {
     @State private var needsPasswordSetup = false
     @State private var userEmailForPassword = ""
     @State private var showSplashScreen = false
+    @State private var showingPasswordReset = false
+    @State private var showPasswordResetSuccess = false
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -65,11 +67,28 @@ struct EnviveNewApp: App {
         ZStack {
             // No emergency loading screen - appIsReady is always true now
             Group {
-                    // ===== REFINED ONBOARDING FLOW =====
-                    // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
-                    let _ = print("🎬 mainContent rendering - checking onboarding state")
-
-                    if onboardingManager.shouldShowWelcome {
+                    // ===== PASSWORD RESET FLOW (HIGHEST PRIORITY) =====
+                    if showingPasswordReset {
+                    PasswordResetConfirmationView(
+                        onComplete: {
+                            // Sign out to ensure user signs in with new password
+                            Task {
+                                try? await authService.signOut()
+                                await MainActor.run {
+                                    showingPasswordReset = false
+                                    showPasswordResetSuccess = true
+                                }
+                            }
+                        }
+                    )
+                    .alert("Password Reset Successful", isPresented: $showPasswordResetSuccess) {
+                        Button("Sign In", role: .cancel) {
+                            // User will be taken to sign-in flow
+                        }
+                    } message: {
+                        Text("Your password has been updated successfully. Please sign in with your new password.")
+                    }
+                } else if onboardingManager.shouldShowWelcome {
                     // Step 1: Friendly Welcome (no terms, no role selection)
                     FriendlyWelcomeView(
                         onContinue: {
@@ -394,16 +413,21 @@ struct EnviveNewApp: App {
 
                 print("✅ Password reset session established")
 
-                // Post notification to trigger password reset UI
+                // Show password reset UI
                 await MainActor.run {
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("PasswordResetReady"),
-                        object: nil,
-                        userInfo: ["accessToken": accessToken]
-                    )
+                    showingPasswordReset = true
+                    print("✅ Showing password reset confirmation screen")
                 }
             } catch {
                 print("❌ Failed to set password reset session: \(error.localizedDescription)")
+                await MainActor.run {
+                    // Show error alert if needed
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("PasswordResetError"),
+                        object: nil,
+                        userInfo: ["error": error.localizedDescription]
+                    )
+                }
             }
         }
     }
@@ -618,14 +642,21 @@ struct MainAppWithRefresh: View {
             print("   - Old phase: \(oldPhase)")
             print("   - New phase: \(newPhase)")
             print("   - Current showSplashScreen: \(showSplashScreen)")
+            print("   - Biometric auth in progress: \(BiometricAuthenticationService.shared.isAuthenticating)")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            // ALWAYS refresh when app becomes active
+            // Only refresh when app becomes active AND biometric auth is not in progress
             if newPhase == .active && oldPhase != .active {
                 print("✅ App became ACTIVE (from background)")
-                print("✅ SETTING showSplashScreen = true (UNCONDITIONAL)")
-                showSplashScreen = true
-                print("   - showSplashScreen is now: \(showSplashScreen)")
+
+                // Don't show splash screen if biometric auth is in progress
+                if BiometricAuthenticationService.shared.isAuthenticating {
+                    print("⏸️ SKIPPING splash screen - biometric auth in progress")
+                } else {
+                    print("✅ SETTING showSplashScreen = true")
+                    showSplashScreen = true
+                    print("   - showSplashScreen is now: \(showSplashScreen)")
+                }
             }
         }
     }

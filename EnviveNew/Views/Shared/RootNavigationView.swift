@@ -478,12 +478,18 @@ struct ParentProfileView: View {
                         .pickerStyle(.menu)
                     }
 
-                    NavigationLink(destination: ManageFamilyView()) {
-                        Label("Manage Family", systemImage: "person.2")
+                    // Only show "Manage Family" for parents
+                    if currentEffectiveMode == .parent {
+                        NavigationLink(destination: ManageFamilyView()) {
+                            Label("Manage Family", systemImage: "person.2")
+                        }
                     }
 
-                    NavigationLink(destination: ChangePasswordView()) {
-                        Label("App Restriction Password", systemImage: "lock.shield")
+                    // Only show "App Restriction Password" for parents
+                    if currentEffectiveMode == .parent {
+                        NavigationLink(destination: ChangePasswordView()) {
+                            Label("App Restriction Password", systemImage: "lock.shield")
+                        }
                     }
 
                     NavigationLink(destination: Text("Notifications Settings")) {

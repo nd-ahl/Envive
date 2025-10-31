@@ -309,7 +309,10 @@ class AuthenticationService: ObservableObject {
 
     /// Send password reset email to user
     func resetPassword(email: String) async throws {
-        try await supabase.auth.resetPasswordForEmail(email)
+        try await supabase.auth.resetPasswordForEmail(
+            email,
+            redirectTo: URL(string: "envivenew://auth/callback")  // Password reset will redirect here
+        )
         print("✅ Password reset email sent to: \(email)")
     }
 

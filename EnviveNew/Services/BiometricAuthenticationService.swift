@@ -11,6 +11,7 @@ final class BiometricAuthenticationService: ObservableObject {
 
     @Published var isBiometricsAvailable: Bool = false
     @Published var biometricType: BiometricType = .none
+    @Published var isAuthenticating: Bool = false  // Track when biometric auth is in progress
 
     private let context = LAContext()
 
@@ -84,6 +85,11 @@ final class BiometricAuthenticationService: ObservableObject {
             return .failure(.notAvailable)
         }
 
+        // Set flag to prevent splash screen during auth
+        await MainActor.run {
+            isAuthenticating = true
+        }
+
         // Create a fresh context for each authentication attempt
         let authContext = LAContext()
         authContext.localizedCancelTitle = "Use Password"
@@ -93,6 +99,9 @@ final class BiometricAuthenticationService: ObservableObject {
         // Check if biometric authentication can be evaluated
         guard authContext.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
             print("❌ Cannot evaluate biometric policy: \(error?.localizedDescription ?? "Unknown")")
+            await MainActor.run {
+                isAuthenticating = false
+            }
             return .failure(.notAvailable)
         }
 
@@ -103,6 +112,10 @@ final class BiometricAuthenticationService: ObservableObject {
                 localizedReason: reason
             )
 
+            await MainActor.run {
+                isAuthenticating = false
+            }
+
             if success {
                 print("✅ Biometric authentication successful")
                 return .success(true)
@@ -112,6 +125,10 @@ final class BiometricAuthenticationService: ObservableObject {
             }
         } catch let error as LAError {
             print("❌ Biometric authentication error: \(error.localizedDescription)")
+
+            await MainActor.run {
+                isAuthenticating = false
+            }
 
             switch error.code {
             case .authenticationFailed:
@@ -131,6 +148,9 @@ final class BiometricAuthenticationService: ObservableObject {
             }
         } catch {
             print("❌ Unexpected error: \(error.localizedDescription)")
+            await MainActor.run {
+                isAuthenticating = false
+            }
             return .failure(.other(error.localizedDescription))
         }
     }
