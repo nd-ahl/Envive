@@ -14,6 +14,7 @@ struct EmailVerificationView: View {
     @State private var showContent = false
     @State private var isResending = false
     @State private var showResendSuccess = false
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         ZStack {
@@ -52,6 +53,11 @@ struct EmailVerificationView: View {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.75).delay(0.1)) {
                 showContent = true
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EmailConfirmed"))) { _ in
+            // Email was confirmed via deep link - automatically dismiss this view
+            print("📧 Email confirmed via deep link - auto-dismissing verification screen")
+            dismiss()
         }
     }
 
@@ -133,8 +139,8 @@ struct EmailVerificationView: View {
 
             instructionStep(
                 number: "3",
-                title: "Return & Sign In",
-                description: "Come back to the app and sign in with your credentials",
+                title: "You're All Set!",
+                description: "Once confirmed, you'll be automatically signed in and can continue",
                 delay: 0.3
             )
         }

@@ -1,4 +1,5 @@
 import Foundation
+import Supabase
 
 // MARK: - Test Data Cleanup Service
 
@@ -8,6 +9,7 @@ class TestDataCleanupService {
     static let shared = TestDataCleanupService()
 
     private let userDefaults = UserDefaults.standard
+    private let supabase = SupabaseService.shared.client
 
     // Keys to clean up
     private let legacyKeys = [
@@ -148,5 +150,97 @@ class TestDataCleanupService {
         }
 
         return false
+    }
+
+    // MARK: - Database Cleanup (Development Only)
+
+    /// **DANGER**: Delete ALL user data from Supabase database
+    /// This clears profiles, households, and auth users
+    /// Use ONLY for development/testing - requires service role key
+    func clearAllDatabaseUsers() async throws {
+        print("⚠️  CLEARING ALL DATABASE USERS - DEVELOPMENT ONLY!")
+        print(String(repeating: "=", count: 60))
+
+        // Step 1: Sign out current user first
+        print("📤 Signing out current user...")
+        try? await AuthenticationService.shared.signOut()
+
+        // Step 2: Create admin client with service role key for unrestricted access
+        print("🔑 Creating admin client with service role key...")
+        let adminClient = SupabaseClient(
+            supabaseURL: URL(string: SupabaseConfig.url)!,
+            supabaseKey: SupabaseConfig.serviceRoleKey
+        )
+
+        do {
+            // Step 3: Delete all household members
+            print("🗑️  Deleting all household members...")
+            try await adminClient
+                .from("household_members")
+                .delete()
+                .neq("household_id", value: "00000000-0000-0000-0000-000000000000") // Delete all (dummy condition)
+                .execute()
+            print("   ✓ Household members cleared")
+
+            // Step 4: Delete all households
+            print("🗑️  Deleting all households...")
+            try await adminClient
+                .from("households")
+                .delete()
+                .neq("id", value: "00000000-0000-0000-0000-000000000000") // Delete all (dummy condition)
+                .execute()
+            print("   ✓ Households cleared")
+
+            // Step 5: Delete all profiles
+            print("🗑️  Deleting all profiles...")
+            try await adminClient
+                .from("profiles")
+                .delete()
+                .neq("id", value: "00000000-0000-0000-0000-000000000000") // Delete all (dummy condition)
+                .execute()
+            print("   ✓ Profiles cleared")
+
+            // Step 6: Delete all auth users using admin API
+            print("🗑️  Deleting all auth users...")
+            // Note: Supabase admin.deleteUser() requires individual user IDs
+            // For bulk deletion, you'd need to:
+            // 1. List all users
+            // 2. Delete each one individually
+            // Or use Supabase Dashboard > Authentication > Users > Delete All
+            print("   ⚠️  Auth users must be deleted via Supabase Dashboard")
+            print("   → Go to: \(SupabaseConfig.url)")
+            print("   → Authentication > Users > Select All > Delete")
+
+            print(String(repeating: "=", count: 60))
+            print("✅ Database cleanup complete!")
+            print("⚠️  Remember to delete auth users manually in Supabase Dashboard")
+            print(String(repeating: "=", count: 60))
+
+        } catch {
+            print("❌ Database cleanup failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Clear all local app data AND database (complete reset)
+    func nukeEverything() async throws {
+        print("💣 NUKE EVERYTHING - Complete Reset!")
+        print(String(repeating: "=", count: 60))
+
+        // 1. Clear local data
+        print("🧹 Clearing local data...")
+        resetEverything()
+
+        // 2. Clear database
+        print("🗑️  Clearing database...")
+        try await clearAllDatabaseUsers()
+
+        // 3. Clear Core Data
+        print("🗑️  Clearing Core Data...")
+        // Note: Core Data cleanup would go here if needed
+
+        print(String(repeating: "=", count: 60))
+        print("💥 NUKE COMPLETE - App reset to factory state")
+        print(String(repeating: "=", count: 60))
     }
 }

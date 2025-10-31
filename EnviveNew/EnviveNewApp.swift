@@ -14,11 +14,16 @@ import Auth
 @main
 struct EnviveNewApp: App {
     @State private var persistenceController: PersistenceController?
+    @State private var appIsReady = false
 
-    // CRITICAL FIX: Observe these as @StateObject so SwiftUI reacts to changes!
-    @StateObject private var onboardingManager = OnboardingManager.shared
-    @StateObject private var authService = AuthenticationService.shared
-    @StateObject private var themeViewModel = DependencyContainer.shared.viewModelFactory.makeThemeSettingsViewModel()
+    // CRITICAL FIX: Use @ObservedObject instead of @StateObject
+    // StateObject can block app initialization while it waits for the object to fully initialize
+    // ObservedObject is lighter and doesn't block
+    @ObservedObject private var onboardingManager = OnboardingManager.shared
+    @ObservedObject private var authService = AuthenticationService.shared
+
+    // Theme will be initialized lazily after app renders
+    @State private var themeViewModel: ThemeSettingsViewModel?
 
     @State private var isCreatingHousehold = false
     @State private var showingSignIn = false
@@ -30,21 +35,29 @@ struct EnviveNewApp: App {
 
     init() {
         print("🚀 EnviveNewApp init() started")
+        print("   - Using lightweight initialization to prevent device freeze")
         // Clean up legacy test data on first launch after beta deployment
         // TEMPORARILY DISABLED: Causing blank screen on hot reload during development
         // TestDataCleanupService.shared.performCleanupIfNeeded()
-        print("✅ EnviveNewApp init() completed")
+        print("✅ EnviveNewApp init() completed (lightweight)")
     }
 
     var body: some Scene {
         WindowGroup {
             mainContent
                 .environment(\.managedObjectContext, persistenceController?.container.viewContext ?? PersistenceController(inMemory: true).container.viewContext)
-                .preferredColorScheme(themeViewModel.effectiveColorScheme)
+                .preferredColorScheme(themeViewModel?.effectiveColorScheme ?? .none)
                 .onOpenURL { url in
                     handleURLScheme(url)
                 }
                 .task {
+                    // Initialize theme view model lazily after UI renders
+                    if themeViewModel == nil {
+                        print("🎨 Initializing ThemeViewModel after app rendered...")
+                        themeViewModel = DependencyContainer.shared.viewModelFactory.makeThemeSettingsViewModel()
+                        print("✅ ThemeViewModel initialized")
+                    }
+
                     // Load Core Data in background without blocking UI
                     if persistenceController == nil {
                         print("🔄 Loading Core Data in background...")
@@ -53,6 +66,8 @@ struct EnviveNewApp: App {
                         let duration = Date().timeIntervalSince(start)
                         print("✅ Core Data loaded in \(String(format: "%.2f", duration)) seconds")
                     }
+
+                    appIsReady = true
                 }
         }
     }
@@ -60,12 +75,35 @@ struct EnviveNewApp: App {
     @ViewBuilder
     private var mainContent: some View {
         ZStack {
+            // EMERGENCY: Show immediate loading indicator to prove app is alive
+            if !appIsReady {
+                ZStack {
+                    Color.blue.ignoresSafeArea()
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .scaleEffect(2)
+                            .tint(.white)
+                        Text("Loading Envive...")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                        Text("If stuck here, check Xcode console")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .onAppear {
+                    print("🚨 EMERGENCY LOADING VIEW APPEARED - App is rendering!")
+                    print("   If you see this, SwiftUI is working. Check console for where it freezes next.")
+                }
+            }
+
             Group {
+                if appIsReady {
                     // ===== REFINED ONBOARDING FLOW =====
                     // Flow: Welcome → RoleSelection → LegalAgreement → (Parent: SignUp → FamilySetup) OR (Child: Join → Permissions)
                     let _ = print("🎬 mainContent rendering - checking onboarding state")
 
-                if onboardingManager.shouldShowWelcome {
+                    if onboardingManager.shouldShowWelcome {
                     // Step 1: Friendly Welcome (no terms, no role selection)
                     FriendlyWelcomeView(
                         onContinue: {
@@ -291,7 +329,8 @@ struct EnviveNewApp: App {
                         authService: authService,
                         onboardingManager: onboardingManager
                     )
-                }
+                    }
+                } // End of appIsReady check
             }
         }
     }

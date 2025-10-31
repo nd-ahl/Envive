@@ -177,29 +177,19 @@ struct AnimatedSplashScreen: View {
                 print("🔄🔄🔄 AnimatedSplashScreen: Starting full data refresh...")
                 let startTime = Date()
 
-                // CRITICAL FIX: Wait for AuthenticationService to finish loading profile
-                // This is the race condition that causes data refresh to fail!
+                // CRITICAL FIX: Manually trigger auth check AFTER UI has rendered
+                // This prevents blocking app initialization on slow network connections
                 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                print("⏳ WAITING for AuthenticationService to be ready...")
-                print("   - This prevents the race condition where refresh runs before profile loads")
+                print("🔐 Starting AuthenticationService check NOW (after UI rendered)...")
+                print("   - This prevents the app freeze issue on real devices")
                 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
                 let authService = AuthenticationService.shared
-                var waitCount = 0
-                while authService.isCheckingAuth && waitCount < 50 {  // Max 5 seconds
-                    try await Task.sleep(nanoseconds: 100_000_000)  // 0.1 seconds
-                    waitCount += 1
-                    if waitCount % 10 == 0 {
-                        print("   - Still waiting for auth... (\(waitCount/10)s)")
-                    }
-                }
 
-                if authService.isCheckingAuth {
-                    print("⚠️⚠️⚠️ WARNING: AuthenticationService still checking after 5 seconds")
-                    print("   - Proceeding anyway, but refresh may fail")
-                } else {
-                    print("✅ AuthenticationService is ready!")
-                }
+                // Start the auth check manually (non-blocking for UI)
+                await authService.startAuthCheck()
+
+                print("✅ AuthenticationService check complete!")
 
                 print("📊 Authentication Status:")
                 print("   - isAuthenticated: \(authService.isAuthenticated)")

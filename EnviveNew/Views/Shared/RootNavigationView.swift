@@ -273,6 +273,8 @@ struct ParentProfileView: View {
     @State private var showingNameEditor = false
     @State private var editedName = ""
     @State private var showingResetTestDataConfirmation = false
+    @State private var showingClearDatabaseConfirmation = false
+    @State private var isClearingDatabase = false
     @AppStorage("enableDeviceSwitcher") private var enableDeviceSwitcher = false
 
     var body: some View {
@@ -635,8 +637,29 @@ struct ParentProfileView: View {
                         }
                         .foregroundColor(.red)
                     }
+
+                    Button(action: {
+                        showingClearDatabaseConfirmation = true
+                    }) {
+                        HStack {
+                            if isClearingDatabase {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Text("Clearing Database...")
+                                    .font(.caption)
+                            } else {
+                                Text("Clear ALL Database Users")
+                                    .font(.caption)
+                                Spacer()
+                                Image(systemName: "trash.fill")
+                                    .font(.caption2)
+                            }
+                        }
+                        .foregroundColor(.red)
+                    }
+                    .disabled(isClearingDatabase)
                 } footer: {
-                    Text("Developer tools")
+                    Text("Developer tools - Use with caution!")
                         .font(.caption2)
                         .foregroundColor(.secondary.opacity(0.6))
                 }
@@ -677,6 +700,14 @@ struct ParentProfileView: View {
                 }
             } message: {
                 Text("This will delete all tasks, reset all children's XP to 0, and set credibility to 100. This action cannot be undone.")
+            }
+            .alert("Clear ALL Database Users?", isPresented: $showingClearDatabaseConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Clear Database", role: .destructive) {
+                    clearAllDatabaseUsers()
+                }
+            } message: {
+                Text("⚠️ DANGER: This will DELETE ALL users, profiles, and households from the database. You will be able to reuse emails for testing. Auth users must be manually deleted from Supabase Dashboard. This action cannot be undone!")
             }
         }
         .navigationViewStyle(.stack)
@@ -780,6 +811,31 @@ struct ParentProfileView: View {
                 print("✅ Reset complete - all tasks deleted, XP set to 0, credibility set to 100")
             } catch {
                 print("❌ Error loading children for reset: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func clearAllDatabaseUsers() {
+        isClearingDatabase = true
+
+        Task {
+            do {
+                try await TestDataCleanupService.shared.clearAllDatabaseUsers()
+
+                await MainActor.run {
+                    isClearingDatabase = false
+                    print("✅ Database clearing complete!")
+
+                    // Exit the app so user sees clean state on restart
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        exit(0)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isClearingDatabase = false
+                    print("❌ Database clearing failed: \(error.localizedDescription)")
+                }
             }
         }
     }

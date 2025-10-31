@@ -14,10 +14,24 @@ class AuthenticationService: ObservableObject {
     private let supabase = SupabaseService.shared.client
 
     private init() {
-        // Perform auth check in background to avoid blocking app launch
-        Task.detached(priority: .background) { [weak self] in
-            await self?.checkAuthStatus()
+        // CRITICAL FIX: Do NOT start auth check in init()
+        // On real devices with slow networks, this blocks app initialization
+        // causing the app to freeze before the splash screen can render
+        print("🔐 AuthenticationService.init() - Deferring auth check")
+        print("   - This prevents app freeze on slow network connections")
+        print("   - Auth check will be triggered manually when splash screen loads")
+
+        // Set to false immediately so app can render without blocking
+        self.isCheckingAuth = false
+    }
+
+    /// Start auth check manually (called by AnimatedSplashScreen after UI renders)
+    func startAuthCheck() async {
+        print("🔐 AuthenticationService.startAuthCheck() - Starting NOW")
+        await MainActor.run {
+            self.isCheckingAuth = true
         }
+        await checkAuthStatus()
     }
 
     // MARK: - Check Authentication Status
