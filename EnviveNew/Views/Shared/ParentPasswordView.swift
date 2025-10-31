@@ -629,8 +629,8 @@ struct ChangePasswordView: View {
                     if biometricAuthVerified {
                         print("✅ Identity already verified with biometrics - proceeding with password change")
                     } else {
-                        // Verify with password
-                        guard passwordManager.verifyPassword(currentPassword) else {
+                        // Verify with password (without triggering unlock to prevent navigation)
+                        guard passwordManager.verifyPasswordOnly(currentPassword) else {
                             await MainActor.run {
                                 showError = true
                                 errorMessage = "Current password is incorrect"

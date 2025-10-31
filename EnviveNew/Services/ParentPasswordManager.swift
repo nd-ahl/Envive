@@ -70,6 +70,23 @@ class ParentPasswordManager: ObservableObject {
         return isValid
     }
 
+    /// Verify the password without unlocking parent features
+    /// Used for identity verification when changing password
+    func verifyPasswordOnly(_ password: String) -> Bool {
+        guard let storedPassword = getStoredPassword() else {
+            print("⚠️ No password set")
+            return false
+        }
+
+        let isValid = password == storedPassword
+
+        if isValid {
+            print("✅ Password verified (without unlock)")
+        }
+
+        return isValid
+    }
+
     /// Remove the password (for reset)
     func removePassword() {
         deleteFromKeychain()
