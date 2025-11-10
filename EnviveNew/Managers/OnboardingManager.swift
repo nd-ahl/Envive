@@ -91,6 +91,55 @@ class OnboardingManager: ObservableObject {
         }
     }
 
+    // Enhanced parent onboarding steps
+    @Published var hasCompletedParentWelcome: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedParentWelcome, forKey: parentWelcomeKey)
+        }
+    }
+
+    @Published var hasCompletedAddChild: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedAddChild, forKey: addChildKey)
+        }
+    }
+
+    @Published var hasCompletedHouseholdPassword: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedHouseholdPassword, forKey: householdPasswordKey)
+        }
+    }
+
+    @Published var hasCompletedInviteCode: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedInviteCode, forKey: inviteCodeKey)
+        }
+    }
+
+    @Published var hasCompletedTasksExplanation: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedTasksExplanation, forKey: tasksExplanationKey)
+        }
+    }
+
+    @Published var hasCompletedCredibilityExplanation: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedCredibilityExplanation, forKey: credibilityExplanationKey)
+        }
+    }
+
+    @Published var hasCompletedScreenTimeExplanation: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedScreenTimeExplanation, forKey: screenTimeExplanationKey)
+        }
+    }
+
+    @Published var hasCompletedOnboardingSummary: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedOnboardingSummary, forKey: onboardingSummaryKey)
+        }
+    }
+
     private let onboardingKey = "hasCompletedOnboarding"
     private let welcomeKey = "hasCompletedWelcome"
     private let questionsKey = "hasCompletedQuestions"
@@ -104,6 +153,16 @@ class OnboardingManager: ObservableObject {
     private let ageSelectionKey = "hasCompletedAgeSelection"
     private let permissionsKey = "hasCompletedPermissions"
     private let benefitsKey = "hasCompletedBenefits"
+
+    // Enhanced parent onboarding keys
+    private let parentWelcomeKey = "hasCompletedParentWelcome"
+    private let addChildKey = "hasCompletedAddChild"
+    private let householdPasswordKey = "hasCompletedHouseholdPassword"
+    private let inviteCodeKey = "hasCompletedInviteCode"
+    private let tasksExplanationKey = "hasCompletedTasksExplanation"
+    private let credibilityExplanationKey = "hasCompletedCredibilityExplanation"
+    private let screenTimeExplanationKey = "hasCompletedScreenTimeExplanation"
+    private let onboardingSummaryKey = "hasCompletedOnboardingSummary"
 
     private init() {
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingKey)
@@ -119,6 +178,16 @@ class OnboardingManager: ObservableObject {
         self.hasCompletedAgeSelection = UserDefaults.standard.bool(forKey: ageSelectionKey)
         self.hasCompletedPermissions = UserDefaults.standard.bool(forKey: permissionsKey)
         self.hasCompletedBenefits = UserDefaults.standard.bool(forKey: benefitsKey)
+
+        // Enhanced parent onboarding
+        self.hasCompletedParentWelcome = UserDefaults.standard.bool(forKey: parentWelcomeKey)
+        self.hasCompletedAddChild = UserDefaults.standard.bool(forKey: addChildKey)
+        self.hasCompletedHouseholdPassword = UserDefaults.standard.bool(forKey: householdPasswordKey)
+        self.hasCompletedInviteCode = UserDefaults.standard.bool(forKey: inviteCodeKey)
+        self.hasCompletedTasksExplanation = UserDefaults.standard.bool(forKey: tasksExplanationKey)
+        self.hasCompletedCredibilityExplanation = UserDefaults.standard.bool(forKey: credibilityExplanationKey)
+        self.hasCompletedScreenTimeExplanation = UserDefaults.standard.bool(forKey: screenTimeExplanationKey)
+        self.hasCompletedOnboardingSummary = UserDefaults.standard.bool(forKey: onboardingSummaryKey)
     }
 
     // MARK: - Public Methods
@@ -252,6 +321,17 @@ class OnboardingManager: ObservableObject {
         hasCompletedAgeSelection = false
         hasCompletedPermissions = false
         hasCompletedBenefits = false
+
+        // Enhanced parent onboarding
+        hasCompletedParentWelcome = false
+        hasCompletedAddChild = false
+        hasCompletedHouseholdPassword = false
+        hasCompletedInviteCode = false
+        hasCompletedTasksExplanation = false
+        hasCompletedCredibilityExplanation = false
+        hasCompletedScreenTimeExplanation = false
+        hasCompletedOnboardingSummary = false
+
         UserDefaults.standard.removeObject(forKey: "userAge")
         UserDefaults.standard.removeObject(forKey: "userRole")
         UserDefaults.standard.removeObject(forKey: "userId")
